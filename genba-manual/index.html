@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -36,12 +36,12 @@
     </div>
     <div id="dashGroups" class="groupGrid"></div>
     <button id="dashReportBtn" class="reportCard">
-      <span class="reportCardIcon" data-icon="report"></span>
+      <img src="art/report-icon.webp?v=1" class="reportCardIcon" alt="">
       <span class="reportCardText">
         <span class="reportCardTitle">今週の報告</span>
-        <span id="dashReportSub" class="reportCardSub">撮りためた写真から報告用を選んで送ります。</span>
+        <span id="dashReportSub" class="reportCardSub">撮った写真から報告用を選べます。</span>
       </span>
-      <span class="chev" data-icon="chevron"></span>
+      <img src="art/report-photos.webp?v=1" class="reportCardPhotos" alt="">
     </button>
     <button id="dashPhotoBtn" class="bannerBtn">
       <span class="bannerIcon" data-icon="camera"></span>
@@ -290,6 +290,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

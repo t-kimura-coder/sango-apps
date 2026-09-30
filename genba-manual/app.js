@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 5;
+const APP_VERSION = 7;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -1397,8 +1397,8 @@ async function renderDash() {
   let total = 0;
   for (const site of sites) total += unreported(await getSitePhotos(site.id)).length;
   $("dashReportSub").textContent = total
-    ? `撮りためた写真 ${total} 枚から、報告用を選んで送ります。`
-    : "撮りためた写真から、報告用を選んで送ります。";
+    ? `撮った写真 ${total} 枚から報告用を選べます。`
+    : "撮った写真から報告用を選べます。";
 
   const recent = manualMeta
     ? getRecent().map((r) => ({ r, it: manualMeta.items.find((x) => x.id === r.id) })).filter((x) => x.it)
