@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="現場写真">
+<title>現場写真メモ</title>
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<!-- ① ホーム（現場一覧） -->
+<section id="homeView" class="view">
+  <header class="topbar">
+    <h1 class="topbarTitle">担当現場</h1>
+    <button id="addSiteBtn" class="iconBtn" aria-label="現場を追加"></button>
+  </header>
+  <div class="viewBody">
+    <div id="siteList" class="siteList"></div>
+    <div id="siteEmpty" class="emptyState" hidden>
+      <div class="emptyTitle">担当現場を登録しましょう</div>
+      <div class="emptyText">右上の＋から現場名を登録すると、工程ごとに写真を撮れるようになります。</div>
+      <button id="addSiteEmptyBtn" class="btn btnPrimary">現場を追加</button>
+    </div>
+    <button id="toggleArchivedBtn" class="linkBtn" hidden></button>
+    <div id="archivedList" class="siteList" hidden></div>
+  </div>
+</section>
+
+<!-- ② 現場画面（撮影の起点） -->
+<section id="siteView" class="view" hidden>
+  <header class="topbar">
+    <button id="siteBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 id="siteTitle" class="topbarTitle"></h1>
+    <button id="siteMenuBtn" class="iconBtn" aria-label="現場メニュー"></button>
+  </header>
+  <div class="viewBody">
+    <div class="periodBar">
+      <span class="periodLabel">今回の報告期間</span>
+      <span id="sitePeriod" class="periodValue"></span>
+    </div>
+    <div class="sectionLabel">今回の工程（タップで撮影）</div>
+    <div id="processCards" class="processCards"></div>
+    <button id="addProcessBtn" class="btn btnDashed">＋ 工程を追加（17分類から）</button>
+    <button id="summaryBtn" class="btn btnSecondary btnLarge">報告をまとめる</button>
+    <div id="pastReports" class="pastReports"></div>
+  </div>
+</section>
+
+<!-- ③ 撮影直後（連続撮影） -->
+<section id="shotView" class="view" hidden>
+  <header class="topbar">
+    <span class="iconBtnSpacer"></span>
+    <h1 id="shotTitle" class="topbarTitle"></h1>
+    <button id="shotCloseBtn" class="iconBtn" aria-label="閉じる"></button>
+  </header>
+  <div class="viewBody shotBody">
+    <div class="shotPreviewWrap"><img id="shotPreview" class="shotPreview" alt=""></div>
+    <div id="shotStatus" class="statusOk"></div>
+    <div id="shotStrip" class="shotStrip"></div>
+    <div class="shotActions">
+      <button id="shotAgainBtn" class="btn btnPrimary btnHuge">もう1枚撮る</button>
+      <div class="btnRow">
+        <button id="shotOtherBtn" class="btn btnSecondary">別の工程で撮る</button>
+        <button id="shotDoneBtn" class="btn btnSecondary">終わる</button>
+      </div>
+      <button id="shotUndoBtn" class="linkBtn">今の1枚を取り消す</button>
+    </div>
+  </div>
+</section>
+
+<!-- ④ 報告まとめ -->
+<section id="summaryView" class="view" hidden>
+  <header class="topbar">
+    <button id="summaryBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle">報告まとめ</h1>
+    <span id="summaryPeriod" class="topbarSub"></span>
+  </header>
+  <div class="viewBody">
+    <div class="hint">メールに使う写真をタップで選びます。長押しで拡大表示。</div>
+    <div id="summaryGroups"></div>
+    <div id="summaryEmpty" class="emptyState" hidden>
+      <div class="emptyText">この期間の写真はまだありません。</div>
+    </div>
+  </div>
+  <footer class="bottomActions">
+    <button id="shareSelectedBtn" class="btn btnPrimary btnLarge">写真を選んでください</button>
+    <button id="markReportedBtn" class="btn btnSecondary">報告済みにする</button>
+    <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
+  </footer>
+</section>
+
+<!-- マニュアル -->
+<section id="manualView" class="view" hidden>
+  <header class="topbar">
+    <h1 class="topbarTitle">現場訪問マニュアル</h1>
+  </header>
+  <div class="viewBody">
+    <div class="hint">17分類ごとの撮影ガイドです。（文面は検討中）</div>
+    <div id="manualList" class="manualList"></div>
+  </div>
+</section>
+
+<!-- 設定 -->
+<section id="settingsView" class="view" hidden>
+  <header class="topbar">
+    <h1 class="topbarTitle">設定</h1>
+  </header>
+  <div class="viewBody">
+    <div class="card">
+      <div class="cardTitle">保存容量</div>
+      <div id="storageInfo" class="mutedText">計算中...</div>
+    </div>
+    <div class="card">
+      <div class="cardTitle">このアプリについて</div>
+      <div class="mutedText">写真はこのiPhoneの中だけに保存されます。報告に使った写真は共有・保存で書き出してから、古い報告の写真を削除して容量を空けてください。</div>
+      <div id="versionInfo" class="mutedText versionInfo"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 下部タブ -->
+<nav id="tabBar" class="tabBar">
+  <button class="tabBtn active" data-tab="home"><span class="tabIcon" data-icon="building"></span><span>現場</span></button>
+  <button class="tabBtn" data-tab="manual"><span class="tabIcon" data-icon="book"></span><span>マニュアル</span></button>
+  <button class="tabBtn" data-tab="settings"><span class="tabIcon" data-icon="settings"></span><span>設定</span></button>
+</nav>
+
+<!-- シート（汎用） -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheetBackdrop"></div>
+  <div class="sheetPanel">
+    <div id="sheetTitle" class="sheetTitle"></div>
+    <div id="sheetBody" class="sheetBody"></div>
+  </div>
+</div>
+
+<!-- 拡大表示 -->
+<div id="lightbox" class="lightbox" hidden>
+  <img id="lightboxImg" alt="">
+</div>
+
+<!-- 処理中 -->
+<div id="processing" class="processing" hidden>
+  <div class="spinner"></div>
+  <div id="processingText">写真を保存中...</div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+<input type="file" id="libraryInput" accept="image/*" multiple hidden>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>
