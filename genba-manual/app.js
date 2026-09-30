@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;

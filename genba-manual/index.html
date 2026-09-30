@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -27,7 +27,9 @@
       <button class="iconBtn settingsBtn" aria-label="設定"></button>
     </header>
     <div class="heroCopy">いい家を、<br>現場から。</div>
+    <img src="art/hero-sky.webp?v=1" class="heroSky" alt="">
     <img src="hero-frame.webp?v=1" class="heroImg" alt="">
+    <svg class="heroWave" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 10 C 110 18 230 44 400 50 L400 60 L0 60 Z"/></svg>
   </div>
   <div class="viewBody">
     <div class="sectionHead">
@@ -41,6 +43,7 @@
         <span class="reportCardTitle">今週の報告</span>
         <span id="dashReportSub" class="reportCardSub">撮った写真から報告用を選べます。</span>
       </span>
+      <img src="art/report-wood.webp?v=1" class="reportCardWood" alt="">
       <img src="art/report-photos.webp?v=1" class="reportCardPhotos" alt="">
     </button>
     <button id="dashPhotoBtn" class="bannerBtn">
@@ -290,6 +293,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

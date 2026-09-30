@@ -175,20 +175,28 @@ svg { flex: none; }
 .hero {
   position: relative; overflow: hidden;
   padding: calc(env(safe-area-inset-top) + var(--space-md)) var(--space-lg) var(--space-lg);
-  min-height: calc(210px + env(safe-area-inset-top));
-  background: linear-gradient(180deg, var(--color-sky) 0%, var(--color-bg) 100%);
+  min-height: calc(250px + env(safe-area-inset-top));
+  background: var(--color-bg);
 }
-.brandBar { position: relative; z-index: 2; display: flex; align-items: center; gap: var(--space-md); }
+.brandBar { position: relative; z-index: 4; display: flex; align-items: center; gap: var(--space-md); }
 .brandIcon { width: 52px; height: 52px; border-radius: 12px; }
 .brandText { flex: 1; min-width: 0; }
 .brandName { font-size: 28px; font-weight: 800; color: var(--color-heading); letter-spacing: 0.04em; line-height: 1.15; }
 .brandTagline { font-size: var(--fs-sm); color: var(--color-text-sub); }
 .heroCopy {
-  position: relative; z-index: 2; margin: var(--space-lg) 0 0 var(--space-sm);
+  position: relative; z-index: 4; margin: var(--space-lg) 0 0 var(--space-sm);
   font-size: 22px; line-height: 1.5; color: var(--color-heading); font-weight: 600;
   transform: rotate(-6deg); transform-origin: left; letter-spacing: 0.15em;
 }
-.heroImg { position: absolute; right: -10px; bottom: 0; width: 64%; max-width: 320px; z-index: 1; }
+/* 空 → 骨組み（右と下を見切れさせる）→ 波型で本文につなぐ、の3層 */
+.heroSky { position: absolute; z-index: 1; top: 0; right: -18%; width: 125%; max-width: 640px; pointer-events: none; }
+.heroImg { position: absolute; z-index: 2; right: -24%; bottom: -58px; width: 92%; max-width: 460px; pointer-events: none; }
+.heroWave { position: absolute; z-index: 3; left: 0; right: 0; bottom: -4px; width: 100%; height: 68px; display: block; }
+.heroWave path { fill: var(--color-bg); }
+.hero::after { content: ""; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 8px; background: var(--color-bg); }
+@media (prefers-color-scheme: dark) {
+  .heroSky { display: none; }
+}
 
 .groupGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-sm); }
 .groupCard {
@@ -206,10 +214,13 @@ svg { flex: none; }
   display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left;
   border-radius: var(--radius-md); padding: var(--space-lg);
 }
-.reportCard { background: linear-gradient(90deg, var(--color-surface) 55%, var(--color-wood-soft) 100%); border: 1px solid var(--color-border); box-shadow: var(--shadow-card); }
+.reportCard { background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-card); }
 .reportCard { position: relative; overflow: hidden; min-height: 104px; padding-right: 36%; }
 .reportCardIcon { width: 52px; height: auto; flex: none; }
-.reportCardPhotos { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 36%; max-width: 150px; height: auto; pointer-events: none; }
+.reportCardWood { position: absolute; right: -8%; top: 50%; transform: translateY(-50%); width: 62%; height: auto; pointer-events: none; opacity: 0.9; }
+.reportCardText, .reportCardIcon { position: relative; z-index: 1; }
+@media (prefers-color-scheme: dark) { .reportCardWood { display: none; } }
+.reportCardPhotos { z-index: 1; position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 36%; max-width: 150px; height: auto; pointer-events: none; }
 .reportCardText, .bannerText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reportCardTitle { font-size: var(--fs-xl); font-weight: 800; color: var(--color-heading); }
 .reportCardSub { font-size: var(--fs-sm); color: var(--color-text-sub); }
