@@ -1,9 +1,9 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること（APP_VERSIONと合わせなくてOK、SW側だけの独立カウンタ）
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const CACHE_NAME = `genba-photo-v${CACHE_VERSION}`;
 
-const APP_SHELL = ['./', 'index.html', 'app.js?v=2', 'style.css?v=2', 'manual-data.js?v=1', 'icon-180.png', 'icon-512.png'];
-// マニュアルのページ画像(manual/*.jpg、約22MB)は一度開いたページから順にキャッシュされる
+const APP_SHELL = ['./', 'index.html', 'app.js?v=3', 'style.css?v=3', 'icon-180.png', 'icon-512.png'];
+// マニュアル（社内データ）はアプリに含めず、JSONで取り込んでIndexedDBに保存する
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

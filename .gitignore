@@ -1,3 +1,8 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+# 社内データ（マニュアル）はリポジトリに入れない
+manual/
+manual-data.js
+*.pdf
+マニュアル_*.json

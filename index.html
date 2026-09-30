@@ -10,7 +10,7 @@
 <title>現場写真メモ</title>
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -152,6 +152,15 @@
       <div class="mutedText">送信時にこのアドレスをコピーするので、メールの宛先に貼り付けてください。</div>
     </div>
     <div class="card">
+      <div class="cardTitle">マニュアル</div>
+      <div id="manualInfo" class="mutedText preLine"></div>
+      <div class="btnRow settingsBtns">
+        <button id="importManualBtn" class="btn btnSecondary">マニュアルを取り込む</button>
+        <button id="deleteManualBtn" class="btn btnDanger" hidden>削除</button>
+      </div>
+      <div class="mutedText">マニュアルは社内資料のため、アプリには含まれていません。Boxの「マニュアル_○○.json」を取り込んでください。</div>
+    </div>
+    <div class="card">
       <div class="cardTitle">保存容量</div>
       <div id="storageInfo" class="mutedText">計算中...</div>
     </div>
@@ -194,8 +203,8 @@
 
 <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
+<input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="manual-data.js?v=1"></script>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -15,8 +15,9 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-/* ---------- 17分類（マニュアル層） ---------- */
-// guide: 撮影ガイドの一言メモ。文面は別途相談して決める（空欄の間は画面に出さない）
+/* ---------- 17分類 ---------- */
+// 写真機能で使う分類だけをアプリに持つ。マニュアル本文と撮影ガイドの文面は社内データなので
+// アプリには入れず、マニュアルパック(JSON)の取り込み時に guide を上書きする（空欄なら画面に出さない）
 const PROCESSES = [
   { id: "p01", no: 1, name: "解体・仮設準備", short: "解体仮設", guide: "" },
   { id: "p02", no: 2, name: "地盤・基礎工事", short: "基礎", guide: "" },
@@ -102,7 +103,7 @@ function fmtMMDD(key) {
 /* ---------- IndexedDB ---------- */
 
 const DB_NAME = "genba-photo";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: マニュアルパック用の manualPages / meta を追加
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -118,6 +119,8 @@ function openDB() {
         const s = db.createObjectStore("reports", { keyPath: "id" });
         s.createIndex("siteId", "siteId");
       }
+      if (!db.objectStoreNames.contains("manualPages")) db.createObjectStore("manualPages", { keyPath: "page" });
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -154,6 +157,15 @@ async function dbPutMany(store, items) {
 }
 async function dbPut(store, item) {
   return dbPutMany(store, [item]);
+}
+async function dbClear(store) {
+  const db = await dbPromise;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 async function dbDeleteMany(store, ids) {
   const db = await dbPromise;
@@ -1026,18 +1038,37 @@ async function deleteReportPhotos() {
 }
 
 /* ---------- マニュアル ---------- */
-// 中身はPDFのページ画像（manual/pNNN.jpg）。17分類への振り分けは tools/build_manual.py が作る manual-data.js
+// マニュアル本文は社内データなのでアプリには入れない。tools/build_manual.py が作る
+// マニュアルパック(JSON: items=項目と17分類の対応, pages=ページ画像, guides=撮影ガイド)を
+// 初回に取り込み、IndexedDB(meta / manualPages)に保存して使う
 
+let manualMeta = null; // { key:"manual", version, title, builtAt, importedAt, items, guides }
 let manualCatId = null;
 let manualCatItems = [];
 let manualItemIndex = 0;
 let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
 
+async function loadManualMeta() {
+  manualMeta = await dbGet("meta", "manual");
+  const guides = (manualMeta && manualMeta.guides) || {};
+  PROCESSES.forEach((p) => (p.guide = guides[p.id] || ""));
+}
+
 function renderManual() {
   const list = $("manualCats");
   list.innerHTML = "";
+  if (!manualMeta) {
+    const empty = document.createElement("div");
+    empty.className = "emptyState";
+    empty.innerHTML =
+      '<div class="emptyTitle">マニュアルを取り込みましょう</div>' +
+      '<div class="emptyText">Boxにある「マニュアル_○○.json」を選ぶと、このiPhoneの中に保存されます（初回のみ）。写真・報告の機能はマニュアルがなくても使えます。</div>';
+    empty.appendChild(sheetButton("マニュアルを取り込む", "btnPrimary", () => $("manualInput").click()));
+    list.appendChild(empty);
+    return;
+  }
   PROCESSES.forEach((p) => {
-    const n = MANUAL_ITEMS.filter((it) => it.cat === p.id).length;
+    const n = manualMeta.items.filter((it) => it.cat === p.id).length;
     const b = document.createElement("button");
     b.className = "card manualCat";
     b.innerHTML =
@@ -1049,10 +1080,61 @@ function renderManual() {
   });
 }
 
+async function onManualPicked() {
+  const input = $("manualInput");
+  const file = input.files[0];
+  input.value = "";
+  if (!file) return;
+  setProcessing(true, "マニュアルを読み込み中...");
+  try {
+    const pack = JSON.parse(await file.text());
+    if (!pack || pack.kind !== "genba-manual-pack" || !Array.isArray(pack.items) || !pack.pages) {
+      throw new Error("not a manual pack");
+    }
+    const pageNos = Object.keys(pack.pages);
+    const records = [];
+    for (let i = 0; i < pageNos.length; i++) {
+      if (i % 10 === 0) setProcessing(true, `マニュアルを取り込み中... ${i} / ${pageNos.length}ページ`);
+      const blob = await (await fetch(pack.pages[pageNos[i]])).blob();
+      records.push({ page: Number(pageNos[i]), blob });
+    }
+    await dbClear("manualPages");
+    for (let i = 0; i < records.length; i += 20) await dbPutMany("manualPages", records.slice(i, i + 20));
+    await dbPut("meta", {
+      key: "manual",
+      version: pack.version || "",
+      title: pack.title || "マニュアル",
+      builtAt: pack.built_at || "",
+      importedAt: new Date().toISOString(),
+      items: pack.items,
+      guides: pack.guides || {},
+    });
+    await loadManualMeta();
+    toast(`マニュアル（${manualMeta.version}版）を取り込みました`);
+    if (!$("settingsView").hidden) renderSettings();
+    else goManual();
+  } catch (e) {
+    console.error(e);
+    alert("マニュアルを取り込めませんでした。Boxの「マニュアル_○○.json」を選んでいるか確認してください。");
+  } finally {
+    setProcessing(false);
+  }
+}
+
+async function deleteManual() {
+  if (!confirm("このiPhoneからマニュアルを削除しますか？（写真・報告のデータは消えません）")) return;
+  await dbClear("manualPages");
+  await dbDeleteMany("meta", ["manual"]);
+  await loadManualMeta();
+  toast("マニュアルを削除しました");
+  renderSettings();
+}
+
 async function openManualCat(catId) {
+  if (!manualMeta) return goManual();
   manualCatId = catId;
   const p = processOf(catId);
-  manualCatItems = MANUAL_ITEMS.filter((it) => it.cat === catId);
+  manualCatItems = manualMeta.items.filter((it) => it.cat === catId);
   $("manualCatTitle").textContent = p.name;
   $("manualCatGuide").hidden = !p.guide;
   $("manualCatGuide").textContent = p.guide ? `撮影メモ：${p.guide}` : "";
@@ -1071,13 +1153,21 @@ async function openManualCat(catId) {
   showView("manualCatView");
 }
 
-function openManualItem(index) {
+async function openManualItem(index) {
   manualItemIndex = index;
   const it = manualCatItems[index];
+  releaseUrls("manual");
   $("manualItemTitle").textContent = (it.no ? it.no + " " : "") + it.name;
-  $("manualPages").innerHTML = it.pages
-    .map((n) => `<img src="manual/p${String(n).padStart(3, "0")}.jpg" loading="lazy" alt="${esc(it.name)} ${n}ページ">`)
-    .join("");
+  const container = $("manualPages");
+  container.innerHTML = "";
+  for (const n of it.pages) {
+    const rec = await dbGet("manualPages", n);
+    if (!rec) continue;
+    const img = document.createElement("img");
+    img.alt = `${it.name} ${n}ページ`;
+    img.src = blobUrl("manual", rec.blob);
+    container.appendChild(img);
+  }
   $("manualPrevBtn").disabled = index === 0;
   $("manualNextBtn").disabled = index === manualCatItems.length - 1;
   showView("manualItemView");
@@ -1144,6 +1234,12 @@ async function renderSettings() {
   $("userNameInput").value = getSetting(USER_NAME_KEY);
   $("boxEmailInput").value = getSetting(BOX_EMAIL_KEY);
   $("versionInfo").textContent = `バージョン ${APP_VERSION}`;
+  $("manualInfo").textContent = manualMeta
+    ? `${manualMeta.title}（${manualMeta.version}版・${manualMeta.items.length}項目）
+取り込み日：${fmtDate(toDateKey(new Date(manualMeta.importedAt)))}`
+    : "まだ取り込まれていません";
+  $("deleteManualBtn").hidden = !manualMeta;
+  $("importManualBtn").textContent = manualMeta ? "新しい版を取り込む" : "マニュアルを取り込む";
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
   let text = `保存中の写真：${photos.length}枚`;
@@ -1206,10 +1302,16 @@ function init() {
   $("manualCatBackBtn").innerHTML = icon(ICONS.back, 26);
   $("manualItemBackBtn").innerHTML = icon(ICONS.back, 26);
   $("manualCatBackBtn").addEventListener("click", goManual);
-  $("manualItemBackBtn").addEventListener("click", () => showView("manualCatView"));
+  $("manualItemBackBtn").addEventListener("click", () => {
+    releaseUrls("manual");
+    showView("manualCatView");
+  });
   $("manualPrevBtn").addEventListener("click", () => openManualItem(manualItemIndex - 1));
   $("manualNextBtn").addEventListener("click", () => openManualItem(manualItemIndex + 1));
   $("manualCatShootBtn").addEventListener("click", shootFromManual);
+  $("manualInput").addEventListener("change", onManualPicked);
+  $("importManualBtn").addEventListener("click", () => $("manualInput").click());
+  $("deleteManualBtn").addEventListener("click", deleteManual);
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
   $("markReportedBtn").addEventListener("click", markReported);
@@ -1230,7 +1332,7 @@ function init() {
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  goManual();
+  loadManualMeta().then(goManual);
 }
 
 init();
