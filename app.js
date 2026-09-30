@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -63,6 +63,8 @@ const ICONS = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
+  send: '<path d="M4 12l16-8-6 16-3-7z"/><path d="M11 13l9-9"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
 };
 
 /* ---------- 日付 ---------- */
@@ -326,11 +328,20 @@ function releaseUrls(bucket) {
   urlBuckets[bucket] = [];
 }
 
-const VIEWS = ["homeView", "siteView", "shotView", "summaryView", "manualView", "settingsView"];
+const VIEW_TABS = {
+  manualView: "manual",
+  manualCatView: "manual",
+  manualItemView: "manual",
+  homeView: "photos",
+  siteView: "photos",
+  shotView: "photos",
+  summaryView: "photos",
+  settingsView: "settings",
+};
 function showView(id) {
-  VIEWS.forEach((v) => ($(v).hidden = v !== id));
+  Object.keys(VIEW_TABS).forEach((v) => ($(v).hidden = v !== id));
   $("tabBar").hidden = id === "shotView";
-  const tab = { homeView: "home", siteView: "home", summaryView: "home", manualView: "manual", settingsView: "settings" }[id];
+  const tab = VIEW_TABS[id];
   document.querySelectorAll(".tabBtn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   window.scrollTo(0, 0);
 }
@@ -806,25 +817,36 @@ function updateSelectionUi() {
     el.textContent = `${sel} / ${inGroup.length} 選択`;
   });
   const n = selectedIds.size;
-  $("shareSelectedBtn").innerHTML = n ? `${icon(ICONS.share)}選んだ${n}枚を共有・保存` : "写真を選んでください";
+  $("sendBoxBtn").innerHTML = n ? `${icon(ICONS.send)}選んだ${n}枚をBoxへ送信` : "報告に使う写真を選んでください";
 }
 
-async function shareSelected() {
-  if (!selectedIds.size) {
-    toast("メールに使う写真をタップして選んでください");
-    return;
-  }
+function safeFileName(s) {
+  return s.replace(/[\\/:*?"<>|\s]/g, "");
+}
+
+// 選んだ写真を工程順・撮影順に並べ、送信用のファイル名を付ける
+async function chosenPhotoFiles() {
   const site = await dbGet("sites", currentSiteId);
   const chosen = summaryPhotos
     .filter((p) => selectedIds.has(p.id))
     .sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
   const counters = {};
-  const files = chosen.map((p) => {
+  const entries = chosen.map((p) => {
     const short = processOf(p.processId).short;
     counters[short] = (counters[short] || 0) + 1;
-    const name = `${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}.jpg`.replace(/[\\/:*?"<>|\s]/g, "");
-    return new File([p.blob], name, { type: "image/jpeg" });
+    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}.jpg`);
+    return { photo: p, file: new File([p.blob], name, { type: "image/jpeg" }) };
   });
+  return { site, entries };
+}
+
+async function shareSelected() {
+  if (!selectedIds.size) {
+    toast("保存する写真をタップして選んでください");
+    return;
+  }
+  const { entries } = await chosenPhotoFiles();
+  const files = entries.map((e) => e.file);
   if (navigator.canShare && navigator.canShare({ files })) {
     try {
       await navigator.share({ files });
@@ -840,6 +862,114 @@ async function shareSelected() {
     a.download = f.name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+
+/* ---------- Boxへ送信 ---------- */
+// 走行距離アプリと同じく、共有シート→メール→Boxのアップロード用アドレス宛てに送る。
+// 写真と一緒に「何の写真か」をまとめたJSONを添付し、後でAIとの対話の材料にする
+
+const MAIL_WARN_BYTES = 15 * 1024 * 1024;
+
+async function sendToBox() {
+  if (!selectedIds.size) {
+    toast("報告に使う写真をタップして選んでください");
+    return;
+  }
+  const email = getSetting(BOX_EMAIL_KEY);
+  if (!email) {
+    alert("設定タブで、Boxのアップロード用メールアドレスを登録してください。");
+    return;
+  }
+  const { site, entries } = await chosenPhotoFiles();
+  let start;
+  let end;
+  if (summaryReportId) {
+    const r = await dbGet("reports", summaryReportId);
+    start = r.start;
+    end = r.end;
+  } else {
+    start = periodStart(site, summaryPhotos);
+    end = todayKey();
+  }
+  const procIds = new Set(summaryPhotos.map((p) => p.processId));
+  if (!summaryReportId) site.processes.forEach((id) => procIds.add(id));
+  const processes = [...procIds]
+    .map(processOf)
+    .sort((a, b) => a.no - b.no)
+    .map((p) => ({
+      no: p.no,
+      name: p.name,
+      taken_count: summaryPhotos.filter((ph) => ph.processId === p.id).length,
+      selected_count: entries.filter((e) => e.photo.processId === p.id).length,
+    }));
+  const photoBytes = entries.reduce((s, e) => s + e.file.size, 0);
+
+  openSheet("Boxへ送信", (body, close) => {
+    const box = document.createElement("div");
+    box.className = "summaryBox";
+    box.innerHTML =
+      `現場：${esc(site.name)}<br>期間：${fmtDate(start)}〜${fmtDate(end)}<br>` +
+      `工程：${esc(processes.map((p) => p.name).join(" / ") || "なし")}<br>` +
+      `写真：${entries.length}枚（約${(photoBytes / 1024 / 1024).toFixed(1)}MB）`;
+    body.appendChild(box);
+    if (photoBytes > MAIL_WARN_BYTES) {
+      const warn = document.createElement("div");
+      warn.className = "warnText";
+      warn.textContent = "メールの容量上限を超えるおそれがあります。枚数を減らすか、2回に分けて送ってください。";
+      body.appendChild(warn);
+    }
+    const label = document.createElement("label");
+    label.className = "fieldLabel";
+    label.textContent = "メモ（任意）：今週の様子・来週の予定・気づいたことなど";
+    const memo = document.createElement("textarea");
+    memo.className = "sheetTextarea";
+    body.appendChild(label);
+    body.appendChild(memo);
+    const note = document.createElement("div");
+    note.className = "mutedText";
+    note.textContent = "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。";
+    body.appendChild(note);
+
+    body.appendChild(
+      sheetButton("送信する", "btnPrimary btnLarge", async () => {
+        const payload = {
+          kind: "genba-photo-report",
+          schema: 1,
+          app_version: APP_VERSION,
+          sent_at: new Date().toISOString(),
+          sender: getSetting(USER_NAME_KEY),
+          site: site.name,
+          period: { start, end },
+          processes,
+          memo: memo.value.trim(),
+          photos: entries.map((e) => ({
+            file: e.file.name,
+            process_no: processOf(e.photo.processId).no,
+            process: processOf(e.photo.processId).name,
+            date: e.photo.dateKey,
+            taken_at: e.photo.takenAt,
+          })),
+        };
+        const jsonName = safeFileName(`報告_${site.name}_${start}_${end}.json`);
+        const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
+        const files = [jsonFile, ...entries.map((e) => e.file)];
+        if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+        if (!(navigator.canShare && navigator.canShare({ files }))) {
+          alert("この端末では共有機能が使えないため送信できません。iPhoneのホーム画面から開いてください。");
+          return;
+        }
+        try {
+          await navigator.share({ files, title: jsonName });
+        } catch (e) {
+          return; // キャンセル時はシートを開いたまま
+        }
+        close();
+        if (!summaryReportId && confirm("送信しました。今回の分を報告済みにしますか？")) markReported();
+        else toast("送信しました");
+      })
+    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
 
@@ -895,17 +1025,124 @@ async function deleteReportPhotos() {
   showView("siteView");
 }
 
-/* ---------- マニュアル・設定 ---------- */
+/* ---------- マニュアル ---------- */
+// 中身はPDFのページ画像（manual/pNNN.jpg）。17分類への振り分けは tools/build_manual.py が作る manual-data.js
+
+let manualCatId = null;
+let manualCatItems = [];
+let manualItemIndex = 0;
+let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
 
 function renderManual() {
-  $("manualList").innerHTML = PROCESSES.map(
-    (p) =>
-      `<div class="manualItem"><div class="manualItemName"><span class="processNo">${p.no}</span>${esc(p.name)}</div>` +
-      `<div class="manualItemGuide">${p.guide ? esc(p.guide) : "撮影ガイド：準備中"}</div></div>`
-  ).join("");
+  const list = $("manualCats");
+  list.innerHTML = "";
+  PROCESSES.forEach((p) => {
+    const n = MANUAL_ITEMS.filter((it) => it.cat === p.id).length;
+    const b = document.createElement("button");
+    b.className = "card manualCat";
+    b.innerHTML =
+      `<span class="manualCatNo">${p.no}</span>` +
+      `<span class="manualCatText"><span class="manualItemName">${esc(p.name)}</span><br><span class="mutedText">${n}項目</span></span>` +
+      `<span class="chev">${icon(ICONS.chevron, 20)}</span>`;
+    b.addEventListener("click", () => openManualCat(p.id));
+    list.appendChild(b);
+  });
+}
+
+async function openManualCat(catId) {
+  manualCatId = catId;
+  const p = processOf(catId);
+  manualCatItems = MANUAL_ITEMS.filter((it) => it.cat === catId);
+  $("manualCatTitle").textContent = p.name;
+  $("manualCatGuide").hidden = !p.guide;
+  $("manualCatGuide").textContent = p.guide ? `撮影メモ：${p.guide}` : "";
+  const list = $("manualItems");
+  list.innerHTML = "";
+  manualCatItems.forEach((it, i) => {
+    const b = document.createElement("button");
+    b.className = "manualRow";
+    b.innerHTML =
+      `<span>${it.no ? `<span class="manualRowNo">${esc(it.no)}</span>` : ""}${esc(it.name)}</span>` +
+      `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.addEventListener("click", () => openManualItem(i));
+    list.appendChild(b);
+  });
+  activeSitesCache = (await getSites()).filter((s) => !s.archived);
+  showView("manualCatView");
+}
+
+function openManualItem(index) {
+  manualItemIndex = index;
+  const it = manualCatItems[index];
+  $("manualItemTitle").textContent = (it.no ? it.no + " " : "") + it.name;
+  $("manualPages").innerHTML = it.pages
+    .map((n) => `<img src="manual/p${String(n).padStart(3, "0")}.jpg" loading="lazy" alt="${esc(it.name)} ${n}ページ">`)
+    .join("");
+  $("manualPrevBtn").disabled = index === 0;
+  $("manualNextBtn").disabled = index === manualCatItems.length - 1;
+  showView("manualItemView");
+}
+
+// マニュアルから直接撮影する。iPhoneのSafariはユーザー操作から間を置くとカメラ起動を
+// 拒否することがあるので、DB読み込みを挟まず同期的にカメラを開く
+function shootFromManual() {
+  const pid = manualCatId;
+  const sites = activeSitesCache;
+  if (!sites.length) {
+    toast("先に「写真・報告」タブで担当現場を登録してください");
+    goHome();
+    return;
+  }
+  const go = (site) => {
+    currentSiteId = site.id;
+    if (!site.processes.includes(pid)) {
+      site.processes = PROCESSES.filter((p) => p.id === pid || site.processes.includes(p.id)).map((p) => p.id);
+      dbPut("sites", site);
+    }
+    startCamera(pid);
+  };
+  if (sites.length === 1) {
+    go(sites[0]);
+    return;
+  }
+  openSheet("どの現場の写真ですか", (body, close) => {
+    sites.forEach((site) => {
+      const b = document.createElement("button");
+      b.className = "pickItem";
+      b.innerHTML = `<span>${esc(site.name)}</span>${icon(ICONS.camera, 20)}`;
+      b.addEventListener("click", () => {
+        close();
+        go(site);
+      });
+      body.appendChild(b);
+    });
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
+/* ---------- 設定 ---------- */
+
+const USER_NAME_KEY = "genba-photo-user-name";
+const BOX_EMAIL_KEY = "genba-photo-box-email";
+
+function getSetting(key) {
+  try {
+    return localStorage.getItem(key) || "";
+  } catch (e) {
+    return "";
+  }
+}
+function setSetting(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 async function renderSettings() {
+  $("userNameInput").value = getSetting(USER_NAME_KEY);
+  $("boxEmailInput").value = getSetting(BOX_EMAIL_KEY);
   $("versionInfo").textContent = `バージョン ${APP_VERSION}`;
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
@@ -927,6 +1164,11 @@ function goHome() {
   currentSiteId = null;
   renderHome();
   showView("homeView");
+}
+
+function goManual() {
+  renderManual();
+  showView("manualView");
 }
 
 function init() {
@@ -959,18 +1201,25 @@ function init() {
     renderSite();
     showView("siteView");
   });
+  $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
+  $("manualCatBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("manualItemBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("manualCatBackBtn").addEventListener("click", goManual);
+  $("manualItemBackBtn").addEventListener("click", () => showView("manualCatView"));
+  $("manualPrevBtn").addEventListener("click", () => openManualItem(manualItemIndex - 1));
+  $("manualNextBtn").addEventListener("click", () => openManualItem(manualItemIndex + 1));
+  $("manualCatShootBtn").addEventListener("click", shootFromManual);
+  $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
+  $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
   $("markReportedBtn").addEventListener("click", markReported);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   document.querySelector(".sheetBackdrop").addEventListener("click", () => ($("sheet").hidden = true));
 
   document.querySelectorAll(".tabBtn").forEach((b) =>
     b.addEventListener("click", () => {
-      if (b.dataset.tab === "home") goHome();
-      if (b.dataset.tab === "manual") {
-        renderManual();
-        showView("manualView");
-      }
+      if (b.dataset.tab === "photos") goHome();
+      if (b.dataset.tab === "manual") goManual();
       if (b.dataset.tab === "settings") {
         renderSettings();
         showView("settingsView");
@@ -981,7 +1230,7 @@ function init() {
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  goHome();
+  goManual();
 }
 
 init();

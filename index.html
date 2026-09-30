@@ -10,14 +10,53 @@
 <title>現場写真メモ</title>
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
-<!-- ① ホーム（現場一覧） -->
-<section id="homeView" class="view">
+<!-- マニュアル：17分類の一覧（起動時のホーム） -->
+<section id="manualView" class="view">
   <header class="topbar">
-    <h1 class="topbarTitle">担当現場</h1>
+    <h1 class="topbarTitle">現場訪問マニュアル</h1>
+  </header>
+  <div class="viewBody">
+    <div id="manualCats" class="manualList"></div>
+  </div>
+</section>
+
+<!-- マニュアル：分類内の項目一覧 -->
+<section id="manualCatView" class="view" hidden>
+  <header class="topbar">
+    <button id="manualCatBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 id="manualCatTitle" class="topbarTitle"></h1>
+  </header>
+  <div class="viewBody">
+    <div id="manualCatGuide" class="guideBox" hidden></div>
+    <button id="manualCatShootBtn" class="btn btnPrimary btnLarge">この工程の写真を撮る</button>
+    <div id="manualItems" class="manualList"></div>
+  </div>
+</section>
+
+<!-- マニュアル：項目の本文（PDFページ） -->
+<section id="manualItemView" class="view" hidden>
+  <header class="topbar">
+    <button id="manualItemBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 id="manualItemTitle" class="topbarTitle"></h1>
+  </header>
+  <div class="viewBody manualPagesBody">
+    <div class="hint">ピンチで拡大できます。</div>
+    <div id="manualPages" class="manualPages"></div>
+    <div class="btnRow">
+      <button id="manualPrevBtn" class="btn btnSecondary">前の項目</button>
+      <button id="manualNextBtn" class="btn btnSecondary">次の項目</button>
+    </div>
+  </div>
+</section>
+
+<!-- ① 現場写真（担当現場の一覧） -->
+<section id="homeView" class="view" hidden>
+  <header class="topbar">
+    <h1 class="topbarTitle">現場写真・報告</h1>
     <button id="addSiteBtn" class="iconBtn" aria-label="現場を追加"></button>
   </header>
   <div class="viewBody">
@@ -89,21 +128,13 @@
     </div>
   </div>
   <footer class="bottomActions">
-    <button id="shareSelectedBtn" class="btn btnPrimary btnLarge">写真を選んでください</button>
-    <button id="markReportedBtn" class="btn btnSecondary">報告済みにする</button>
+    <button id="sendBoxBtn" class="btn btnPrimary btnLarge">写真を選んでください</button>
+    <div class="btnRow">
+      <button id="shareSelectedBtn" class="btn btnSecondary">カメラロールに保存</button>
+      <button id="markReportedBtn" class="btn btnSecondary">報告済みにする</button>
+    </div>
     <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
   </footer>
-</section>
-
-<!-- マニュアル -->
-<section id="manualView" class="view" hidden>
-  <header class="topbar">
-    <h1 class="topbarTitle">現場訪問マニュアル</h1>
-  </header>
-  <div class="viewBody">
-    <div class="hint">17分類ごとの撮影ガイドです。（文面は検討中）</div>
-    <div id="manualList" class="manualList"></div>
-  </div>
 </section>
 
 <!-- 設定 -->
@@ -112,6 +143,14 @@
     <h1 class="topbarTitle">設定</h1>
   </header>
   <div class="viewBody">
+    <div class="card">
+      <div class="cardTitle">報告の送信先</div>
+      <label class="fieldLabel" for="userNameInput">氏名</label>
+      <input id="userNameInput" class="sheetInput" placeholder="山郷 太郎" autocomplete="name">
+      <label class="fieldLabel" for="boxEmailInput">Boxのアップロード用メールアドレス</label>
+      <input id="boxEmailInput" class="sheetInput" type="email" inputmode="email" placeholder="xxxx@u.box.com" autocomplete="off">
+      <div class="mutedText">送信時にこのアドレスをコピーするので、メールの宛先に貼り付けてください。</div>
+    </div>
     <div class="card">
       <div class="cardTitle">保存容量</div>
       <div id="storageInfo" class="mutedText">計算中...</div>
@@ -126,8 +165,8 @@
 
 <!-- 下部タブ -->
 <nav id="tabBar" class="tabBar">
-  <button class="tabBtn active" data-tab="home"><span class="tabIcon" data-icon="building"></span><span>現場</span></button>
-  <button class="tabBtn" data-tab="manual"><span class="tabIcon" data-icon="book"></span><span>マニュアル</span></button>
+  <button class="tabBtn active" data-tab="manual"><span class="tabIcon" data-icon="book"></span><span>マニュアル</span></button>
+  <button class="tabBtn" data-tab="photos"><span class="tabIcon" data-icon="camera"></span><span>写真・報告</span></button>
   <button class="tabBtn" data-tab="settings"><span class="tabIcon" data-icon="settings"></span><span>設定</span></button>
 </nav>
 
@@ -156,6 +195,7 @@
 <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1"></script>
+<script src="manual-data.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
