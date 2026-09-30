@@ -1,8 +1,7 @@
 .DS_Store
 Thumbs.db
 desktop.ini
-# 社内データ（マニュアル）はリポジトリに入れない
-manual/
-manual-data.js
+# 社内データは載せない（各アプリはJSON取り込み方式）
 *.pdf
-マニュアル_*.json
+*.xls
+*.xlsx
