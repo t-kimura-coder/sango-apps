@@ -1,7 +1,14 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 8;
+const APP_VERSION = 9;
+
+// お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
+// （自動では増えないので、書き忘れるとお知らせが古いまま残る）
+const ANNOUNCEMENTS = [
+  { date: "2026-09-30", type: "feature", text: "お知らせと使い方のページを追加しました（ホーム右上のベルと？マーク）" },
+  { date: "2026-09-30", type: "feature", text: "「現場ナビ」として公開しました。工程ごとのマニュアル閲覧、写真の撮りだめ、報告用の写真選択とBoxへの送信ができます" },
+];
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -85,6 +92,8 @@ const ICONS = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   send: '<path d="M4 12l16-8-6 16-3-7z"/><path d="M11 13l9-9"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
@@ -376,6 +385,8 @@ const VIEW_TABS = {
   reportView: "report",
   summaryView: "report",
   settingsView: "",
+  announceView: "",
+  helpView: "",
 };
 let currentView = "dashView";
 let viewBeforeSettings = "dashView";
@@ -1462,10 +1473,53 @@ function goReport() {
   showView("reportView");
 }
 
+// 設定・お知らせ・使い方は、タブの外にある画面。戻るで元の画面に帰る
+const SUB_VIEWS = ["settingsView", "announceView", "helpView"];
+function openSubView(id) {
+  if (!SUB_VIEWS.includes(currentView)) viewBeforeSettings = currentView;
+  showView(id);
+}
+function backFromSubView() {
+  const back = { dashView: goDash, manualView: goManual, homeView: goHome, reportView: goReport }[viewBeforeSettings];
+  if (back) back();
+  else showView(viewBeforeSettings);
+}
+
 function openSettings() {
-  if (currentView !== "settingsView") viewBeforeSettings = currentView;
   renderSettings();
-  showView("settingsView");
+  openSubView("settingsView");
+}
+
+/* ---------- お知らせ ---------- */
+
+const ANNOUNCE_SEEN_KEY = "genba-photo-announce-seen";
+
+function announceSeenCount() {
+  try {
+    return Number(localStorage.getItem(ANNOUNCE_SEEN_KEY) || 0);
+  } catch (e) {
+    return 0;
+  }
+}
+function updateBellDot() {
+  document.querySelectorAll(".bellDot").forEach((d) => (d.hidden = ANNOUNCEMENTS.length <= announceSeenCount()));
+}
+function openAnnouncements() {
+  const unseen = ANNOUNCEMENTS.length - announceSeenCount();
+  $("announceList").innerHTML = ANNOUNCEMENTS.map(
+    (a, i) =>
+      `<div class="announceItem"><div class="announceHead">` +
+      `<span class="pill ${a.type === "fix" ? "pillWood" : "pillGreen"}">${a.type === "fix" ? "修正" : "機能"}</span>` +
+      `<span class="announceDate">${fmtDate(a.date)}</span>${i < unseen ? '<span class="announceNew">NEW</span>' : ""}</div>` +
+      `<div>${esc(a.text)}</div></div>`
+  ).join("");
+  try {
+    localStorage.setItem(ANNOUNCE_SEEN_KEY, String(ANNOUNCEMENTS.length));
+  } catch (e) {
+    /* ignore */
+  }
+  updateBellDot();
+  openSubView("announceView");
 }
 
 /* ---------- 起動 ---------- */
@@ -1525,11 +1579,20 @@ function init() {
   $("summaryBtn").addEventListener("click", () => openSummary(null, "siteView"));
   $("groupBackBtn").addEventListener("click", goManual);
   $("groupShootBtn").addEventListener("click", shootFromGroup);
-  $("settingsBackBtn").addEventListener("click", () => {
-    const back = { dashView: goDash, manualView: goManual, homeView: goHome, reportView: goReport }[viewBeforeSettings];
-    if (back) back();
-    else showView(viewBeforeSettings);
+  $("settingsBackBtn").addEventListener("click", backFromSubView);
+  document.querySelectorAll(".subBackBtn").forEach((b) => {
+    b.innerHTML = icon(ICONS.back, 26);
+    b.addEventListener("click", backFromSubView);
   });
+  document.querySelectorAll(".bellBtn").forEach((b) => {
+    b.insertAdjacentHTML("afterbegin", icon(ICONS.bell, 24));
+    b.addEventListener("click", openAnnouncements);
+  });
+  document.querySelectorAll(".helpBtn").forEach((b) => {
+    b.innerHTML = icon(ICONS.help, 24);
+    b.addEventListener("click", () => openSubView("helpView"));
+  });
+  updateBellDot();
   $("dashReportBtn").addEventListener("click", goReport);
   $("dashPhotoBtn").addEventListener("click", goHome);
   $("sendBoxBtn").addEventListener("click", sendToBox);

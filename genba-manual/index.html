@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -24,7 +24,11 @@
         <div class="brandName">現場ナビ</div>
         <div class="brandTagline">現場を、もっとスムーズに。</div>
       </div>
-      <button class="iconBtn settingsBtn" aria-label="設定"></button>
+      <div class="headerActions">
+        <button class="iconBtn helpBtn" aria-label="使い方"></button>
+        <button class="iconBtn bellBtn" aria-label="お知らせ"><span class="bellDot" hidden></span></button>
+        <button class="iconBtn settingsBtn" aria-label="設定"></button>
+      </div>
     </header>
     <div class="heroCopy">いい家を、<br>現場から。</div>
     <img src="art/hero-sky.webp?v=1" class="heroSky" alt="">
@@ -259,6 +263,66 @@
   </div>
 </section>
 
+<!-- お知らせ -->
+<section id="announceView" class="view" hidden>
+  <header class="topbar">
+    <button class="iconBtn subBackBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle">お知らせ</h1>
+  </header>
+  <div class="viewBody">
+    <div id="announceList" class="announceList"></div>
+  </div>
+</section>
+
+<!-- 使い方 -->
+<section id="helpView" class="view" hidden>
+  <header class="topbar">
+    <button class="iconBtn subBackBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle">使い方</h1>
+  </header>
+  <div class="viewBody">
+    <div class="card helpCard">
+      <div class="helpStep">はじめに（1回だけ）</div>
+      <ol class="helpList">
+        <li>右上の歯車から<b>氏名</b>と<b>Boxのアップロード用メールアドレス</b>を登録します。</li>
+        <li>「工程」タブの案内から、Boxにある<b>マニュアル_○○.json</b>を取り込みます。取り込んだマニュアルはこのiPhoneの中に保存されます。</li>
+        <li>「写真」タブで<b>担当現場</b>を登録します。</li>
+      </ol>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">マニュアルを見る</div>
+      <ol class="helpList">
+        <li>ホームか「工程」タブで、基礎〜引渡しの6つから工程を選びます。</li>
+        <li>項目をタップすると、マニュアルのページが開きます。ピンチで拡大できます。</li>
+        <li>最近見た項目は、ホームの「前回の続き」からすぐ開けます。</li>
+      </ol>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">現場で写真を撮る</div>
+      <ol class="helpList">
+        <li>「写真」タブで現場を選び、今回の工程の<b>撮影</b>を押します。工程マニュアルの画面の「撮る」「写真を撮る」からも撮れます。</li>
+        <li>撮るとその場で「現場×工程」に仕分けられます。続けて撮るときは<b>もう1枚撮る</b>。</li>
+        <li>標準カメラで撮った写真は、撮影ボタン横の写真マークからまとめて取り込めます。</li>
+      </ol>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">週の報告を送る（金・土曜）</div>
+      <ol class="helpList">
+        <li>「報告」タブで現場を選び、報告に使う写真をタップして選びます。長押しで拡大できます。</li>
+        <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選んで宛先に貼り付けて送ります。</li>
+        <li>送ったら<b>報告済み</b>にします。次の報告は翌日からの写真になります。休工で間が空いても、前回の報告の翌日から自動でまとまります。</li>
+      </ol>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">データについて</div>
+      <ul class="helpList">
+        <li>写真とマニュアルは、このiPhoneの中だけに保存されます。</li>
+        <li>容量が気になったら、「写真」タブの現場画面にある過去の報告から、送った写真を削除してください。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <!-- 下部タブ -->
 <nav id="tabBar" class="tabBar">
   <button class="tabBtn active" data-tab="home"><span class="tabIcon" data-icon="home"></span><span>ホーム</span></button>
@@ -293,6 +357,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
