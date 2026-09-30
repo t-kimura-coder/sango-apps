@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -59,17 +59,9 @@ function groupOfProcess(pid) {
   return GROUPS.find((g) => g.cats.includes(pid)) || GROUPS[0];
 }
 
-// 大分類のイラスト（仮）。GPTの透過PNGが届いたら art/<id>.png に置き、groupArt() を img に切り替える
-const GROUP_ART = {
-  g1: '<path d="M6 22L32 11l26 11-26 11z" fill="#dcdfe2"/><path d="M6 22v8l26 11v-8z" fill="#b9bdc2"/><path d="M58 22v8L32 41v-8z" fill="#a4a9af"/><path d="M16 22l16-6.5L48 22l-16 6.5z" fill="#8e949b"/>',
-  g2: '<g stroke="#d9a86a" stroke-width="3.2" fill="none" stroke-linejoin="round"><path d="M10 42V22L32 7l22 15v20"/><path d="M10 22h44M18 22v20M26 22v20M38 22v20M46 22v20M6 42h52M22 14.5h20"/></g>',
-  g3: '<path d="M12 24h40v18H12z" fill="#efe3cf"/><path d="M5 27L32 8l27 19" fill="none" stroke="#2f3a40" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/><rect x="17" y="29" width="11" height="9" rx="1" fill="#9cc3dc"/><rect x="36" y="29" width="9" height="13" fill="#b08457"/>',
-  g4: '<path d="M8 6h48v36H8z" fill="#f2dfbf"/><path d="M8 42l11-8h26l11 8z" fill="#d9b584"/><path d="M19 6v28M45 6v28" stroke="#c89b62" stroke-width="2"/><rect x="25" y="12" width="11" height="13" fill="#bcd8e8" stroke="#fff" stroke-width="2"/>',
-  g5: '<path d="M13 5v22a8 8 0 0 0 8 8h8" fill="none" stroke="#8d949b" stroke-width="7" stroke-linecap="round"/><path d="M37 13h13v6h-6v5" fill="none" stroke="#6f777e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 30c3 4 4.5 6.5 4.5 8.5a4.5 4.5 0 0 1-9 0c0-2 1.5-4.5 4.5-8.5z" fill="#3aa0db"/>',
-  g6: '<path d="M22 19l10-8 10 8v10H22z" fill="none" stroke="#0e5a45" stroke-width="3.5" stroke-linejoin="round"/><rect x="29.5" y="21" width="5" height="5" fill="#0e5a45"/><path d="M7 34c6-4 12-5 18-3l10 3c3 1 3 5-1 5H24M7 34v8h31l14-8c3-2 1-6-3-5l-9 3" fill="#f0c38f" stroke="#d99f5f" stroke-width="2" stroke-linejoin="round"/>',
-};
+// 大分類のイラスト（GPT生成の透過画像を余白カット・縮小して art/ に置いたもの。元画像は現場訪問マニュアルアプリ/design/）
 function groupArt(g, h = 56) {
-  return `<svg viewBox="0 0 64 48" height="${h}" aria-hidden="true">${GROUP_ART[g.id]}</svg>`;
+  return `<img src="art/${g.id}.webp?v=1" alt="" style="height:${h}px" decoding="async">`;
 }
 
 /* ---------- アイコン ---------- */

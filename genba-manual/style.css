@@ -197,7 +197,7 @@ svg { flex: none; }
 }
 .groupCard:active { transform: scale(0.98); }
 .groupArt { height: 64px; margin-top: var(--space-md); display: flex; align-items: center; justify-content: center; }
-.groupArt img { max-height: 64px; max-width: 80%; }
+.groupArt img { max-height: 64px; max-width: 86%; object-fit: contain; }
 .groupName { display: flex; align-items: center; justify-content: center; gap: 2px; padding: var(--space-xs) 0 var(--space-sm); font-size: var(--fs-xl); font-weight: 800; color: var(--color-heading); }
 .groupSub { padding: 6px 2px; font-size: 10.5px; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-sub); background: var(--color-primary-soft); }
 .groupCard:nth-child(even) .groupSub { background: var(--color-wood-soft); }
@@ -219,7 +219,7 @@ svg { flex: none; }
 .recentList { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-sm); }
 .recentItem { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); box-shadow: var(--shadow-card); }
 .recentThumb { width: 56px; height: 56px; border-radius: 10px; background: var(--color-wood-soft); display: flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
-.recentThumb img { max-width: 90%; max-height: 90%; }
+.recentThumb img { max-width: 88%; max-height: 88%; object-fit: contain; }
 .recentText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .recentName { font-weight: 700; color: var(--color-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recentMeta { font-size: var(--fs-xs); color: var(--color-text-muted); }
@@ -237,7 +237,7 @@ svg { flex: none; }
 .groupTitle { font-size: 38px; font-weight: 900; color: var(--color-heading); line-height: 1.2; }
 .groupDesc { font-size: var(--fs-sm); color: var(--color-text-sub); }
 .groupHeroArt { position: absolute; right: 0; top: 0; width: 38%; height: 100%; display: flex; align-items: center; justify-content: center; }
-.groupHeroArt img { max-width: 100%; max-height: 150px; }
+.groupHeroArt img { max-width: 100%; max-height: 130px; object-fit: contain; }
 .catSection { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-card); padding: var(--space-md); margin-bottom: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
 .catHead { display: flex; align-items: center; gap: var(--space-md); }
 .catIcon { width: 44px; height: 44px; border-radius: 12px; background: var(--color-primary-soft); color: var(--color-primary); display: flex; align-items: center; justify-content: center; flex: none; }
