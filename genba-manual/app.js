@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 
 if ("serviceWorker" in navigator) {
   let swRefreshing = false;
@@ -42,6 +42,36 @@ function processOf(id) {
   return PROCESS_MAP[id] || { id, no: 99, name: "（不明な工程）", short: "不明", guide: "" };
 }
 
+/* ---------- 6つの大分類（画面の入口） ---------- */
+// 17分類を現場の流れに沿って6つにまとめたもの。工程画面のカードとステッパーに使う
+const GROUPS = [
+  { id: "g1", name: "基礎", sub: "着工〜基礎工事", desc: "解体・仮設準備から、地盤・基礎工事までの工程です。", cats: ["p01", "p02"] },
+  { id: "g2", name: "上棟", sub: "建て方・構造", desc: "足場を掛け、構造躯体の組み立てから屋根の下地までを行います。", cats: ["p03", "p04", "p05"] },
+  { id: "g3", name: "外装", sub: "屋根・外壁・サッシ", desc: "外壁の下地・断熱から、屋根と外壁の仕上げまでの工程です。", cats: ["p06", "p09", "p14"] },
+  { id: "g4", name: "内装", sub: "大工工事・内装仕上げ", desc: "内部の下地・造作から、塗装・クロス・床の仕上げまでの工程です。", cats: ["p07", "p08", "p11", "p12", "p13"] },
+  { id: "g5", name: "設備", sub: "電気・給排水・設備", desc: "電気配線、給排水・暖房・換気の配管と器具の取付けです。", cats: ["p10"] },
+  { id: "g6", name: "引渡し", sub: "完了検査・引渡し", desc: "美装・各種検査・外構を経て、お引渡しまでの工程です。", cats: ["p15", "p16", "p17"] },
+];
+function groupOf(gid) {
+  return GROUPS.find((g) => g.id === gid) || GROUPS[0];
+}
+function groupOfProcess(pid) {
+  return GROUPS.find((g) => g.cats.includes(pid)) || GROUPS[0];
+}
+
+// 大分類のイラスト（仮）。GPTの透過PNGが届いたら art/<id>.png に置き、groupArt() を img に切り替える
+const GROUP_ART = {
+  g1: '<path d="M6 22L32 11l26 11-26 11z" fill="#dcdfe2"/><path d="M6 22v8l26 11v-8z" fill="#b9bdc2"/><path d="M58 22v8L32 41v-8z" fill="#a4a9af"/><path d="M16 22l16-6.5L48 22l-16 6.5z" fill="#8e949b"/>',
+  g2: '<g stroke="#d9a86a" stroke-width="3.2" fill="none" stroke-linejoin="round"><path d="M10 42V22L32 7l22 15v20"/><path d="M10 22h44M18 22v20M26 22v20M38 22v20M46 22v20M6 42h52M22 14.5h20"/></g>',
+  g3: '<path d="M12 24h40v18H12z" fill="#efe3cf"/><path d="M5 27L32 8l27 19" fill="none" stroke="#2f3a40" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/><rect x="17" y="29" width="11" height="9" rx="1" fill="#9cc3dc"/><rect x="36" y="29" width="9" height="13" fill="#b08457"/>',
+  g4: '<path d="M8 6h48v36H8z" fill="#f2dfbf"/><path d="M8 42l11-8h26l11 8z" fill="#d9b584"/><path d="M19 6v28M45 6v28" stroke="#c89b62" stroke-width="2"/><rect x="25" y="12" width="11" height="13" fill="#bcd8e8" stroke="#fff" stroke-width="2"/>',
+  g5: '<path d="M13 5v22a8 8 0 0 0 8 8h8" fill="none" stroke="#8d949b" stroke-width="7" stroke-linecap="round"/><path d="M37 13h13v6h-6v5" fill="none" stroke="#6f777e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 30c3 4 4.5 6.5 4.5 8.5a4.5 4.5 0 0 1-9 0c0-2 1.5-4.5 4.5-8.5z" fill="#3aa0db"/>',
+  g6: '<path d="M22 19l10-8 10 8v10H22z" fill="none" stroke="#0e5a45" stroke-width="3.5" stroke-linejoin="round"/><rect x="29.5" y="21" width="5" height="5" fill="#0e5a45"/><path d="M7 34c6-4 12-5 18-3l10 3c3 1 3 5-1 5H24M7 34v8h31l14-8c3-2 1-6-3-5l-9 3" fill="#f0c38f" stroke="#d99f5f" stroke-width="2" stroke-linejoin="round"/>',
+};
+function groupArt(g, h = 56) {
+  return `<svg viewBox="0 0 64 48" height="${h}" aria-hidden="true">${GROUP_ART[g.id]}</svg>`;
+}
+
 /* ---------- アイコン ---------- */
 
 function icon(paths, size = 22, width = 2) {
@@ -66,6 +96,9 @@ const ICONS = {
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   send: '<path d="M4 12l16-8-6 16-3-7z"/><path d="M11 13l9-9"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
+  home: '<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  report: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
 };
 
 /* ---------- 日付 ---------- */
@@ -341,16 +374,21 @@ function releaseUrls(bucket) {
 }
 
 const VIEW_TABS = {
+  dashView: "home",
   manualView: "manual",
-  manualCatView: "manual",
+  groupView: "manual",
   manualItemView: "manual",
   homeView: "photos",
   siteView: "photos",
   shotView: "photos",
-  summaryView: "photos",
-  settingsView: "settings",
+  reportView: "report",
+  summaryView: "report",
+  settingsView: "",
 };
+let currentView = "dashView";
+let viewBeforeSettings = "dashView";
 function showView(id) {
+  currentView = id;
   Object.keys(VIEW_TABS).forEach((v) => ($(v).hidden = v !== id));
   $("tabBar").hidden = id === "shotView";
   const tab = VIEW_TABS[id];
@@ -527,7 +565,7 @@ async function renderSite() {
     cards.appendChild(card);
   });
 
-  $("summaryBtn").textContent = `報告をまとめる（${current.length}枚）`;
+  $("summaryBtn").textContent = `報告用の写真を選ぶ（${current.length}枚）`;
 
   const reports = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1));
   const past = $("pastReports");
@@ -547,6 +585,13 @@ async function openProcessPicker() {
   const picked = new Set(site.processes);
   openSheet("今回の工程を選ぶ（複数可）", (body, close) => {
     PROCESSES.forEach((p) => {
+      const g = groupOfProcess(p.id);
+      if (g.cats[0] === p.id) {
+        const label = document.createElement("div");
+        label.className = "pickGroupLabel";
+        label.textContent = g.name;
+        body.appendChild(label);
+      }
       const b = document.createElement("button");
       b.className = "pickItem" + (picked.has(p.id) ? " picked" : "");
       b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span><span class="pickMark">${picked.has(p.id) ? icon(ICONS.check, 20) : ""}</span>`;
@@ -739,21 +784,24 @@ async function onLibraryPicked() {
   renderSite();
 }
 
-/* ---------- ④ 報告まとめ ---------- */
+/* ---------- 報告：写真を選ぶ ---------- */
 
 let summaryReportId = null; // null = 今回（未報告）の分
 let summaryPhotos = [];
+let summaryFilter = "all";
+let summaryFrom = "siteView";
 const selectedIds = new Set();
 
-async function openSummary(reportId) {
+async function openSummary(reportId, from) {
   summaryReportId = reportId;
+  summaryFilter = "all";
+  if (from) summaryFrom = from;
   selectedIds.clear();
   await renderSummary();
   showView("summaryView");
 }
 
 async function renderSummary() {
-  releaseUrls("summary");
   const site = await dbGet("sites", currentSiteId);
   const all = await getSitePhotos(currentSiteId);
   let label;
@@ -765,37 +813,52 @@ async function renderSummary() {
     summaryPhotos = unreported(all);
     label = periodLabel(periodStart(site, summaryPhotos)).text;
   }
+  $("summaryTitle").textContent = site.name;
   $("summaryPeriod").textContent = label;
+  $("summaryHeading").textContent = summaryReportId ? "過去の報告の写真" : "今回の写真";
 
-  const groups = $("summaryGroups");
-  groups.innerHTML = "";
-  const byProc = {};
-  summaryPhotos.forEach((p) => (byProc[p.processId] = byProc[p.processId] || []).push(p));
-  Object.keys(byProc)
-    .sort((a, b) => processOf(a).no - processOf(b).no)
-    .forEach((pid) => {
-      const list = byProc[pid].sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1));
-      const g = document.createElement("div");
-      g.className = "summaryGroup";
-      g.innerHTML =
-        `<div class="summaryGroupHead"><span class="summaryGroupName">${esc(processOf(pid).name)}</span>` +
-        `<span class="mutedText" data-count="${pid}"></span></div><div class="photoGrid"></div>`;
-      const grid = g.querySelector(".photoGrid");
-      list.forEach((ph) => grid.appendChild(photoCell(ph)));
-      groups.appendChild(g);
+  const procIds = [...new Set(summaryPhotos.map((p) => p.processId))].sort((a, b) => processOf(a).no - processOf(b).no);
+  if (summaryFilter !== "all" && !procIds.includes(summaryFilter)) summaryFilter = "all";
+  const chips = $("summaryChips");
+  chips.innerHTML = "";
+  [["all", "すべて"], ...procIds.map((id) => [id, processOf(id).short])].forEach(([id, name]) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (summaryFilter === id ? " active" : "");
+    b.textContent = name;
+    b.addEventListener("click", () => {
+      summaryFilter = id;
+      renderSummaryGrid();
+      chips.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c === b));
     });
+    chips.appendChild(b);
+  });
+  chips.hidden = procIds.length === 0;
+  renderSummaryGrid();
   $("summaryEmpty").hidden = summaryPhotos.length > 0;
   $("markReportedBtn").hidden = !!summaryReportId;
   $("deleteReportPhotosBtn").hidden = !summaryReportId || summaryPhotos.length === 0;
   updateSelectionUi();
 }
 
+function renderSummaryGrid() {
+  releaseUrls("summary");
+  const list = summaryPhotos
+    .filter((p) => summaryFilter === "all" || p.processId === summaryFilter)
+    .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
+  const grid = $("summaryGrid");
+  grid.innerHTML = "";
+  list.forEach((ph) => grid.appendChild(photoCell(ph)));
+  $("summaryCount").textContent =
+    summaryFilter === "all" ? `写真が ${list.length} 枚あります。` : `${processOf(summaryFilter).name}の写真が ${list.length} 枚あります。`;
+}
+
 function photoCell(ph) {
   const cell = document.createElement("button");
-  cell.className = "photoCell";
+  cell.className = "photoCell" + (selectedIds.has(ph.id) ? " selected" : "");
   cell.innerHTML =
     `<img src="${blobUrl("summary", ph.thumb)}" alt="">` +
     `<span class="check">${icon(ICONS.check, 18, 3)}</span>` +
+    `<span class="photoTag">${esc(processOf(ph.processId).short)}</span>` +
     `<span class="photoDate">${fmtDate(ph.dateKey)}</span>`;
   // 長押しで拡大、通常タップで選択切替
   let pressTimer = null;
@@ -822,14 +885,7 @@ function photoCell(ph) {
 }
 
 function updateSelectionUi() {
-  document.querySelectorAll("[data-count]").forEach((el) => {
-    const pid = el.dataset.count;
-    const inGroup = summaryPhotos.filter((p) => p.processId === pid);
-    const sel = inGroup.filter((p) => selectedIds.has(p.id)).length;
-    el.textContent = `${sel} / ${inGroup.length} 選択`;
-  });
-  const n = selectedIds.size;
-  $("sendBoxBtn").innerHTML = n ? `${icon(ICONS.send)}選んだ${n}枚をBoxへ送信` : "報告に使う写真を選んでください";
+  $("selectedCount").textContent = selectedIds.size;
 }
 
 function safeFileName(s) {
@@ -1043,7 +1099,6 @@ async function deleteReportPhotos() {
 // 初回に取り込み、IndexedDB(meta / manualPages)に保存して使う
 
 let manualMeta = null; // { key:"manual", version, title, builtAt, importedAt, items, guides }
-let manualCatId = null;
 let manualCatItems = [];
 let manualItemIndex = 0;
 let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
@@ -1054,30 +1109,140 @@ async function loadManualMeta() {
   PROCESSES.forEach((p) => (p.guide = guides[p.id] || ""));
 }
 
+// 6つの大分類カード（ホームと工程タブで共通）
+function renderGroupGrid(container) {
+  container.innerHTML = "";
+  GROUPS.forEach((g) => {
+    const b = document.createElement("button");
+    b.className = "groupCard";
+    b.innerHTML =
+      `<span class="groupArt">${groupArt(g)}</span>` +
+      `<span class="groupName">${esc(g.name)}<span class="chev">${icon(ICONS.chevron, 18, 2.6)}</span></span>` +
+      `<span class="groupSub">${esc(g.sub)}</span>`;
+    b.addEventListener("click", () => openGroup(g.id));
+    container.appendChild(b);
+  });
+}
+
+function manualEmptyCard() {
+  const card = document.createElement("div");
+  card.className = "card emptyState";
+  card.innerHTML =
+    '<div class="emptyTitle">マニュアルを取り込みましょう</div>' +
+    '<div class="emptyText">Boxにある「マニュアル_○○.json」を選ぶと、このiPhoneの中に保存されます（初回のみ）。写真・報告の機能はマニュアルがなくても使えます。</div>';
+  card.appendChild(sheetButton("マニュアルを取り込む", "btnPrimary", () => $("manualInput").click()));
+  return card;
+}
+
 function renderManual() {
-  const list = $("manualCats");
-  list.innerHTML = "";
-  if (!manualMeta) {
-    const empty = document.createElement("div");
-    empty.className = "emptyState";
-    empty.innerHTML =
-      '<div class="emptyTitle">マニュアルを取り込みましょう</div>' +
-      '<div class="emptyText">Boxにある「マニュアル_○○.json」を選ぶと、このiPhoneの中に保存されます（初回のみ）。写真・報告の機能はマニュアルがなくても使えます。</div>';
-    empty.appendChild(sheetButton("マニュアルを取り込む", "btnPrimary", () => $("manualInput").click()));
-    list.appendChild(empty);
+  const empty = $("manualEmpty");
+  empty.innerHTML = "";
+  if (!manualMeta) empty.appendChild(manualEmptyCard());
+  renderGroupGrid($("manualGroups"));
+}
+
+let currentGroupId = "g1";
+
+async function openGroup(gid) {
+  currentGroupId = gid;
+  const g = groupOf(gid);
+  const idx = GROUPS.indexOf(g);
+  const stepper = $("groupStepper");
+  stepper.innerHTML = "";
+  GROUPS.forEach((x, i) => {
+    const b = document.createElement("button");
+    b.className = "step" + (i < idx ? " done" : "") + (i === idx ? " current" : "");
+    b.innerHTML = `<span class="stepDot"></span><span>${esc(x.name)}</span>`;
+    b.addEventListener("click", () => openGroup(x.id));
+    stepper.appendChild(b);
+  });
+  $("groupTitle").textContent = g.name;
+  $("groupDesc").textContent = g.desc;
+  $("groupHeroArt").innerHTML = groupArt(g, 110);
+
+  const items = manualMeta ? manualMeta.items : [];
+  manualCatItems = [];
+  const wrap = $("groupCats");
+  wrap.innerHTML = "";
+  if (!manualMeta) wrap.appendChild(manualEmptyCard());
+  g.cats.forEach((pid) => {
+    const p = processOf(pid);
+    const catItems = items.filter((it) => it.cat === pid);
+    const sec = document.createElement("div");
+    sec.className = "catSection";
+    sec.innerHTML =
+      `<div class="catHead"><span class="catIcon">${icon(ICONS.list, 22)}</span>` +
+      `<span class="catHeadText"><span class="catName">${esc(p.name)}</span><br>` +
+      `<span class="catMeta">${manualMeta ? `${catItems.length}項目` : "マニュアル未取り込み"}</span></span></div>` +
+      (p.guide ? `<div class="guideBox">撮影メモ：${esc(p.guide)}</div>` : "");
+    const shoot = sheetButton("", "btnOutline catShootBtn", () => shootFromManual(pid));
+    shoot.innerHTML = `${icon(ICONS.camera, 18)}撮る`;
+    sec.querySelector(".catHead").appendChild(shoot);
+    catItems.forEach((it) => {
+      const index = manualCatItems.length;
+      manualCatItems.push(it);
+      const row = document.createElement("button");
+      row.className = "manualRow";
+      row.innerHTML =
+        `<span class="manualRowNo">${it.no ? esc(it.no) : "・"}</span>` +
+        `<span class="manualRowName">${esc(it.name)}</span>` +
+        `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+      row.addEventListener("click", () => openManualItem(index));
+      sec.appendChild(row);
+    });
+    wrap.appendChild(sec);
+  });
+  activeSitesCache = (await getSites()).filter((s) => !s.archived);
+  showView("groupView");
+}
+
+// 下の「写真を撮る」：大分類に工程が複数あれば先にどれかを選ぶ
+// （タップ直後に同期でカメラを開くため、シートのボタンから直接呼ぶ）
+function shootFromGroup() {
+  const g = groupOf(currentGroupId);
+  if (g.cats.length === 1) {
+    shootFromManual(g.cats[0]);
     return;
   }
-  PROCESSES.forEach((p) => {
-    const n = manualMeta.items.filter((it) => it.cat === p.id).length;
-    const b = document.createElement("button");
-    b.className = "card manualCat";
-    b.innerHTML =
-      `<span class="manualCatNo">${p.no}</span>` +
-      `<span class="manualCatText"><span class="manualItemName">${esc(p.name)}</span><br><span class="mutedText">${n}項目</span></span>` +
-      `<span class="chev">${icon(ICONS.chevron, 20)}</span>`;
-    b.addEventListener("click", () => openManualCat(p.id));
-    list.appendChild(b);
+  openSheet("どの工程の写真ですか", (body, close) => {
+    g.cats.forEach((pid) => {
+      const b = document.createElement("button");
+      b.className = "pickItem";
+      b.innerHTML = `<span>${esc(processOf(pid).name)}</span>${icon(ICONS.camera, 20)}`;
+      b.addEventListener("click", () => {
+        close();
+        shootFromManual(pid);
+      });
+      body.appendChild(b);
+    });
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
+}
+
+/* ---------- 最近見た項目（ホームの「前回の続き」） ---------- */
+
+const RECENT_KEY = "genba-photo-recent";
+
+function getRecent() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+function pushRecent(item) {
+  const list = getRecent().filter((r) => r.id !== item.id);
+  list.unshift({ id: item.id, at: new Date().toISOString() });
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 3)));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 async function onManualPicked() {
@@ -1112,6 +1277,7 @@ async function onManualPicked() {
     await loadManualMeta();
     toast(`マニュアル（${manualMeta.version}版）を取り込みました`);
     if (!$("settingsView").hidden) renderSettings();
+    else if (currentView === "groupView") openGroup(currentGroupId);
     else goManual();
   } catch (e) {
     console.error(e);
@@ -1128,29 +1294,6 @@ async function deleteManual() {
   await loadManualMeta();
   toast("マニュアルを削除しました");
   renderSettings();
-}
-
-async function openManualCat(catId) {
-  if (!manualMeta) return goManual();
-  manualCatId = catId;
-  const p = processOf(catId);
-  manualCatItems = manualMeta.items.filter((it) => it.cat === catId);
-  $("manualCatTitle").textContent = p.name;
-  $("manualCatGuide").hidden = !p.guide;
-  $("manualCatGuide").textContent = p.guide ? `撮影メモ：${p.guide}` : "";
-  const list = $("manualItems");
-  list.innerHTML = "";
-  manualCatItems.forEach((it, i) => {
-    const b = document.createElement("button");
-    b.className = "manualRow";
-    b.innerHTML =
-      `<span>${it.no ? `<span class="manualRowNo">${esc(it.no)}</span>` : ""}${esc(it.name)}</span>` +
-      `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
-    b.addEventListener("click", () => openManualItem(i));
-    list.appendChild(b);
-  });
-  activeSitesCache = (await getSites()).filter((s) => !s.archived);
-  showView("manualCatView");
 }
 
 async function openManualItem(index) {
@@ -1170,13 +1313,13 @@ async function openManualItem(index) {
   }
   $("manualPrevBtn").disabled = index === 0;
   $("manualNextBtn").disabled = index === manualCatItems.length - 1;
+  pushRecent(it);
   showView("manualItemView");
 }
 
 // マニュアルから直接撮影する。iPhoneのSafariはユーザー操作から間を置くとカメラ起動を
 // 拒否することがあるので、DB読み込みを挟まず同期的にカメラを開く
-function shootFromManual() {
-  const pid = manualCatId;
+function shootFromManual(pid) {
   const sites = activeSitesCache;
   if (!sites.length) {
     toast("先に「写真・報告」タブで担当現場を登録してください");
@@ -1254,6 +1397,85 @@ async function renderSettings() {
   info.textContent = text;
 }
 
+/* ---------- ホーム ---------- */
+
+async function renderDash() {
+  renderGroupGrid($("dashGroups"));
+  const sites = (await getSites()).filter((s) => !s.archived);
+  let total = 0;
+  for (const site of sites) total += unreported(await getSitePhotos(site.id)).length;
+  $("dashReportSub").textContent = total
+    ? `撮りためた写真 ${total} 枚から、報告用を選んで送ります。`
+    : "撮りためた写真から、報告用を選んで送ります。";
+
+  const recent = manualMeta
+    ? getRecent().map((r) => ({ r, it: manualMeta.items.find((x) => x.id === r.id) })).filter((x) => x.it)
+    : [];
+  $("recentSection").hidden = recent.length === 0;
+  const list = $("recentList");
+  list.innerHTML = "";
+  recent.forEach(({ r, it }) => {
+    const g = groupOfProcess(it.cat);
+    const b = document.createElement("button");
+    b.className = "recentItem";
+    b.innerHTML =
+      `<span class="recentThumb">${groupArt(g, 40)}</span>` +
+      `<span class="recentText"><span><span class="pill pillWood">${esc(g.name)}</span></span>` +
+      `<span class="recentName">${esc(it.name)}</span><span class="recentMeta">最終閲覧：${fmtDateTime(r.at)}</span></span>` +
+      `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.addEventListener("click", async () => {
+      await openGroup(g.id);
+      const index = manualCatItems.findIndex((x) => x.id === it.id);
+      if (index >= 0) openManualItem(index);
+    });
+    list.appendChild(b);
+  });
+}
+
+function goDash() {
+  renderDash();
+  showView("dashView");
+}
+
+/* ---------- 報告タブ：現場の一覧 ---------- */
+
+async function renderReportList() {
+  const sites = (await getSites()).filter((s) => !s.archived);
+  const list = $("reportSiteList");
+  list.innerHTML = "";
+  if (!sites.length) {
+    const empty = document.createElement("div");
+    empty.className = "emptyState";
+    empty.innerHTML = '<div class="emptyText">まだ現場が登録されていません。「写真」タブから担当現場を登録してください。</div>';
+    list.appendChild(empty);
+  }
+  for (const site of sites) {
+    const current = unreported(await getSitePhotos(site.id));
+    const card = document.createElement("button");
+    card.className = "siteCard";
+    card.innerHTML =
+      `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
+      `<span class="chev">${icon(ICONS.chevron, 18)}</span></div>` +
+      `<div class="siteMeta">今回 ${periodLabel(periodStart(site, current)).text} ・ 写真 ${current.length}枚</div>`;
+    card.addEventListener("click", () => {
+      currentSiteId = site.id;
+      openSummary(null, "reportView");
+    });
+    list.appendChild(card);
+  }
+}
+
+function goReport() {
+  renderReportList();
+  showView("reportView");
+}
+
+function openSettings() {
+  if (currentView !== "settingsView") viewBeforeSettings = currentView;
+  renderSettings();
+  showView("settingsView");
+}
+
 /* ---------- 起動 ---------- */
 
 function goHome() {
@@ -1273,7 +1495,16 @@ function init() {
   $("summaryBackBtn").innerHTML = icon(ICONS.back, 26);
   $("siteMenuBtn").innerHTML = icon(ICONS.dots, 26);
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
-  document.querySelectorAll(".tabIcon").forEach((el) => (el.innerHTML = icon(ICONS[el.dataset.icon], 24)));
+  $("groupBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("settingsBackBtn").innerHTML = icon(ICONS.back, 26);
+  document.querySelectorAll(".settingsBtn").forEach((b) => {
+    b.innerHTML = icon(ICONS.settings, 24);
+    b.addEventListener("click", openSettings);
+  });
+  document.querySelectorAll("[data-icon]").forEach((el) => {
+    const size = el.classList.contains("tabIcon") ? 24 : el.classList.contains("reportCardIcon") ? 40 : el.classList.contains("bannerIcon") ? 28 : 20;
+    el.innerHTML = icon(ICONS[el.dataset.icon], size);
+  });
 
   $("addSiteBtn").addEventListener("click", addSite);
   $("addSiteEmptyBtn").addEventListener("click", addSite);
@@ -1284,7 +1515,6 @@ function init() {
   $("siteBackBtn").addEventListener("click", goHome);
   $("siteMenuBtn").addEventListener("click", openSiteMenu);
   $("addProcessBtn").addEventListener("click", openProcessPicker);
-  $("summaryBtn").addEventListener("click", () => openSummary(null));
   $("cameraInput").addEventListener("change", onCameraPicked);
   $("libraryInput").addEventListener("change", onLibraryPicked);
   $("shotAgainBtn").addEventListener("click", () => startCamera(shootProcessId));
@@ -1294,21 +1524,31 @@ function init() {
   $("shotUndoBtn").addEventListener("click", undoLastShot);
   $("summaryBackBtn").addEventListener("click", () => {
     releaseUrls("summary");
-    renderSite();
-    showView("siteView");
+    if (summaryFrom === "reportView") goReport();
+    else {
+      renderSite();
+      showView("siteView");
+    }
   });
+  $("summaryBtn").addEventListener("click", () => openSummary(null, "siteView"));
+  $("groupBackBtn").addEventListener("click", goManual);
+  $("groupShootBtn").addEventListener("click", shootFromGroup);
+  $("settingsBackBtn").addEventListener("click", () => {
+    const back = { dashView: goDash, manualView: goManual, homeView: goHome, reportView: goReport }[viewBeforeSettings];
+    if (back) back();
+    else showView(viewBeforeSettings);
+  });
+  $("dashReportBtn").addEventListener("click", goReport);
+  $("dashPhotoBtn").addEventListener("click", goHome);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
-  $("manualCatBackBtn").innerHTML = icon(ICONS.back, 26);
   $("manualItemBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("manualCatBackBtn").addEventListener("click", goManual);
   $("manualItemBackBtn").addEventListener("click", () => {
     releaseUrls("manual");
-    showView("manualCatView");
+    showView("groupView");
   });
   $("manualPrevBtn").addEventListener("click", () => openManualItem(manualItemIndex - 1));
   $("manualNextBtn").addEventListener("click", () => openManualItem(manualItemIndex + 1));
-  $("manualCatShootBtn").addEventListener("click", shootFromManual);
   $("manualInput").addEventListener("change", onManualPicked);
   $("importManualBtn").addEventListener("click", () => $("manualInput").click());
   $("deleteManualBtn").addEventListener("click", deleteManual);
@@ -1320,19 +1560,17 @@ function init() {
 
   document.querySelectorAll(".tabBtn").forEach((b) =>
     b.addEventListener("click", () => {
-      if (b.dataset.tab === "photos") goHome();
+      if (b.dataset.tab === "home") goDash();
       if (b.dataset.tab === "manual") goManual();
-      if (b.dataset.tab === "settings") {
-        renderSettings();
-        showView("settingsView");
-      }
+      if (b.dataset.tab === "photos") goHome();
+      if (b.dataset.tab === "report") goReport();
     })
   );
 
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  loadManualMeta().then(goManual);
+  loadManualMeta().then(goDash);
 }
 
 init();

@@ -6,35 +6,92 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="現場写真">
-<title>現場写真メモ</title>
-<link rel="apple-touch-icon" href="icon-180.png">
-<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-<link rel="stylesheet" href="style.css?v=3">
+<meta name="apple-mobile-web-app-title" content="現場ナビ">
+<meta name="theme-color" content="#f7f5ef">
+<title>現場ナビ</title>
+<link rel="apple-touch-icon" href="icon-180.png?v=2">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
-<!-- マニュアル：17分類の一覧（起動時のホーム） -->
-<section id="manualView" class="view">
-  <header class="topbar">
-    <h1 class="topbarTitle">現場訪問マニュアル</h1>
-  </header>
+<!-- ホーム -->
+<section id="dashView" class="view">
+  <div class="hero">
+    <header class="brandBar">
+      <img src="icon-96.png?v=2" class="brandIcon" alt="">
+      <div class="brandText">
+        <div class="brandName">現場ナビ</div>
+        <div class="brandTagline">現場を、もっとスムーズに。</div>
+      </div>
+      <button class="iconBtn settingsBtn" aria-label="設定"></button>
+    </header>
+    <div class="heroCopy">いい家を、<br>現場から。</div>
+    <img src="hero-frame.png" class="heroImg" alt="" onerror="this.remove()">
+  </div>
   <div class="viewBody">
-    <div id="manualCats" class="manualList"></div>
+    <div class="sectionHead">
+      <h2 class="sectionTitle">工程から探す</h2>
+      <div class="sectionSub">工程を選んで、確認ポイントやマニュアルを表示します。</div>
+    </div>
+    <div id="dashGroups" class="groupGrid"></div>
+    <button id="dashReportBtn" class="reportCard">
+      <span class="reportCardIcon" data-icon="report"></span>
+      <span class="reportCardText">
+        <span class="reportCardTitle">今週の報告</span>
+        <span id="dashReportSub" class="reportCardSub">撮りためた写真から報告用を選んで送ります。</span>
+      </span>
+      <span class="chev" data-icon="chevron"></span>
+    </button>
+    <button id="dashPhotoBtn" class="bannerBtn">
+      <span class="bannerIcon" data-icon="camera"></span>
+      <span class="bannerText">
+        <span class="bannerTitle">写真整理</span>
+        <span class="bannerSub">工程ごとに写真を撮って保存します。</span>
+      </span>
+      <span class="chev" data-icon="chevron"></span>
+    </button>
+    <div id="recentSection" hidden>
+      <div class="sectionHead rowHead">
+        <h2 class="sectionTitle small">前回の続き</h2>
+      </div>
+      <div id="recentList" class="recentList"></div>
+    </div>
   </div>
 </section>
 
-<!-- マニュアル：分類内の項目一覧 -->
-<section id="manualCatView" class="view" hidden>
+<!-- 工程：6つの大分類 -->
+<section id="manualView" class="view" hidden>
   <header class="topbar">
-    <button id="manualCatBackBtn" class="iconBtn" aria-label="戻る"></button>
-    <h1 id="manualCatTitle" class="topbarTitle"></h1>
+    <h1 class="topbarTitle">工程</h1>
+    <button class="iconBtn settingsBtn" aria-label="設定"></button>
   </header>
   <div class="viewBody">
-    <div id="manualCatGuide" class="guideBox" hidden></div>
-    <button id="manualCatShootBtn" class="btn btnPrimary btnLarge">この工程の写真を撮る</button>
-    <div id="manualItems" class="manualList"></div>
+    <div id="manualEmpty"></div>
+    <div id="manualGroups" class="groupGrid"></div>
   </div>
+</section>
+
+<!-- 工程マニュアル：大分類の中身 -->
+<section id="groupView" class="view" hidden>
+  <header class="topbar">
+    <button id="groupBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle center">工程マニュアル</h1>
+    <span class="iconBtnSpacer"></span>
+  </header>
+  <div id="groupStepper" class="stepper"></div>
+  <div class="viewBody">
+    <div class="groupHero">
+      <span class="pill pillWood">工程</span>
+      <div id="groupTitle" class="groupTitle"></div>
+      <div id="groupDesc" class="groupDesc"></div>
+      <div id="groupHeroArt" class="groupHeroArt"></div>
+    </div>
+    <div id="groupCats"></div>
+  </div>
+  <footer class="bottomActions">
+    <button id="groupShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>写真を撮る</button>
+  </footer>
 </section>
 
 <!-- マニュアル：項目の本文（PDFページ） -->
@@ -53,17 +110,18 @@
   </div>
 </section>
 
-<!-- ① 現場写真（担当現場の一覧） -->
+<!-- 写真：担当現場の一覧 -->
 <section id="homeView" class="view" hidden>
   <header class="topbar">
-    <h1 class="topbarTitle">現場写真・報告</h1>
+    <h1 class="topbarTitle">写真整理</h1>
     <button id="addSiteBtn" class="iconBtn" aria-label="現場を追加"></button>
   </header>
   <div class="viewBody">
+    <div class="sectionSub">現場を選んで、工程ごとに写真を撮ります。</div>
     <div id="siteList" class="siteList"></div>
     <div id="siteEmpty" class="emptyState" hidden>
       <div class="emptyTitle">担当現場を登録しましょう</div>
-      <div class="emptyText">右上の＋から現場名を登録すると、工程ごとに写真を撮れるようになります。</div>
+      <div class="emptyText">現場名を登録すると、工程ごとに写真を撮れるようになります。</div>
       <button id="addSiteEmptyBtn" class="btn btnPrimary">現場を追加</button>
     </div>
     <button id="toggleArchivedBtn" class="linkBtn" hidden></button>
@@ -71,7 +129,7 @@
   </div>
 </section>
 
-<!-- ② 現場画面（撮影の起点） -->
+<!-- 写真：現場画面（撮影の起点） -->
 <section id="siteView" class="view" hidden>
   <header class="topbar">
     <button id="siteBackBtn" class="iconBtn" aria-label="戻る"></button>
@@ -85,17 +143,17 @@
     </div>
     <div class="sectionLabel">今回の工程（タップで撮影）</div>
     <div id="processCards" class="processCards"></div>
-    <button id="addProcessBtn" class="btn btnDashed">＋ 工程を追加（17分類から）</button>
-    <button id="summaryBtn" class="btn btnSecondary btnLarge">報告をまとめる</button>
+    <button id="addProcessBtn" class="btn btnDashed">＋ 工程を追加</button>
+    <button id="summaryBtn" class="btn btnSecondary btnLarge">報告用の写真を選ぶ</button>
     <div id="pastReports" class="pastReports"></div>
   </div>
 </section>
 
-<!-- ③ 撮影直後（連続撮影） -->
+<!-- 撮影直後（連続撮影） -->
 <section id="shotView" class="view" hidden>
   <header class="topbar">
     <span class="iconBtnSpacer"></span>
-    <h1 id="shotTitle" class="topbarTitle"></h1>
+    <h1 id="shotTitle" class="topbarTitle center"></h1>
     <button id="shotCloseBtn" class="iconBtn" aria-label="閉じる"></button>
   </header>
   <div class="viewBody shotBody">
@@ -113,25 +171,50 @@
   </div>
 </section>
 
-<!-- ④ 報告まとめ -->
+<!-- 報告：現場の一覧 -->
+<section id="reportView" class="view" hidden>
+  <header class="topbar">
+    <h1 class="topbarTitle">報告</h1>
+    <button class="iconBtn settingsBtn" aria-label="設定"></button>
+  </header>
+  <div class="viewBody">
+    <div class="sectionSub">報告する現場を選ぶと、撮りためた写真から報告用を選べます。</div>
+    <div id="reportSiteList" class="siteList"></div>
+  </div>
+</section>
+
+<!-- 報告：写真を選ぶ -->
 <section id="summaryView" class="view" hidden>
   <header class="topbar">
     <button id="summaryBackBtn" class="iconBtn" aria-label="戻る"></button>
-    <h1 class="topbarTitle">報告まとめ</h1>
-    <span id="summaryPeriod" class="topbarSub"></span>
+    <h1 id="summaryTitle" class="topbarTitle"></h1>
   </header>
-  <div class="viewBody">
-    <div class="hint">メールに使う写真をタップで選びます。長押しで拡大表示。</div>
-    <div id="summaryGroups"></div>
+  <div class="viewBody summaryBody">
+    <div class="summaryHead">
+      <div>
+        <div id="summaryHeading" class="sectionTitle"></div>
+        <div id="summaryCount" class="sectionSub"></div>
+      </div>
+      <span id="summaryPeriod" class="pill pillMuted"></span>
+    </div>
+    <div id="summaryChips" class="chipRow"></div>
+    <div id="summaryGrid" class="photoGrid"></div>
     <div id="summaryEmpty" class="emptyState" hidden>
       <div class="emptyText">この期間の写真はまだありません。</div>
     </div>
+    <div class="hint">タップで選択、長押しで拡大表示。</div>
   </div>
-  <footer class="bottomActions">
-    <button id="sendBoxBtn" class="btn btnPrimary btnLarge">写真を選んでください</button>
+  <footer class="bottomActions selectBar">
+    <div class="selectBarRow">
+      <div class="selectBarText">
+        <div class="selectBarTitle">今週の報告</div>
+        <div class="selectBarCount">選択中 <b id="selectedCount">0</b> 枚</div>
+      </div>
+      <button id="sendBoxBtn" class="btn btnPrimary"><span data-icon="send"></span>Boxへ送信</button>
+    </div>
     <div class="btnRow">
-      <button id="shareSelectedBtn" class="btn btnSecondary">カメラロールに保存</button>
-      <button id="markReportedBtn" class="btn btnSecondary">報告済みにする</button>
+      <button id="shareSelectedBtn" class="btn btnOutline">写真を保存</button>
+      <button id="markReportedBtn" class="btn btnOutline">報告済みにする</button>
     </div>
     <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
   </footer>
@@ -140,6 +223,7 @@
 <!-- 設定 -->
 <section id="settingsView" class="view" hidden>
   <header class="topbar">
+    <button id="settingsBackBtn" class="iconBtn" aria-label="戻る"></button>
     <h1 class="topbarTitle">設定</h1>
   </header>
   <div class="viewBody">
@@ -174,9 +258,10 @@
 
 <!-- 下部タブ -->
 <nav id="tabBar" class="tabBar">
-  <button class="tabBtn active" data-tab="manual"><span class="tabIcon" data-icon="book"></span><span>マニュアル</span></button>
-  <button class="tabBtn" data-tab="photos"><span class="tabIcon" data-icon="camera"></span><span>写真・報告</span></button>
-  <button class="tabBtn" data-tab="settings"><span class="tabIcon" data-icon="settings"></span><span>設定</span></button>
+  <button class="tabBtn active" data-tab="home"><span class="tabIcon" data-icon="home"></span><span>ホーム</span></button>
+  <button class="tabBtn" data-tab="manual"><span class="tabIcon" data-icon="list"></span><span>工程</span></button>
+  <button class="tabBtn" data-tab="photos"><span class="tabIcon" data-icon="photo"></span><span>写真</span></button>
+  <button class="tabBtn" data-tab="report"><span class="tabIcon" data-icon="report"></span><span>報告</span></button>
 </nav>
 
 <!-- シート（汎用） -->
@@ -205,6 +290,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
