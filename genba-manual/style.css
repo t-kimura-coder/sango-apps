@@ -772,3 +772,21 @@ svg { flex: none; }
 /* 疑問の状態 */
 .noteStatus { min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1.5px solid var(--color-warning-text); background: var(--color-warning-soft); color: var(--color-warning-text); font-size: var(--fs-xs); font-weight: 800; }
 .noteStatus.done { border-color: var(--color-ok-text); background: var(--color-ok-soft); color: var(--color-ok-text); }
+
+/* ---------- 工程タブの最初の画面（GPT案に寄せる） ---------- */
+.pageHero { position: relative; overflow: hidden; min-height: calc(176px + env(safe-area-inset-top)); padding: calc(env(safe-area-inset-top) + 28px) var(--space-lg) var(--space-md); }
+.pageHeroArt { position: absolute; z-index: 0; top: env(safe-area-inset-top); right: -20%; width: 100%; max-width: 560px; pointer-events: none; }
+.pageHeroBtn { position: absolute; z-index: 2; top: calc(env(safe-area-inset-top) + 10px); right: var(--space-sm); }
+.pageHeroTitle { position: relative; z-index: 1; margin: 0 0 var(--space-sm); font-size: 30px; font-weight: 800; color: var(--color-heading); letter-spacing: 0.04em; }
+.pageHeroSub { position: relative; z-index: 1; font-size: var(--fs-md); line-height: 1.8; color: var(--color-text-sub); }
+@media (prefers-color-scheme: dark) {
+  .pageHeroArt { opacity: 0.25; }
+}
+.manualBody { padding-top: 0; }
+.manualBody .groupArt { height: 84px; margin-top: var(--space-sm); }
+.manualBody .groupArt img { max-height: 84px; }
+.manualBody .groupName { padding-bottom: 4px; }
+.manualBody .groupProg { gap: 4px; padding: 0 4px var(--space-sm); font-size: var(--fs-sm); }
+.manualBody .groupProg b { font-size: var(--fs-xl); margin-left: 4px; }
+.manualBody .groupProg .kindLabel { font-size: var(--fs-xs); padding: 1px 8px; margin-right: 2px; vertical-align: 3px; }
+.manualBody .groupSub { margin-top: auto; padding: 7px 2px; font-size: 11.5px; letter-spacing: -0.04em; line-height: 1.35; white-space: normal; min-height: 36px; display: flex; align-items: center; justify-content: center; }

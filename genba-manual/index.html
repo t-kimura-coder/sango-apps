@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=33">
+<link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
 
@@ -73,14 +73,13 @@
 
 <!-- 工程：6つの大分類 -->
 <section id="manualView" class="view" hidden>
-  <header class="topbar">
-    <h1 class="topbarTitle">工程</h1>
-    <button class="iconBtn settingsBtn" aria-label="設定"></button>
-  </header>
-  <div class="viewBody">
-    <div class="sectionHead">
-      <div class="sectionSub">現場の流れに沿った6つの工程に、確認ポイント・チェック・必要な品質写真がまとまっています。カードの数字は、今の現場の進み具合です。</div>
-    </div>
+  <div class="pageHero">
+    <img src="art/manual-hero.webp?v=1" class="pageHeroArt" alt="">
+    <button class="iconBtn settingsBtn pageHeroBtn" aria-label="設定"></button>
+    <h1 class="pageHeroTitle">工程</h1>
+    <div class="pageHeroSub">工程ごとの確認・チェック・<br>品質写真を確認できます。</div>
+  </div>
+  <div class="viewBody manualBody">
     <button class="siteBar curSiteBar"></button>
     <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>工程名・キーワードで探す</button>
     <div id="manualEmpty"></div>
@@ -452,6 +451,6 @@
 <input type="file" id="restoreInput" accept="application/json,.json" hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=30"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

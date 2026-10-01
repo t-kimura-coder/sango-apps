@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "工程タブの最初の画面を見やすくしました。6つの工程ごとに、今の現場のチェックと品質写真の進み具合が大きく出ます" },
   { date: "2026-10-01", type: "feature", text: "「疑問」のメモに「回答待ち／解決済み」を付けられるようにしました。報告にも状態が入ります" },
   { date: "2026-10-01", type: "feature", text: "マニュアル改訂に備えて、チェックに固定の番号を付けました。新しいマニュアル（2026版の再配布分）を取り込むと、今までのチェックと品質写真はそのまま引き継がれます" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルの並びを変えました。開いてすぐ「チェックポイント」と品質写真のカメラが出ます。品質写真を撮ると、そのチェックにも自動で印が付きます" },
