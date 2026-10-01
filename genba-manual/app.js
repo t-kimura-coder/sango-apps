@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 40;
+const APP_VERSION = 42;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,8 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "写真が読み込めない時は「？」ではなく「読み込めません」と出すようにしました。設定の「写真の点検」で、読み込めない写真が無いか確かめられます" },
+  { date: "2026-10-02", type: "fix", text: "撮影中にアプリが読み込み直されて写真が保存されなかった時は、そのことをお知らせして、撮影していた項目・工程のページを開くようにしました。建物の種類の絵も新しくしました" },
   { date: "2026-10-02", type: "feature", text: "現場に「完成イメージ」（完成予想CG・パースなど）の画像と、建物の種類を登録できるようにしました。ホームの現場の写真に出ます。画像はこのiPhoneの中だけに保存し、報告では送りません" },
   { date: "2026-10-02", type: "feature", text: "ホームの「やること」に、2週間以上報告していない現場が出るようにしました" },
   { date: "2026-10-02", type: "feature", text: "現場に「記録を始めた工程」を登録できるようにしました。途中から担当する現場やアプリを入れる前から進んでいる現場は、そこより前の工程を「導入前」として扱い、進み具合や撮り忘れに数えません（「現場の情報を変更」から）" },
@@ -682,9 +684,9 @@ function normKoujiNo(s) {
 // 完成イメージはお客様の設計データなので、この端末の中（meta: "cover:<現場ID>"）だけに置き、報告では送らない。
 // 画像が無い現場は、建物の種類に合わせた絵を出す（種類は現場名から自動で選び、登録シートで変えられる）
 const SITE_KINDS = [
-  { id: "house", label: "新築住宅", art: "art/g3.webp?v=1" },
-  { id: "reform", label: "リフォーム", art: "art/site-board.webp?v=1" },
-  { id: "shop", label: "店舗・事務所", art: "art/site-board.webp?v=1" },
+  { id: "house", label: "新築住宅", art: "art/kind-house.webp?v=1" },
+  { id: "reform", label: "リフォーム", art: "art/kind-reform.webp?v=1" },
+  { id: "shop", label: "店舗・事務所", art: "art/kind-shop.webp?v=1" },
 ];
 function guessSiteKind(name) {
   const s = String(name || "");
@@ -1384,21 +1386,63 @@ let lastSavedProcessId = null; // 撮影直後の画面で最後に保存した�
 // 品質写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
 let recordTarget = null;
 
+/* ---------- 撮影中にアプリが読み込み直された時の対策 ----------
+   メモリの少ない iPhone では、カメラから戻った時にアプリ（ページ）が読み込み直されることがあり、
+   その時は撮った写真がアプリに渡されず失われる（取り戻す方法は無い）。
+   せめて「保存されなかった」ことを伝え、撮っていた場所へ戻すため、カメラを開く前に行き先を控えておく */
+const PENDING_SHOT_KEY = "genba-photo-pending-shot";
+function markPendingShot(info) {
+  try {
+    sessionStorage.setItem(PENDING_SHOT_KEY, JSON.stringify({ ...info, siteId: currentSiteId, at: Date.now() }));
+  } catch (e) {}
+}
+function clearPendingShot() {
+  try {
+    sessionStorage.removeItem(PENDING_SHOT_KEY);
+  } catch (e) {}
+}
+// カメラを閉じた（撮らずにキャンセルした）時は控えを消す。撮った時は change の処理で消える
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  setTimeout(() => {
+    if (!$("processing") || $("processing").hidden) clearPendingShot();
+  }, 4000);
+});
+async function checkPendingShot() {
+  let p = null;
+  try {
+    p = JSON.parse(sessionStorage.getItem(PENDING_SHOT_KEY) || "null");
+  } catch (e) {}
+  clearPendingShot();
+  if (!p || Date.now() - p.at > 15 * 60 * 1000) return false;
+  alert("撮影中にアプリが読み込み直されたため、写真を保存できませんでした。\nお手数ですが、もう一度撮影してください。");
+  if (p.siteId && p.siteId !== currentSiteId) await setCurrentSite(p.siteId);
+  const it = p.itemId && manualMeta && manualMeta.items.find((x) => x.id === p.itemId);
+  if (it) {
+    currentMTab = "check";
+    await openGroup(groupOfProcess(it.cat).id, it.id);
+  } else if (p.processId) await openReportProc(p.processId);
+  return true;
+}
+
 function startRecordCamera(it, key) {
   recordTarget = { siteId: currentSiteId, itemId: it.id, checkKey: key };
   shootProcessId = it.cat;
+  markPendingShot({ itemId: it.id, processId: it.cat });
   $("cameraInput").click();
 }
 
 function startRecordLibrary(it, key) {
   recordTarget = { siteId: currentSiteId, itemId: it.id, checkKey: key };
   shootProcessId = it.cat;
+  markPendingShot({ itemId: it.id, processId: it.cat });
   $("recordLibraryInput").click();
 }
 
 function startCamera(pid) {
   recordTarget = null;
   shootProcessId = pid;
+  markPendingShot({ processId: pid });
   $("cameraInput").click();
 }
 
@@ -1411,6 +1455,7 @@ async function onCameraPicked() {
   const input = $("cameraInput");
   const file = input.files[0];
   input.value = "";
+  clearPendingShot();
   if (!file || !shootProcessId || !currentSiteId) return;
   setProcessing(true);
   if (recordTarget) {
@@ -1437,6 +1482,7 @@ async function onRecordLibraryPicked() {
   const input = $("recordLibraryInput");
   const file = input.files[0];
   input.value = "";
+  clearPendingShot();
   if (!file || !recordTarget) return;
   setProcessing(true, "写真を取り込み中...");
   const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
@@ -3295,8 +3341,7 @@ async function renderDash() {
   const sites = (await getSites()).filter((x) => !x.archived);
   const box = $("dashSiteCard");
   $("dashSiteCount").textContent = sites.length ? `（${sites.length}件）` : "";
-  const sums = [];
-  for (const x of sites) sums.push(await siteSummary(x));
+  const sums = await Promise.all(sites.map(siteSummary));
   const curSum = current ? sums.find((x) => x.site.id === current.id) : null;
   if (current) await loadSiteChecks();
 
@@ -3875,6 +3920,64 @@ function goManual() {
   showView("manualView");
 }
 
+/* ---------- 写真が読み込めない時 ----------
+   iPhone では、保存した写真のデータが読めなくなることがまれにある（「？」の画像になる）。
+   そのままだと何が起きたか分からないので、代わりに「読み込めません」と出し、設定の「写真の点検」で数を確かめられるようにする */
+document.addEventListener(
+  "error",
+  (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLImageElement) || !t.src.startsWith("blob:") || t.dataset.broken) return;
+    t.dataset.broken = "1";
+    t.classList.add("imgBroken");
+    const ph = document.createElement("span");
+    ph.className = "imgBrokenNote";
+    ph.textContent = "読み込めません";
+    t.after(ph);
+    console.warn("写真を読み込めませんでした", t.src);
+  },
+  true
+);
+
+async function canReadBlob(b) {
+  if (!(b instanceof Blob) || !b.size) return false;
+  try {
+    await b.slice(0, 16).arrayBuffer();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function checkPhotos() {
+  setProcessing(true, "写真を点検しています...");
+  const bad = [];
+  let total = 0;
+  try {
+    const all = await dbGetAll("photos");
+    total = all.length;
+    for (const p of all) {
+      const ok = (await canReadBlob(p.blob)) && (await canReadBlob(p.thumb));
+      if (!ok) bad.push(p);
+    }
+  } finally {
+    setProcessing(false);
+  }
+  if (!bad.length) {
+    alert(`写真 ${total}枚を点検しました。読み込めない写真はありません。`);
+    return;
+  }
+  const sites = Object.fromEntries((await getSites()).map((x) => [x.id, x.name]));
+  const lines = bad.slice(0, 8).map((p) => `・${sites[p.siteId] || "?"} ${processOf(p.processId).short} ${fmtDateTime(p.takenAt)}`);
+  const msg =
+    `写真 ${total}枚のうち、${bad.length}枚が読み込めませんでした。\n${lines.join("\n")}${bad.length > 8 ? "\nほか" + (bad.length - 8) + "枚" : ""}\n\n` +
+    "読み込めない写真は元に戻せません。一覧から消しますか？（品質写真なら、チェックの横のカメラで撮り直せます）";
+  if (!confirm(msg)) return;
+  await dbDeleteMany("photos", bad.map((p) => p.id));
+  await loadSiteChecks();
+  toast(`読み込めない写真 ${bad.length}枚を消しました`);
+}
+
 function init() {
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
   $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
@@ -3959,6 +4062,7 @@ function init() {
   $("restoreBtn").addEventListener("click", () => $("restoreInput").click());
   $("restoreInput").addEventListener("change", onRestorePicked);
   $("replyInput").addEventListener("change", onRepliesPicked);
+  $("checkPhotosBtn").addEventListener("click", checkPhotos);
   $("settingsReplyBtn").addEventListener("click", () => $("replyInput").click());
   $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
   $("tourAgainBtn").addEventListener("click", startTour);
@@ -3986,8 +4090,9 @@ function init() {
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  loadManualMeta().then(() => {
+  loadManualMeta().then(async () => {
     goDash();
+    if (await checkPendingShot()) return;
     if (tourShouldStart()) startTour();
   });
 }

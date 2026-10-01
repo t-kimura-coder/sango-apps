@@ -924,3 +924,8 @@ svg { flex: none; }
 .rhPhotos { position: absolute; right: 8%; top: 4px; width: 46%; }
 .rhIcon { position: absolute; right: 44%; top: 56px; width: 25%; }
 @media (prefers-color-scheme: dark) { .rhWood { display: none; } }
+
+/* 読み込めない写真 */
+img.imgBroken { visibility: hidden; }
+.imgBrokenNote { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 4px; text-align: center; font-size: 11px; font-weight: 700; color: var(--color-text-muted); background: var(--color-surface-sub); pointer-events: none; }
+.photoCell, .photoCardImg, .checkCam, .dsThumb, .coverPrev { position: relative; }
