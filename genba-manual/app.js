@@ -1,9 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 44;
-// 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
-const HAS_SITE_BOARD = true;
+const APP_VERSION = 45;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -12,6 +10,8 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "fix", text: "写真が「？」になって見えなくなる不具合の原因を直しました（写真の画像と、送る・報告済みなどの印を別々に保存するようにしました）。使っている途中でアプリが勝手に読み込み直されることも無くなりました（新しい版はホームに戻った時に切り替わります）" },
+  { date: "2026-10-02", type: "fix", text: "報告を送った日の後から付けたチェックやメモが、次の報告に入らないことがある不具合を直しました" },
   { date: "2026-10-02", type: "feature", text: "写真タブに見出しの絵を付けました（工程・報告タブとそろえました）" },
   { date: "2026-10-02", type: "feature", text: "工程マニュアルの画面を短くしました。メモは「メモを書く」を押すと書けます。「この項目のポイント」と「撮影ガイド」は見出しを押して開け閉めでき、閉じた状態は次も覚えています" },
   { date: "2026-10-02", type: "feature", text: "写真が読み込めない時は「？」ではなく「読み込めません」と出すようにしました。設定の「写真の点検」で、読み込めない写真が無いか確かめられます" },
@@ -59,12 +59,33 @@ const ANNOUNCEMENTS = [
   { date: "2026-09-30", type: "feature", text: "「現場ナビ」として公開しました。工程ごとのマニュアル閲覧、写真の撮りだめ、報告用の写真選択とBoxへの送信ができます" },
 ];
 
-if ("serviceWorker" in navigator) {
-  let swRefreshing = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (swRefreshing) return;
-    swRefreshing = true;
+// 新しい版が届いても、使っている途中（カメラ・写真選び・メモの入力中など）には読み込み直さない。
+// ホームを表示していて、何もしていない時にだけ切り替える。初めて開いた時（前の版が無い時）は読み込み直さない
+let swUpdateReady = false;
+let swUpdateToasted = false;
+function maybeApplyUpdate() {
+  if (!swUpdateReady) return;
+  const busy = !$("processing").hidden || !$("sheet").hidden || recordTarget || (() => {
+    try {
+      return !!sessionStorage.getItem("genba-photo-pending-shot");
+    } catch (e) {
+      return false;
+    }
+  })();
+  if (currentView === "dashView" && !busy && document.visibilityState === "visible") {
+    swUpdateReady = false;
     location.reload();
+  } else if (!swUpdateToasted) {
+    swUpdateToasted = true;
+    toast("新しい版が届きました。ホームに戻ると切り替わります");
+  }
+}
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    swUpdateReady = true;
+    setTimeout(maybeApplyUpdate, 300);
   });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
@@ -201,7 +222,10 @@ function fmtMMDD(key) {
 /* ---------- IndexedDB ---------- */
 
 const DB_NAME = "genba-photo";
-const DB_VERSION = 3; // v2: マニュアルパック用の manualPages / meta、v3: 現場ごとのチェック記録 checks
+const DB_VERSION = 4; // v2: マニュアルパック用の manualPages / meta、v3: 現場ごとのチェック記録 checks、v4: 写真の画像を images に分ける
+// 写真の画像（blob / thumb）は images に、印や工程などの情報は photos に分けて持つ。
+// iPhone（WebKit）では、読み出した写真をそのまま保存し直すと画像データが消えて「？」になることがあるため、
+// 画像は写真を作った時に1回だけ書き、印を付ける・外すなどの更新では画像に触らない
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -219,6 +243,25 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains("manualPages")) db.createObjectStore("manualPages", { keyPath: "page" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("images")) {
+        db.createObjectStore("images", { keyPath: "id" });
+        // 今までの写真の画像を images に移す（1回だけ）
+        const tx = req.transaction;
+        const imgs = tx.objectStore("images");
+        const cur = tx.objectStore("photos").openCursor();
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (!c) return;
+          const p = c.value;
+          if (p.blob || p.thumb) {
+            imgs.put({ id: p.id, blob: p.blob || null, thumb: p.thumb || null });
+            delete p.blob;
+            delete p.thumb;
+            c.update(p);
+          }
+          c.continue();
+        };
+      }
       if (!db.objectStoreNames.contains("checks")) {
         // key = "<siteId>|<itemId>"。marks は「区分|チェック文」→ {at, by}（後で品質管理に使えるよう、誰がいつ付けたかを残す）
         const s = db.createObjectStore("checks", { keyPath: "key" });
@@ -231,8 +274,38 @@ function openDB() {
 }
 const dbPromise = openDB();
 
+// 写真の情報に、images の画像（blob / thumb）を付けて返す（同じトランザクションの中で読む）
+function attachImages(tx, rows, done) {
+  const imgs = tx.objectStore("images");
+  let left = rows.length;
+  if (!left) return done(rows);
+  rows.forEach((p) => {
+    const r = imgs.get(p.id);
+    r.onsuccess = () => {
+      const im = r.result;
+      if (im) {
+        p.blob = im.blob;
+        p.thumb = im.thumb;
+      }
+      if (--left === 0) done(rows);
+    };
+    r.onerror = () => {
+      if (--left === 0) done(rows);
+    };
+  });
+}
+
 async function dbGetAll(store, indexName, key) {
   const db = await dbPromise;
+  if (store === "photos") {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["photos", "images"], "readonly");
+      const os = tx.objectStore("photos");
+      const req = indexName ? os.index(indexName).getAll(key) : os.getAll();
+      req.onsuccess = () => attachImages(tx, req.result || [], resolve);
+      req.onerror = () => reject(req.error);
+    });
+  }
   return new Promise((resolve, reject) => {
     const os = db.transaction(store, "readonly").objectStore(store);
     const req = indexName ? os.index(indexName).getAll(key) : os.getAll();
@@ -242,6 +315,14 @@ async function dbGetAll(store, indexName, key) {
 }
 async function dbGet(store, id) {
   const db = await dbPromise;
+  if (store === "photos") {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["photos", "images"], "readonly");
+      const req = tx.objectStore("photos").get(id);
+      req.onsuccess = () => (req.result ? attachImages(tx, [req.result], (r) => resolve(r[0])) : resolve(null));
+      req.onerror = () => reject(req.error);
+    });
+  }
   return new Promise((resolve, reject) => {
     const req = db.transaction(store, "readonly").objectStore(store).get(id);
     req.onsuccess = () => resolve(req.result || null);
@@ -250,6 +331,26 @@ async function dbGet(store, id) {
 }
 async function dbPutMany(store, items) {
   const db = await dbPromise;
+  if (store === "photos") {
+    // 画像は、まだ images に無い写真（新しく撮った・取り込んだ・バックアップから戻した）の時だけ書く
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["photos", "images"], "readwrite");
+      const ps = tx.objectStore("photos");
+      const imgs = tx.objectStore("images");
+      items.forEach((it) => {
+        const { blob, thumb, ...meta } = it;
+        ps.put(meta);
+        if (blob) {
+          const c = imgs.count(it.id);
+          c.onsuccess = () => {
+            if (!c.result) imgs.put({ id: it.id, blob, thumb: thumb || null });
+          };
+        }
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, "readwrite");
     const os = tx.objectStore(store);
@@ -273,9 +374,10 @@ async function dbClear(store) {
 async function dbDeleteMany(store, ids) {
   const db = await dbPromise;
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
+    const tx = db.transaction(store === "photos" ? ["photos", "images"] : store, "readwrite");
     const os = tx.objectStore(store);
     ids.forEach((id) => os.delete(id));
+    if (store === "photos") ids.forEach((id) => tx.objectStore("images").delete(id));
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -446,9 +548,12 @@ function blobUrl(bucket, blob) {
   (urlBuckets[bucket] = urlBuckets[bucket] || []).push(url);
   return url;
 }
+// 描き直しの最初に呼ぶので、すぐ捨てると新しい画面ができるまでの間、表示中の写真が「？」になる。
+// 新しい画面に入れ替わった後（数秒後）に捨てる
 function releaseUrls(bucket) {
-  (urlBuckets[bucket] || []).forEach((u) => URL.revokeObjectURL(u));
+  const old = urlBuckets[bucket] || [];
   urlBuckets[bucket] = [];
+  if (old.length) setTimeout(() => old.forEach((u) => URL.revokeObjectURL(u)), 5000);
 }
 
 const VIEW_TABS = {
@@ -469,6 +574,7 @@ const VIEW_TABS = {
 let currentView = "dashView";
 let viewBeforeSettings = "dashView";
 function showView(id) {
+  setTimeout(maybeApplyUpdate, 500);
   currentView = id;
   Object.keys(VIEW_TABS).forEach((v) => ($(v).hidden = v !== id));
   $("tabBar").hidden = id === "shotView";
@@ -493,12 +599,18 @@ function setProcessing(on, text = "写真を保存中...") {
 }
 
 // 汎用ボトムシート。buildBody(bodyEl, close) で中身を組み立てる
-function openSheet(title, buildBody) {
+// onDismiss：シートの外を押して閉じた時に呼ぶ（入力を待っている処理を「キャンセル」で終わらせるため）
+let sheetDismiss = null;
+function openSheet(title, buildBody, onDismiss) {
   $("sheetTitle").textContent = title;
   const body = $("sheetBody");
   body.innerHTML = "";
   $("sheet").hidden = false;
-  const close = () => ($("sheet").hidden = true);
+  sheetDismiss = onDismiss || null;
+  const close = () => {
+    sheetDismiss = null;
+    $("sheet").hidden = true;
+  };
   buildBody(body, close);
 }
 function sheetButton(label, cls, onClick) {
@@ -531,7 +643,7 @@ function askText(title, initial, okLabel) {
       body.appendChild(sheetButton(okLabel, "btnPrimary", submit));
       body.appendChild(sheetButton("キャンセル", "btnSecondary", () => (close(), resolve(null))));
       setTimeout(() => input.focus(), 50);
-    });
+    }, () => resolve(null));
   });
 }
 
@@ -723,6 +835,7 @@ async function editSiteInfo(site) {
 }
 
 function editSiteSheet(site) {
+  let coverUrl = ""; // 画像の見本の URL（閉じる時に捨てる）
   return new Promise((resolve) => {
     openSheet(site ? "現場の情報を変更" : "現場を登録", (body, close) => {
       const me = mySurname();
@@ -756,7 +869,6 @@ function editSiteSheet(site) {
       coverIn.accept = "image/*";
       coverIn.hidden = true;
       body.appendChild(coverIn);
-      let coverUrl = "";
       const drawCover = async () => {
         if (coverUrl) URL.revokeObjectURL(coverUrl);
         coverUrl = "";
@@ -924,8 +1036,17 @@ function editSiteSheet(site) {
           resolve({ name, koujiNo: normKoujiNo(noIn.value), members, startGroup, kind, coverFile });
         })
       );
-      body.appendChild(sheetButton("キャンセル", "btnSecondary", () => (close(), resolve(null))));
+      body.appendChild(
+        sheetButton("キャンセル", "btnSecondary", () => {
+          if (coverUrl) URL.revokeObjectURL(coverUrl);
+          close();
+          resolve(null);
+        })
+      );
       if (!site) setTimeout(() => nameIn.focus(), 50);
+    }, () => {
+      if (coverUrl) URL.revokeObjectURL(coverUrl);
+      resolve(null);
     });
   });
 }
@@ -938,6 +1059,7 @@ function rerenderCurrentView() {
     albumView: renderAlbum,
     reportView: renderReport,
     reportProcView: renderReportProc,
+    reportPastView: goReport,
     siteManageView: renderSiteManage,
     groupView: () => openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id),
   };
@@ -945,7 +1067,7 @@ function rerenderCurrentView() {
 }
 
 // 描画の世代番号。await の間に次の描画が始まったら古い方は画面を触らない（写真が2倍に並ぶのを防ぐ）
-const renderGen = { album: 0, report: 0, manage: 0 };
+const renderGen = { album: 0, report: 0, manage: 0, dash: 0 };
 
 /* ---------- 現場の管理 ---------- */
 
@@ -1783,12 +1905,14 @@ async function renderReportProc() {
     $("procBarCount").textContent = picked.size;
     const thumbs = $("procBarThumbs");
     thumbs.innerHTML = "";
+    (urlBuckets.procBar || []).forEach((u) => URL.revokeObjectURL(u));
+    urlBuckets.procBar = [];
     list
       .filter((ph) => picked.has(ph.id))
       .slice(0, 3)
       .forEach((ph) => {
         const im = document.createElement("img");
-        im.src = blobUrl("reportProc", ph.thumb);
+        im.src = blobUrl("procBar", ph.thumb);
         thumbs.appendChild(im);
       });
   };
@@ -1878,10 +2002,16 @@ const MAIL_WARN_BYTES = 15 * 1024 * 1024;
 // 期間中に付けたチェックをまとめる（報告メールづくりと、後の品質管理の材料）
 async function buildCheckSummary(siteId, start, end) {
   if (!manualMeta) return [];
+  // 日付で区切ると、報告を送った日の後から付けたチェック・メモがどの報告にも入らなくなるので、
+  // 前回「報告済み」にした時刻より後のものを入れる（まだ報告していない現場は期間の初日から）
+  const since = (await dbGetAll("reports", "siteId", siteId))
+    .map((r) => r.createdAt)
+    .filter(Boolean)
+    .sort()
+    .pop();
   const inPeriod = (iso) => {
     if (!iso) return false;
-    const k = toDateKey(new Date(iso));
-    return k >= start && k <= end;
+    return since ? iso > since : toDateKey(new Date(iso)) >= start;
   };
   const recs = await dbGetAll("checks", "siteId", siteId);
   const recordPhotos = (await getSitePhotos(siteId)).filter(isRecordPhoto);
@@ -1928,7 +2058,7 @@ async function buildCheckSummary(siteId, start, end) {
       item: it.name,
       process: processOf(it.cat).name,
       checks_total: total,
-      checks_done: Object.keys(rec.marks || {}).filter((k) => k.startsWith("checks|")).length,
+      checks_done: ((it.text && it.text.checks) || []).filter((c) => rec.marks && rec.marks[checkKey("checks", c)]).length,
       not_applicable: !!rec.na,
       checked,
       notes,
@@ -2021,8 +2151,13 @@ async function sendToBox() {
 
     body.appendChild(
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
+        if (!site.draftReportId) {
+          site.draftReportId = newId(); // 同じ期間を送り直しても同じ番号（見守りで二重に数えない）
+          await dbPut("sites", site);
+        }
         const payload = {
           kind: "genba-photo-report",
+          report_id: site.draftReportId,
           schema: 6, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
@@ -2113,6 +2248,7 @@ async function markReported(memo = "") {
         await dbPut("reports", report);
         await dbPutMany("photos", targets);
         site.lastReportEnd = end;
+        delete site.draftReportId;
         await dbPut("sites", site);
         close();
         toast(`報告済みにしました（次回は${fmtDate(addDays(end, 1))}から）`);
@@ -2930,7 +3066,8 @@ async function onRepliesPicked() {
 // まだ読んでいない返信（全現場）。ホームに出す
 async function unreadReplies() {
   const out = [];
-  (await dbGetAll("checks")).forEach((r) =>
+  const active = new Set((await getSites()).filter((x) => !x.archived).map((x) => x.id));
+  (await dbGetAll("checks")).filter((r) => active.has(r.siteId)).forEach((r) =>
     (r.notes || []).forEach((n) => (n.replies || []).forEach((x) => !x.readAt && out.push({ rec: r, note: n, reply: x })))
   );
   return out.sort((p, q) => (p.reply.at < q.reply.at ? 1 : -1));
@@ -3376,6 +3513,7 @@ function stepDots(sm, withLabels) {
 }
 
 async function renderDash() {
+  const gen = ++renderGen.dash;
   renderBrand();
   releaseUrls("dash");
   const current = await refreshSites();
@@ -3383,6 +3521,8 @@ async function renderDash() {
   const box = $("dashSiteCard");
   $("dashSiteCount").textContent = sites.length ? `（${sites.length}件）` : "";
   const sums = await Promise.all(sites.map(siteSummary));
+  const unread = await unreadReplies();
+  if (gen !== renderGen.dash) return; // 後から始まった描き直しに任せる
   const curSum = current ? sums.find((x) => x.site.id === current.id) : null;
   if (current) await loadSiteChecks();
 
@@ -3436,7 +3576,6 @@ async function renderDash() {
 
   // ---- やること（その時に必要なものだけ） ----
   const todo = [];
-  const unread = await unreadReplies();
   if (unread.length) todo.push({ icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
   const due = sums.filter((x) => x.reportDue);
   due.forEach((x) =>
@@ -3649,13 +3788,20 @@ async function exportBackup() {
     if (opts.checks) head.checks = await dbGetAll("checks");
     // 写真は1枚ずつ文字にして並べる（全体を1つの巨大な文字列にするとiPhoneのメモリが足りなくなるため）
     const parts = [JSON.stringify(head).slice(0, -1), ',"photos":['];
+    var skippedPhotos = 0;
     if (opts.photos) {
       const photos = await dbGetAll("photos");
+      let written = 0;
       for (let i = 0; i < photos.length; i++) {
         if (i % 10 === 0) setProcessing(true, `写真を書き出し中... ${i} / ${photos.length}`);
         const p = photos[i];
-        const rec = Object.assign({}, p, { blob: await blobToDataUrl(p.blob), thumb: p.thumb ? await blobToDataUrl(p.thumb) : null });
-        parts.push((i ? "," : "") + JSON.stringify(rec));
+        if (!(await canReadBlob(p.blob))) {
+          skippedPhotos++; // 読めない写真は飛ばす（1枚のせいでバックアップ全体が失敗しないように）
+          continue;
+        }
+        const rec = Object.assign({}, p, { blob: await blobToDataUrl(p.blob), thumb: (await canReadBlob(p.thumb)) ? await blobToDataUrl(p.thumb) : null });
+        parts.push((written ? "," : "") + JSON.stringify(rec));
+        written++;
       }
     }
     parts.push("]}");
@@ -3668,6 +3814,7 @@ async function exportBackup() {
   } finally {
     setProcessing(false);
   }
+  if (typeof skippedPhotos !== "undefined" && skippedPhotos) alert(`読み込めない写真が${skippedPhotos}枚あったため、その写真はバックアップに入れませんでした（設定の「写真の点検」で確認できます）。`);
   const sizeMb = (file.size / 1024 / 1024).toFixed(1);
   openSheet("バックアップを書き出す", (body, close) => {
     const info = document.createElement("div");
@@ -4117,7 +4264,12 @@ function init() {
   });
   $("markReportedBtn").addEventListener("click", markReported);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
-  document.querySelector(".sheetBackdrop").addEventListener("click", () => ($("sheet").hidden = true));
+  document.querySelector(".sheetBackdrop").addEventListener("click", () => {
+    const f = sheetDismiss;
+    sheetDismiss = null;
+    $("sheet").hidden = true;
+    if (f) f();
+  });
 
   document.querySelectorAll(".tabBtn").forEach((b) =>
     b.addEventListener("click", () => {

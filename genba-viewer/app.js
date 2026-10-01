@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -114,8 +114,12 @@ const NOTE_TYPES = {
 const TYPE_BY_LABEL = { 疑問: "question", 気づき: "notice", 職人さんの要望: "request" };
 
 // 同じ現場を二人以上で担当していると、現場ナビ側では別々の現場として届く。工事番号があればそれでまとめる
+let koujiBySiteId = new Map(); // site_id → 工事番号（後から番号を入れた現場の、番号が無い頃の報告もまとめるため）
+function normKouji(v) {
+  return String(v || "").normalize("NFKC").replace(/\s/g, "");
+}
 function siteKeyOf(r) {
-  const no = String(r.kouji_no || "").normalize("NFKC").replace(/\s/g, "");
+  const no = normKouji(r.kouji_no) || (r.site_id && koujiBySiteId.get(r.site_id)) || "";
   if (no) return "kouji:" + no;
   return r.site_id || "name:" + r.site;
 }
@@ -139,16 +143,18 @@ function buildData(reports, replies) {
   data.people = new Map();
   data.notes = new Map();
   data.replies = new Map();
-  const seen = new Set();
-  reports
-    .filter((r) => r && r.kind === "genba-photo-report" && r.period)
-    .sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1))
-    .forEach((r) => {
-      const k = `${siteKeyOf(r)}|${r.period.start}|${r.period.end}|${r.sent_at}`;
-      if (seen.has(k)) return;
-      seen.add(k);
-      data.reports.push(r);
-    });
+  const valid = reports.filter((r) => r && r.kind === "genba-photo-report" && r.period).sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
+  koujiBySiteId = new Map();
+  valid.forEach((r) => {
+    if (r.site_id && normKouji(r.kouji_no)) koujiBySiteId.set(r.site_id, normKouji(r.kouji_no));
+  });
+  const latest = new Map();
+  valid.forEach((r) => {
+    // 同じ人が同じ期間を送り直したものは、あとから届いた方だけを使う
+    const k = r.report_id ? "id:" + r.report_id : `${siteKeyOf(r)}|${personKeyOf(r)}|${r.period.start}`;
+    latest.set(k, r);
+  });
+  data.reports = [...latest.values()].sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
 
   data.reports.forEach((r) => {
     const sk = siteKeyOf(r);
@@ -170,7 +176,7 @@ function buildData(reports, replies) {
     (r.checks || []).forEach((c) =>
       (c.notes || []).forEach((n) => {
         const typeId = n.type_id || TYPE_BY_LABEL[n.type] || "notice";
-        const id = n.id || `${sk}|${c.item}|${n.at}|${n.text}`;
+        const id = n.id || `${sk}|${c.item}|${n.at}|${n.text}`; // 古い報告のメモには番号が無い
         const prev = data.notes.get(id);
         const ver = n.updated_at || r.sent_at;
         if (prev && prev._ver > ver) return; // 古い報告に入っていた同じメモは、新しい方を使う
@@ -184,6 +190,7 @@ function buildData(reports, replies) {
           status: n.status || "",
           resolvedAt: n.resolved_at || "",
           resolvedBy: n.resolved_by || "",
+          noId: !n.id,
           siteKey: sk,
           siteId: r.site_id || "", // 監督の端末での現場の番号（返信に入れる）
           siteName: r.site,
@@ -264,19 +271,22 @@ function updateNavBadge() {
 
 /* ---------- 写真 ---------- */
 const urlCache = new Map();
-async function photoUrl(name) {
+function photoUrl(name) {
   if (urlCache.has(name)) return urlCache.get(name);
-  let url = "";
-  if (demoMode) url = DEMO.photoUrl(name);
-  else {
+  const p = (async () => {
+    if (demoMode) return DEMO.photoUrl(name);
     const f = data.photoFiles.get(name);
-    if (f) {
-      const file = f.getFile ? await f.getFile() : f;
-      url = URL.createObjectURL(file);
-    }
-  }
-  urlCache.set(name, url);
-  return url;
+    if (!f) return "";
+    const file = f.getFile ? await f.getFile() : f;
+    return URL.createObjectURL(file);
+  })().catch(() => "");
+  urlCache.set(name, p);
+  return p;
+}
+async function clearUrlCache() {
+  const all = await Promise.all([...urlCache.values()]);
+  urlCache.clear();
+  all.forEach((u) => u && u.startsWith("blob:") && URL.revokeObjectURL(u));
 }
 // <img data-photo="ファイル名"> を後から埋める（一覧を先に出して、写真は見えてから読む）
 function fillPhotos(root) {
@@ -364,8 +374,7 @@ async function loadFromHandle() {
     const reports = [];
     const replies = [];
     data.photoFiles = new Map();
-    urlCache.forEach((u) => u && u.startsWith("blob:") && URL.revokeObjectURL(u));
-    urlCache.clear();
+    await clearUrlCache();
     let jsonCount = 0;
     for await (const f of walk(dirHandle)) {
       const lower = f.name.toLowerCase();
@@ -397,12 +406,13 @@ async function loadFromHandle() {
 // フォルダを選べないブラウザ用（Edge / Chrome 以外）。読むだけで、返信はファイルのダウンロードになる
 async function onFolderInput(e) {
   const files = [...e.target.files];
+  if (e.target.value !== undefined) e.target.value = ""; // 同じフォルダを選び直しても読み直せるように
   if (!files.length) return;
   showLoading("報告フォルダを読んでいます...");
   const reports = [];
   const replies = [];
   data.photoFiles = new Map();
-  urlCache.clear();
+  await clearUrlCache();
   for (const f of files) {
     const lower = f.name.toLowerCase();
     if (/\.(jpe?g|png|webp|heic)$/.test(lower)) data.photoFiles.set(f.name, f);
@@ -774,18 +784,20 @@ function openNote(id) {
     `<div class="card"><div class="origHead">${icon("save", 20)}<span>返信内容</span></div>` +
     `<textarea id="replyText" class="replyText" maxlength="1000" placeholder="${esc(n.personName || "監督")}さんへの返信を入力してください。&#10;現場の状況に寄り添った、わかりやすい内容を心がけましょう。"></textarea>` +
     `<div class="replyCount"><span id="replyCount">0</span> / 1000</div></div>`;
-  $("drawerFoot").innerHTML =
-    `<button id="draftBtn" class="btn btnOutline">${icon("save", 18)}下書き保存</button><button id="sendBtn" class="btn btnPrimary">${icon("send", 18)}送る</button>`;
+  $("drawerFoot").innerHTML = n.noId
+    ? `<div class="noReply">このメモは古い版の現場ナビから届いたため、返信しても監督のアプリに届きません。直接伝えてください。</div>`
+    : `<button id="draftBtn" class="btn btnOutline">${icon("save", 18)}下書き保存</button><button id="sendBtn" class="btn btnPrimary">${icon("send", 18)}送る</button>`;
   const ta = $("replyText");
+  if (n.noId) ta.disabled = true;
   ta.value = getDrafts()[id] || "";
   const upd = () => ($("replyCount").textContent = ta.value.length);
   upd();
   ta.addEventListener("input", upd);
-  $("draftBtn").addEventListener("click", () => {
+  if ($("draftBtn")) $("draftBtn").addEventListener("click", () => {
     setDraft(id, ta.value.trim());
     toast(ta.value.trim() ? "下書きを保存しました" : "下書きを消しました");
   });
-  $("sendBtn").addEventListener("click", async () => {
+  if ($("sendBtn")) $("sendBtn").addEventListener("click", async () => {
     const text = ta.value.trim();
     if (!text) {
       toast("返信の内容を入力してください");
@@ -865,7 +877,7 @@ function siteProgress(s) {
       if (!g) return;
       (c.checked || []).forEach((k) => {
         if (k.section && k.section !== "チェック") return;
-        (done[g] = done[g] || new Set()).add(k.id || `${c.item_id}|${k.text}`);
+        (done[g] = done[g] || new Set()).add(`${c.item_id}|${k.id || k.text}`);
       });
     })
   );
@@ -902,7 +914,7 @@ function renderSite(key) {
   const curGroup = prog ? (prog.find((g) => !g.before_start && g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
-    `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="#/person/${encodeURIComponent(s.personKey)}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
+    `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
     `<h1 class="heroTitle">${esc(s.name)}の報告</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
   html +=
