@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -19,7 +19,7 @@ const ANNOUNCEMENTS = [
   { date: "2026-10-01", type: "feature", text: "「記録写真」を「品質写真」に名前を変えました。並びはどこでも「品質（左）・報告（右）」にそろえています" },
   { date: "2026-10-01", type: "feature", text: "ホームに「写真整理」の入口を戻しました。工程タブでは、今の現場のチェックと品質写真の進み具合が分かるようにしました" },
   { date: "2026-10-01", type: "feature", text: "現場をアプリ全体で1つにまとめました。ホームの「今の現場」や各画面の上の欄から切り替え・追加ができ、「現場の管理」で名前の変更・完了・削除ができます" },
-  { date: "2026-10-01", type: "feature", text: "写真タブを今の現場のアルバムにしました。報告写真・品質写真が全部見え、写真要の記録がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます" },
+  { date: "2026-10-01", type: "feature", text: "写真タブを今の現場のアルバムにしました。品質写真・報告写真が全部見え、写真要の記録がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます" },
   { date: "2026-10-01", type: "feature", text: "報告タブを工程ごとのページにしました。撮影メモと注意文を見ながら報告写真を撮り・取り込み、送る写真を選べます。工程マニュアルの「この工程の報告写真」からも開けます" },
   { date: "2026-10-01", type: "feature", text: "品質写真を、写真ライブラリからも選べるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて使う人向けに、画面の場所を照らして案内する「使い方の案内」を付けました（設定・使い方からいつでも見られます）" },
@@ -27,7 +27,7 @@ const ANNOUNCEMENTS = [
   { date: "2026-10-01", type: "feature", text: "Boxへ送る報告に、期間中に付けたチェック（誰が・いつ）を含めるようにしました" },
   { date: "2026-10-01", type: "feature", text: "違う工程で撮った写真を、あとから正しい工程に変更できるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて開いたときに、お名前の登録を案内するようにしました（チェックの記録に名前が残ります）" },
-  { date: "2026-10-01", type: "feature", text: "写真を「報告写真（お客様向け）」と「品質写真（マニュアル用）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
+  { date: "2026-10-01", type: "feature", text: "写真を「品質写真（マニュアル用）」と「報告写真（お客様向け）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルの「写真要」のチェック横にカメラを付けました。撮ると写真が表示され、タップで確認・撮り直し・削除ができます" },
   { date: "2026-10-01", type: "feature", text: "写真を削除できるようにしました（報告の写真一覧で長押し、または選んで「削除」）" },
   { date: "2026-10-01", type: "fix", text: "チェックを付けると画面が一番上に戻ってしまう不具合を直しました" },
@@ -2593,8 +2593,8 @@ async function renderDash() {
       `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
       `<span class="curSiteMeta">${icon(ICONS.calendar, 14)}${periodLabel(periodStart(site, cands)).text}</span>` +
       `<span class="siteTiles">` +
-      `<span class="siteTile"><span class="tileLabel">${icon(ICONS.camSmall, 14)}報告写真</span><span><b>${cands.length}</b> 枚</span></span>` +
       (cov ? `<span class="siteTile"><span class="tileLabel">${icon(ICONS.report, 14)}写真要</span><span><b>${cov.done}</b>/${cov.total}</span></span>` : "") +
+      `<span class="siteTile"><span class="tileLabel">${icon(ICONS.camSmall, 14)}報告写真</span><span><b>${cands.length}</b> 枚</span></span>` +
       (cov ? `<span class="siteTile"><span class="tileLabel">進み具合</span><span class="tileBar"><span style="width:${pct}%"></span></span><span class="tilePct">${pct}%</span></span>` : "") +
       `</span></span><span class="siteSwitch pillSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
     card.firstElementChild.addEventListener("click", openSiteSwitcher);
