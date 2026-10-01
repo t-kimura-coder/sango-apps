@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 
@@ -221,6 +221,9 @@
     <div class="btnRow">
       <button id="shareSelectedBtn" class="btn btnOutline">写真を保存</button>
       <button id="markReportedBtn" class="btn btnOutline">報告済みにする</button>
+    </div>
+    <div class="btnRow subActions">
+      <button id="retagSelectedBtn" class="btn btnOutline">工程を変更</button>
       <button id="deleteSelectedBtn" class="btn btnOutline dangerOutline">削除</button>
     </div>
     <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
@@ -323,13 +326,14 @@
         <li>標準カメラで撮った写真は、撮影ボタン横の写真マークからまとめて取り込めます。</li>
         <li>写真は2種類あります。<b>報告写真</b>（お客様向け。工程カードの撮影ボタン）と、<b>記録写真</b>（マニュアルが求める写真。工程マニュアルの「写真要」のチェック横のカメラ）。撮る前に色付きのラベルの撮影メモを見てください。</li>
         <li>写真を消すときは、「報告」の写真一覧で写真を長押しして「削除」、まとめて消すときは選んでから下の「削除」。撮影直後の画面の小さい写真をタップしても消せます。</li>
+        <li>違う工程で撮ってしまった写真は、「報告」の写真一覧で選んで「工程を変更」（長押しの画面からも変更できます）。</li>
       </ol>
     </div>
     <div class="card helpCard">
       <div class="helpStep">週の報告を送る（金・土曜）</div>
       <ol class="helpList">
         <li>「報告」タブで現場を選び、報告に使う写真をタップして選びます。長押しで拡大できます。</li>
-        <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選んで宛先に貼り付けて送ります。</li>
+        <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選んで宛先に貼り付けて送ります。期間中に工程マニュアルで付けたチェックも一緒に送られ、報告づくりの材料になります。</li>
         <li>送ったら<b>報告済み</b>にします。次の報告は翌日からの写真になります。休工で間が空いても、前回の報告の翌日から自動でまとまります。</li>
       </ol>
     </div>
@@ -378,6 +382,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,9 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "Boxへ送る報告に、期間中に付けたチェック（誰が・いつ）を含めるようにしました" },
+  { date: "2026-10-01", type: "feature", text: "違う工程で撮った写真を、あとから正しい工程に変更できるようにしました" },
+  { date: "2026-10-01", type: "feature", text: "初めて開いたときに、お名前の登録を案内するようにしました（チェックの記録に名前が残ります）" },
   { date: "2026-10-01", type: "feature", text: "写真を「報告写真（お客様向け）」と「記録写真（マニュアル用）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルの「写真要」のチェック横にカメラを付けました。撮ると写真が表示され、タップで確認・撮り直し・削除ができます" },
   { date: "2026-10-01", type: "feature", text: "写真を削除できるようにしました（報告の写真一覧で長押し、または選んで「削除」）" },
@@ -969,7 +972,12 @@ function photoCell(ph) {
       longPressed = true;
       openPhotoViewer(ph.blob, [
         {
-          label: "この写真を削除",
+          label: "工程を変更",
+          cls: "btnPrimary",
+          onClick: () => pickProcessSheet("この写真の工程を変更", (pid) => retagPhotos([ph.id], pid)),
+        },
+        {
+          label: "削除",
           cls: "btnDanger",
           onClick: async () => {
             if (!confirm("この写真を削除しますか？")) return false;
@@ -1051,6 +1059,52 @@ async function shareSelected() {
 
 const MAIL_WARN_BYTES = 15 * 1024 * 1024;
 
+// 期間中に付けたチェックをまとめる（報告メールづくりと、後の品質管理の材料）
+async function buildCheckSummary(siteId, start, end) {
+  if (!manualMeta) return [];
+  const inPeriod = (iso) => {
+    if (!iso) return false;
+    const k = toDateKey(new Date(iso));
+    return k >= start && k <= end;
+  };
+  const recs = await dbGetAll("checks", "siteId", siteId);
+  const recordPhotos = (await getSitePhotos(siteId)).filter(isRecordPhoto);
+  const out = [];
+  for (const rec of recs) {
+    const it = manualMeta.items.find((x) => x.id === rec.itemId);
+    if (!it) continue;
+    const checked = Object.entries(rec.marks || {})
+      .filter(([, m]) => inPeriod(m.at))
+      .map(([key, m]) => {
+        const [section, ...rest] = key.split("|");
+        const text = rest.join("|");
+        const def = checkDefOf(it, key);
+        return {
+          section: section === "prep" ? "事前準備" : "チェック",
+          text,
+          at: m.at,
+          by: m.by || "",
+          photo_required: !!(def && def.photo === "要"),
+          record_photo: recordPhotos.some((p) => p.itemId === it.id && p.checkKey === key),
+        };
+      })
+      .sort((a, b) => (a.at < b.at ? -1 : 1));
+    const na = rec.na && inPeriod(rec.naAt);
+    if (!checked.length && !na) continue;
+    const total = ((it.text && it.text.checks) || []).length;
+    out.push({
+      item_no: it.no,
+      item: it.name,
+      process: processOf(it.cat).name,
+      checks_total: total,
+      checks_done: Object.keys(rec.marks || {}).filter((k) => k.startsWith("checks|")).length,
+      not_applicable: !!rec.na,
+      checked,
+    });
+  }
+  return out.sort((a, b) => allManualItems().findIndex((x) => x.name === a.item) - allManualItems().findIndex((x) => x.name === b.item));
+}
+
 async function sendToBox() {
   if (!selectedIds.size) {
     toast("報告に使う写真をタップして選んでください");
@@ -1084,6 +1138,8 @@ async function sendToBox() {
       selected_count: entries.filter((e) => e.photo.processId === p.id).length,
     }));
   const photoBytes = entries.reduce((s, e) => s + e.file.size, 0);
+  const checkSummary = await buildCheckSummary(site.id, start, end);
+  const checkCount = checkSummary.reduce((n, x) => n + x.checked.length, 0);
 
   openSheet("Boxへ送信", (body, close) => {
     const box = document.createElement("div");
@@ -1091,7 +1147,8 @@ async function sendToBox() {
     box.innerHTML =
       `現場：${esc(site.name)}<br>期間：${fmtDate(start)}〜${fmtDate(end)}<br>` +
       `工程：${esc(processes.map((p) => p.name).join(" / ") || "なし")}<br>` +
-      `写真：${entries.length}枚（約${(photoBytes / 1024 / 1024).toFixed(1)}MB）`;
+      `写真：${entries.length}枚（約${(photoBytes / 1024 / 1024).toFixed(1)}MB）<br>` +
+      `チェック：${checkSummary.length}項目・${checkCount}件（期間中に付けたもの）`;
     body.appendChild(box);
     if (photoBytes > MAIL_WARN_BYTES) {
       const warn = document.createElement("div");
@@ -1115,7 +1172,7 @@ async function sendToBox() {
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
-          schema: 1,
+          schema: 2, // 2: checks（期間中に付けたチェック）を追加
           app_version: APP_VERSION,
           sent_at: new Date().toISOString(),
           sender: getSetting(USER_NAME_KEY),
@@ -1130,6 +1187,7 @@ async function sendToBox() {
             date: e.photo.dateKey,
             taken_at: e.photo.takenAt,
           })),
+          checks: checkSummary,
         };
         const jsonName = safeFileName(`報告_${site.name}_${start}_${end}.json`);
         const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
@@ -1193,6 +1251,50 @@ async function markReported() {
       })
     );
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
+// 写真の工程を付け替える（違う工程で撮ってしまった時用）
+function pickProcessSheet(title, onPick) {
+  openSheet(title, (body, close) => {
+    PROCESSES.forEach((p) => {
+      const g = groupOfProcess(p.id);
+      if (g.cats[0] === p.id) {
+        const label = document.createElement("div");
+        label.className = "pickGroupLabel";
+        label.textContent = g.name;
+        body.appendChild(label);
+      }
+      const b = document.createElement("button");
+      b.className = "pickItem";
+      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span>`;
+      b.addEventListener("click", () => {
+        close();
+        onPick(p.id);
+      });
+      body.appendChild(b);
+    });
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
+async function retagPhotos(ids, pid) {
+  const photos = (await Promise.all(ids.map((id) => dbGet("photos", id)))).filter(Boolean);
+  photos.forEach((p) => (p.processId = pid));
+  await dbPutMany("photos", photos);
+  await renderSummary();
+  toast(`${photos.length}枚を「${processOf(pid).name}」に変更しました`);
+}
+
+function retagSelectedPhotos() {
+  if (!selectedIds.size) {
+    toast("工程を変更する写真をタップして選んでください");
+    return;
+  }
+  const ids = [...selectedIds];
+  pickProcessSheet(`選んだ${ids.length}枚の工程を変更`, async (pid) => {
+    selectedIds.clear();
+    await retagPhotos(ids, pid);
   });
 }
 
@@ -2207,6 +2309,49 @@ function openAnnouncements() {
   openSubView("announceView");
 }
 
+/* ---------- 名前の登録（初回のみ案内） ---------- */
+// チェックの記録に「誰が」を残すため。後で品質管理・育成の指標にも使う想定
+const NAME_ASKED_KEY = "genba-photo-name-asked";
+
+function askNameOnce() {
+  let asked = false;
+  try {
+    asked = localStorage.getItem(NAME_ASKED_KEY) === "1";
+  } catch (e) {
+    /* ignore */
+  }
+  if (asked || getSetting(USER_NAME_KEY)) return;
+  openSheet("お名前を登録してください", (body, close) => {
+    const intro = document.createElement("div");
+    intro.className = "nameIntro";
+    intro.textContent = "工程マニュアルのチェックや報告に、名前が一緒に記録されます。あとから設定で変更できます。";
+    const input = document.createElement("input");
+    input.className = "sheetInput";
+    input.placeholder = "山郷 太郎";
+    input.autocomplete = "name";
+    const done = (save) => {
+      if (save) {
+        const v = input.value.trim();
+        if (!v) {
+          input.focus();
+          return;
+        }
+        setSetting(USER_NAME_KEY, v);
+        toast(`${v}さんで登録しました`);
+      }
+      setSetting(NAME_ASKED_KEY, "1");
+      close();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing) done(true);
+    });
+    body.appendChild(intro);
+    body.appendChild(input);
+    body.appendChild(sheetButton("登録する", "btnPrimary", () => done(true)));
+    body.appendChild(sheetButton("あとで", "btnSecondary", () => done(false)));
+  });
+}
+
 /* ---------- 起動 ---------- */
 
 function goHome() {
@@ -2297,6 +2442,7 @@ function init() {
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
   $("copyBoxEmailBtn").addEventListener("click", copyBoxEmail);
   $("deleteSelectedBtn").addEventListener("click", deleteSelectedPhotos);
+  $("retagSelectedBtn").addEventListener("click", retagSelectedPhotos);
   $("markReportedBtn").addEventListener("click", markReported);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   document.querySelector(".sheetBackdrop").addEventListener("click", () => ($("sheet").hidden = true));
@@ -2313,7 +2459,10 @@ function init() {
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  loadManualMeta().then(goDash);
+  loadManualMeta().then(() => {
+    goDash();
+    askNameOnce();
+  });
 }
 
 init();

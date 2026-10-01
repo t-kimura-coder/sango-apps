@@ -524,3 +524,6 @@ svg { flex: none; }
 .copyBtn { flex: none; min-height: var(--tap-min); }
 .shotStrip img { cursor: pointer; }
 .guideHint { font-size: 11px; color: var(--color-text-muted); padding-left: 2px; }
+.subActions .btn { min-height: 40px; font-size: var(--fs-sm); }
+.subActions .dangerOutline { flex: 1 1 0 !important; }
+.nameIntro { font-size: var(--fs-sm); color: var(--color-text-sub); }
