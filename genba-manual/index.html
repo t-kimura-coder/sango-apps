@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -79,42 +79,37 @@
   </div>
 </section>
 
-<!-- 工程マニュアル：大分類の中身 -->
+<!-- 工程マニュアル：大分類の中身（項目を横スクロールで選び、チェックポイント・作業手順・参考資料を見る） -->
 <section id="groupView" class="view" hidden>
   <header class="topbar">
     <button id="groupBackBtn" class="iconBtn" aria-label="戻る"></button>
     <h1 class="topbarTitle center">工程マニュアル</h1>
-    <span class="iconBtnSpacer"></span>
+    <button id="groupShootBtn" class="iconBtn" aria-label="この工程の写真を撮る"></button>
   </header>
   <div id="groupStepper" class="stepper"></div>
-  <div class="viewBody">
+  <div class="viewBody groupBody">
     <div class="groupHero">
       <span class="pill pillWood">工程</span>
       <div id="groupTitle" class="groupTitle"></div>
       <div id="groupDesc" class="groupDesc"></div>
       <div id="groupHeroArt" class="groupHeroArt"></div>
     </div>
-    <div id="groupCats"></div>
+    <button id="manualSiteBar" class="siteBar"></button>
+    <div id="groupEmpty"></div>
+    <div id="itemStrip" class="itemStrip"></div>
+    <div id="itemTabs" class="itemTabs">
+      <button class="itemTab active" data-mtab="check">チェックポイント</button>
+      <button class="itemTab" data-mtab="flow">作業手順</button>
+      <button class="itemTab" data-mtab="docs">参考資料</button>
+    </div>
+    <div id="itemDetail" class="itemDetail"></div>
   </div>
   <footer class="bottomActions">
-    <button id="groupShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>写真を撮る</button>
-  </footer>
-</section>
-
-<!-- マニュアル：項目の本文（PDFページ） -->
-<section id="manualItemView" class="view" hidden>
-  <header class="topbar">
-    <button id="manualItemBackBtn" class="iconBtn" aria-label="戻る"></button>
-    <h1 id="manualItemTitle" class="topbarTitle"></h1>
-  </header>
-  <div class="viewBody manualPagesBody">
-    <div class="hint">ピンチで拡大できます。</div>
-    <div id="manualPages" class="manualPages"></div>
     <div class="btnRow">
-      <button id="manualPrevBtn" class="btn btnSecondary">前の項目</button>
-      <button id="manualNextBtn" class="btn btnSecondary">次の項目</button>
+      <button id="itemPrevBtn" class="btn btnOutline navBtn"></button>
+      <button id="itemNextBtn" class="btn btnPrimary navBtn"></button>
     </div>
-  </div>
+  </footer>
 </section>
 
 <!-- 写真：担当現場の一覧 -->
@@ -293,7 +288,8 @@
       <div class="helpStep">マニュアルを見る</div>
       <ol class="helpList">
         <li>ホームか「工程」タブで、基礎〜引渡しの6つから工程を選びます。</li>
-        <li>項目をタップすると、マニュアルのページが開きます。ピンチで拡大できます。</li>
+        <li>上に並んだ番号を左右にスクロールして項目を選ぶと、概要・ポイント・チェックポイントが出ます。「作業手順」で前後の工程と事前準備、「参考資料」でマニュアル原本のページを見られます。</li>
+        <li><b>チェックする現場</b>を選ぶと、チェックポイントにチェックを付けられます。付けた日時と名前が残るので、後から見返せます。その現場にない工程は「この現場ではこの工程はない」で灰色にできます。</li>
         <li>最近見た項目は、ホームの「前回の続き」からすぐ開けます。</li>
       </ol>
     </div>
@@ -357,6 +353,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

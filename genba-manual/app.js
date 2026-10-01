@@ -1,11 +1,12 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 9;
+const APP_VERSION = 11;
 
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "工程マニュアルを見やすくしました。項目ごとに概要・ポイント・チェックポイント・作業の流れ・参考図を表示し、現場ごとにチェックを記録できます（マニュアルを最新版に取り込み直してください）" },
   { date: "2026-09-30", type: "feature", text: "お知らせと使い方のページを追加しました（ホーム右上のベルと？マーク）" },
   { date: "2026-09-30", type: "feature", text: "「現場ナビ」として公開しました。工程ごとのマニュアル閲覧、写真の撮りだめ、報告用の写真選択とBoxへの送信ができます" },
 ];
@@ -92,6 +93,8 @@ const ICONS = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+  checkSquare: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12l3 3 5-6"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/>',
   share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
@@ -137,7 +140,7 @@ function fmtMMDD(key) {
 /* ---------- IndexedDB ---------- */
 
 const DB_NAME = "genba-photo";
-const DB_VERSION = 2; // v2: マニュアルパック用の manualPages / meta を追加
+const DB_VERSION = 3; // v2: マニュアルパック用の manualPages / meta、v3: 現場ごとのチェック記録 checks
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -155,6 +158,11 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains("manualPages")) db.createObjectStore("manualPages", { keyPath: "page" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("checks")) {
+        // key = "<siteId>|<itemId>"。marks は「区分|チェック文」→ {at, by}（後で品質管理に使えるよう、誰がいつ付けたかを残す）
+        const s = db.createObjectStore("checks", { keyPath: "key" });
+        s.createIndex("siteId", "siteId");
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -378,7 +386,6 @@ const VIEW_TABS = {
   dashView: "home",
   manualView: "manual",
   groupView: "manual",
-  manualItemView: "manual",
   homeView: "photos",
   siteView: "photos",
   shotView: "photos",
@@ -531,6 +538,7 @@ let currentSiteId = null;
 
 async function openSite(siteId) {
   currentSiteId = siteId;
+  shotFrom = "site";
   await renderSite();
   showView("siteView");
 }
@@ -755,9 +763,16 @@ async function pickOtherProcess() {
   });
 }
 
+let shotFrom = "site"; // 撮影を始めた画面（"manual" なら終わったら工程マニュアルに戻る）
+
 function leaveShot() {
   releaseUrls("shot");
   lastShotId = null;
+  if (shotFrom === "manual" && manualMeta) {
+    shotFrom = "site";
+    openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id);
+    return;
+  }
   renderSite();
   showView("siteView");
 }
@@ -1102,8 +1117,6 @@ async function deleteReportPhotos() {
 // 初回に取り込み、IndexedDB(meta / manualPages)に保存して使う
 
 let manualMeta = null; // { key:"manual", version, title, builtAt, importedAt, items, guides }
-let manualCatItems = [];
-let manualItemIndex = 0;
 let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
 
 async function loadManualMeta() {
@@ -1145,8 +1158,38 @@ function renderManual() {
 }
 
 let currentGroupId = "g1";
+let groupItems = [];       // 表示中の大分類に含まれる項目（17分類の順→PDFの順）
+let currentItemIdx = 0;
+let currentMTab = "check";
+let manualSiteId = "";     // チェックを記録する現場（空＝読むだけ）
+let siteCheckRecs = {};    // itemId → チェック記録
 
-async function openGroup(gid) {
+const MANUAL_SITE_KEY = "genba-photo-manual-site";
+
+function allManualItems() {
+  if (!manualMeta) return [];
+  return GROUPS.flatMap((g) => g.cats.flatMap((pid) => manualMeta.items.filter((it) => it.cat === pid)));
+}
+
+async function loadSiteChecks() {
+  siteCheckRecs = {};
+  if (!manualSiteId) return;
+  (await dbGetAll("checks", "siteId", manualSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
+}
+
+function checkRecOf(itemId) {
+  return siteCheckRecs[itemId] || { key: `${manualSiteId}|${itemId}`, siteId: manualSiteId, itemId, na: false, marks: {} };
+}
+
+function itemProgress(it) {
+  const checks = (it.text && it.text.checks) || [];
+  const rec = checkRecOf(it.id);
+  const done = checks.filter((c) => rec.marks["checks|" + c.text]).length;
+  return { done, total: checks.length, na: rec.na };
+}
+
+// itemId を指定すると、その項目を開いた状態で表示する
+async function openGroup(gid, itemId) {
   currentGroupId = gid;
   const g = groupOf(gid);
   const idx = GROUPS.indexOf(g);
@@ -1161,65 +1204,323 @@ async function openGroup(gid) {
   });
   $("groupTitle").textContent = g.name;
   $("groupDesc").textContent = g.desc;
-  $("groupHeroArt").innerHTML = groupArt(g, 110);
+  $("groupHeroArt").innerHTML = groupArt(g, 100);
 
-  const items = manualMeta ? manualMeta.items : [];
-  manualCatItems = [];
-  const wrap = $("groupCats");
-  wrap.innerHTML = "";
-  if (!manualMeta) wrap.appendChild(manualEmptyCard());
-  g.cats.forEach((pid) => {
-    const p = processOf(pid);
-    const catItems = items.filter((it) => it.cat === pid);
-    const sec = document.createElement("div");
-    sec.className = "catSection";
-    sec.innerHTML =
-      `<div class="catHead"><span class="catIcon">${icon(ICONS.list, 22)}</span>` +
-      `<span class="catHeadText"><span class="catName">${esc(p.name)}</span><br>` +
-      `<span class="catMeta">${manualMeta ? `${catItems.length}項目` : "マニュアル未取り込み"}</span></span></div>` +
-      (p.guide ? `<div class="guideBox">撮影メモ：${esc(p.guide)}</div>` : "");
-    const shoot = sheetButton("", "btnOutline catShootBtn", () => shootFromManual(pid));
-    shoot.innerHTML = `${icon(ICONS.camera, 18)}撮る`;
-    sec.querySelector(".catHead").appendChild(shoot);
-    catItems.forEach((it) => {
-      const index = manualCatItems.length;
-      manualCatItems.push(it);
-      const row = document.createElement("button");
-      row.className = "manualRow";
-      row.innerHTML =
-        `<span class="manualRowNo">${it.no ? esc(it.no) : "・"}</span>` +
-        `<span class="manualRowName">${esc(it.name)}</span>` +
-        `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
-      row.addEventListener("click", () => openManualItem(index));
-      sec.appendChild(row);
-    });
-    wrap.appendChild(sec);
-  });
   activeSitesCache = (await getSites()).filter((s) => !s.archived);
+  let saved = "";
+  try {
+    saved = localStorage.getItem(MANUAL_SITE_KEY) || "";
+  } catch (e) {
+    /* ignore */
+  }
+  if (saved === "none") manualSiteId = "";
+  else manualSiteId = activeSitesCache.some((s) => s.id === saved) ? saved : activeSitesCache[0] ? activeSitesCache[0].id : "";
+  await loadSiteChecks();
+  renderSiteBar();
+
+  groupItems = manualMeta ? g.cats.flatMap((pid) => manualMeta.items.filter((it) => it.cat === pid)) : [];
+  $("groupEmpty").innerHTML = "";
+  if (!manualMeta) $("groupEmpty").appendChild(manualEmptyCard());
+  $("itemTabs").hidden = !groupItems.length;
+  $("itemDetail").hidden = !groupItems.length;
+  const found = itemId ? groupItems.findIndex((it) => it.id === itemId) : -1;
+  currentItemIdx = found >= 0 ? found : 0;
+  renderItemStrip();
   showView("groupView");
+  if (groupItems.length) await renderItem();
+  else renderNavButtons();
 }
 
-// 下の「写真を撮る」：大分類に工程が複数あれば先にどれかを選ぶ
-// （タップ直後に同期でカメラを開くため、シートのボタンから直接呼ぶ）
-function shootFromGroup() {
-  const g = groupOf(currentGroupId);
-  if (g.cats.length === 1) {
-    shootFromManual(g.cats[0]);
+function renderSiteBar() {
+  const bar = $("manualSiteBar");
+  const site = activeSitesCache.find((s) => s.id === manualSiteId);
+  bar.classList.toggle("noSite", !site);
+  bar.innerHTML =
+    `${icon(ICONS.building, 18)}<span>チェックする現場</span><b>${site ? esc(site.name) : activeSitesCache.length ? "選ばない（読むだけ）" : "現場が未登録"}</b>` +
+    `<span class="chev">${icon(ICONS.chevron, 16)}</span>`;
+}
+
+function pickManualSite() {
+  if (!activeSitesCache.length) {
+    toast("「写真」タブで担当現場を登録すると、現場ごとにチェックを記録できます");
     return;
   }
-  openSheet("どの工程の写真ですか", (body, close) => {
-    g.cats.forEach((pid) => {
+  openSheet("チェックを記録する現場", (body, close) => {
+    const choose = async (id) => {
+      close();
+      manualSiteId = id;
+      try {
+        localStorage.setItem(MANUAL_SITE_KEY, id || "none");
+      } catch (e) {
+        /* ignore */
+      }
+      await loadSiteChecks();
+      renderSiteBar();
+      renderItemStrip();
+      await renderItem();
+    };
+    activeSitesCache.forEach((site) => {
       const b = document.createElement("button");
-      b.className = "pickItem";
-      b.innerHTML = `<span>${esc(processOf(pid).name)}</span>${icon(ICONS.camera, 20)}`;
-      b.addEventListener("click", () => {
-        close();
-        shootFromManual(pid);
-      });
+      b.className = "pickItem" + (site.id === manualSiteId ? " picked" : "");
+      b.textContent = site.name;
+      b.addEventListener("click", () => choose(site.id));
       body.appendChild(b);
     });
-    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+    const none = document.createElement("button");
+    none.className = "pickItem" + (!manualSiteId ? " picked" : "");
+    none.textContent = "選ばない（読むだけ）";
+    none.addEventListener("click", () => choose(""));
+    body.appendChild(none);
   });
+}
+
+function renderItemStrip() {
+  const strip = $("itemStrip");
+  strip.innerHTML = "";
+  let lastCat = "";
+  groupItems.forEach((it, i) => {
+    const g = groupOf(currentGroupId);
+    if (g.cats.length > 1 && it.cat !== lastCat) {
+      const label = document.createElement("span");
+      label.className = "stripCat";
+      label.textContent = processOf(it.cat).short;
+      strip.appendChild(label);
+    }
+    lastCat = it.cat;
+    const pr = itemProgress(it);
+    const b = document.createElement("button");
+    b.className =
+      "itemChip" + (i === currentItemIdx ? " active" : "") + (pr.na ? " na" : "") + (!pr.na && pr.total && pr.done === pr.total ? " done" : "");
+    b.innerHTML = `<span class="itemChipNo">${esc(it.no || "・")}</span><span class="itemChipName">${esc(it.name)}</span>`;
+    b.addEventListener("click", async () => {
+      currentItemIdx = i;
+      renderItemStrip();
+      await renderItem();
+    });
+    strip.appendChild(b);
+  });
+  const active = strip.querySelector(".itemChip.active");
+  if (active) active.scrollIntoView({ inline: "center", block: "nearest" });
+}
+
+function renderNavButtons() {
+  const all = allManualItems();
+  const cur = groupItems[currentItemIdx];
+  const pos = cur ? all.findIndex((x) => x.id === cur.id) : -1;
+  const prev = pos > 0 ? all[pos - 1] : null;
+  const next = pos >= 0 && pos < all.length - 1 ? all[pos + 1] : null;
+  const set = (btn, it, arrowLeft) => {
+    btn.disabled = !it;
+    btn.innerHTML = it
+      ? arrowLeft
+        ? `${icon(ICONS.back, 18)}<span>${esc(it.name)}</span>`
+        : `<span>${esc(it.name)}</span>${icon(ICONS.chevron, 18)}`
+      : arrowLeft
+      ? "最初の項目"
+      : "最後の項目";
+    btn.onclick = it ? () => openItemAnywhere(it.id) : null;
+  };
+  set($("itemPrevBtn"), prev, true);
+  set($("itemNextBtn"), next, false);
+}
+
+// 別の大分類の項目へも移動できる（前後の項目・開始条件/後工程から）
+async function openItemAnywhere(itemId) {
+  const it = manualMeta && manualMeta.items.find((x) => x.id === itemId);
+  if (!it) return;
+  const g = groupOfProcess(it.cat);
+  if (g.id === currentGroupId) {
+    currentItemIdx = groupItems.findIndex((x) => x.id === itemId);
+    renderItemStrip();
+    await renderItem();
+    window.scrollTo(0, 0);
+  } else {
+    await openGroup(g.id, itemId);
+  }
+}
+
+async function renderItem() {
+  const it = groupItems[currentItemIdx];
+  if (!it) return;
+  pushRecent(it);
+  renderNavButtons();
+  document.querySelectorAll(".itemTab").forEach((t) => t.classList.toggle("active", t.dataset.mtab === currentMTab));
+  releaseUrls("manual");
+  const box = $("itemDetail");
+  const tx = it.text || null;
+  const rec = checkRecOf(it.id);
+  const p = processOf(it.cat);
+  let html =
+    `<div class="itemHead"><span class="itemHeadNo">${esc(it.no || "・")}</span>` +
+    `<div class="itemHeadText"><div class="itemTitle">${esc(it.name)}</div><div class="itemCat">${esc(p.name)}</div></div></div>`;
+  if (tx && tx.summary) html += `<div class="itemSummary">${esc(tx.summary)}</div>`;
+
+  if (currentMTab === "check") {
+    if (!tx) {
+      html += `<div class="emptyNote">このマニュアルには文章データが入っていません。設定から最新版のマニュアルを取り込み直すと、ポイントやチェックポイントが表示されます。</div>`;
+    } else {
+      if (tx.purpose.length || tx.goal.length) {
+        html += `<div class="pointBox"><div class="pointTitle">${icon(ICONS.bulb, 20)}この工程のポイント</div>`;
+        if (tx.purpose.length) html += `<ul class="pointList">${tx.purpose.map(lineHtml).join("")}</ul>`;
+        if (tx.goal.length) html += `<div class="pointSub">ゴール</div><ul class="pointList">${tx.goal.map(lineHtml).join("")}</ul>`;
+        html += `</div>`;
+      }
+      const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
+      html +=
+        `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
+        (tx.checks.length ? `${done}/${tx.checks.length}` : "") +
+        `<button class="miniBtn" data-go="docs">詳細を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
+      html += tx.checks.length
+        ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec)).join("")}</div>`
+        : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
+      if (!manualSiteId) html += `<div class="hint">上の「チェックする現場」を選ぶと、チェックを記録できます。</div>`;
+      else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの工程はない"}</button>`;
+    }
+    if (it.pages.length > 1) {
+      html += `<div class="secHead">${icon(ICONS.photo, 22)}参考図・写真</div><div class="figStrip" id="figStrip"></div>`;
+    }
+    html += relatedSoonHtml();
+  } else if (currentMTab === "flow") {
+    if (!tx) {
+      html += `<div class="emptyNote">最新版のマニュアルを取り込み直すと、作業の流れが表示されます。</div>`;
+    } else {
+      html += `<div class="secHead">${icon(ICONS.list, 22)}作業の流れ</div><div class="flowList">`;
+      html += tx.before.map((f) => flowCardHtml("前の工程", f)).join("");
+      if (tx.before.length) html += `<div class="flowArrow">▼</div>`;
+      html += `<div class="flowCard current"><span class="flowLabel">この工程</span>${esc(it.name)}</div>`;
+      if (tx.after.length) html += `<div class="flowArrow">▼</div>`;
+      html += tx.after.map((f) => flowCardHtml("次の工程", f)).join("");
+      html += `</div>`;
+      if (tx.timing.length) {
+        html += `<div class="secHead">${icon(ICONS.bell, 22)}タイミング</div><div class="timingRow">${tx.timing
+          .map((x) => `<span>${esc(x)}</span>`)
+          .join("")}</div>`;
+      }
+      html += `<div class="secHead">${icon(ICONS.checkSquare, 22)}事前準備</div>`;
+      html += tx.prep.length
+        ? `<div class="checkList">${tx.prep.map((c) => checkRowHtml("prep", c, rec)).join("")}</div>`
+        : `<div class="emptyNote">事前準備はまだ登録されていません。</div>`;
+    }
+  } else {
+    html += `<div class="secHead">${icon(ICONS.report, 22)}マニュアル原本<span class="secRight">ピンチで拡大</span></div><div class="docPages" id="docPages"></div>`;
+    html += relatedSoonHtml();
+  }
+  box.innerHTML = html;
+
+  box.querySelectorAll(".checkRow").forEach((row) => row.addEventListener("click", () => toggleMark(it, row.dataset.key)));
+  const na = box.querySelector("[data-na]");
+  if (na) na.addEventListener("click", () => toggleNa(it));
+  const go = box.querySelector("[data-go]");
+  if (go) go.addEventListener("click", () => switchMTab(go.dataset.go));
+  box.querySelectorAll("[data-flow]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const target = allManualItems().find((x) => x.no && x.no === el.dataset.flow);
+      if (target) openItemAnywhere(target.id);
+      else toast("この工程のマニュアルは見つかりませんでした");
+    })
+  );
+
+  const figs = $("figStrip");
+  if (figs) {
+    for (const n of it.pages.slice(1)) {
+      const rec2 = await dbGet("manualPages", n);
+      if (!rec2) continue;
+      const b = document.createElement("button");
+      b.innerHTML = `<img src="${blobUrl("manual", rec2.blob)}" alt="${n}ページ">`;
+      b.addEventListener("click", () => openLightbox(rec2.blob));
+      figs.appendChild(b);
+    }
+  }
+  const pages = $("docPages");
+  if (pages) {
+    for (const n of it.pages) {
+      const rec2 = await dbGet("manualPages", n);
+      if (!rec2) continue;
+      const img = document.createElement("img");
+      img.alt = `${it.name} ${n}ページ`;
+      img.src = blobUrl("manual", rec2.blob);
+      pages.appendChild(img);
+    }
+  }
+}
+
+function lineHtml(x) {
+  return `<li>${esc(x.text)}${x.added ? ` <span class="addedDate">（${esc(x.added)}追記）</span>` : ""}</li>`;
+}
+
+function checkRowHtml(sec, c, rec) {
+  const key = `${sec}|${c.text}`;
+  const mark = rec.marks[key];
+  const disabled = !manualSiteId || rec.na;
+  const meta = [
+    c.photo === "要" ? `<span class="photoReq">${icon(ICONS.camera, 12)}写真要</span>` : "",
+    c.added ? `<span class="addedDate">${esc(c.added)}追記</span>` : "",
+    mark ? `<span class="checkBy">${esc(fmtDateTime(mark.at))}${mark.by ? " " + esc(mark.by) : ""}</span>` : "",
+  ].join("");
+  return (
+    `<button class="checkRow${mark ? " on" : ""}" data-key="${esc(key)}"${disabled ? " disabled" : ""}>` +
+    `<span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
+    `<span class="checkText">${esc(c.text)}${meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>`
+  );
+}
+
+function flowCardHtml(label, f) {
+  return (
+    `<button class="flowCard" data-flow="${esc(f.no)}"><span class="flowLabel">${label}</span>` +
+    `${f.no ? esc(f.no) + " " : ""}${esc(f.name)}<span class="flowWho">${esc(f.who)}</span></button>`
+  );
+}
+
+// 関連資料（施工要領書など）は今後マニュアルパックに入れる予定。今は枠だけ
+function relatedSoonHtml() {
+  return (
+    `<div class="secHead">${icon(ICONS.report, 22)}関連資料<span class="secRight">準備中</span></div>` +
+    `<div class="soonGrid"><div class="soonCard">${icon(ICONS.report, 22)}<span><b>施工要領書</b>準備中</span></div>` +
+    `<div class="soonCard">${icon(ICONS.checkSquare, 22)}<span><b>安全作業ガイド</b>準備中</span></div></div>`
+  );
+}
+
+async function switchMTab(tab) {
+  currentMTab = tab;
+  await renderItem();
+  $("itemTabs").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+async function saveCheckRec(rec) {
+  rec.updatedAt = new Date().toISOString();
+  siteCheckRecs[rec.itemId] = rec;
+  await dbPut("checks", rec);
+}
+
+async function toggleMark(it, key) {
+  if (!manualSiteId) return;
+  const rec = checkRecOf(it.id);
+  if (rec.marks[key]) delete rec.marks[key];
+  else rec.marks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
+  await saveCheckRec(rec);
+  renderItemStrip();
+  const y = window.scrollY;
+  await renderItem();
+  window.scrollTo(0, y);
+}
+
+async function toggleNa(it) {
+  const rec = checkRecOf(it.id);
+  rec.na = !rec.na;
+  rec.naAt = new Date().toISOString();
+  rec.naBy = getSetting(USER_NAME_KEY);
+  await saveCheckRec(rec);
+  renderItemStrip();
+  const y = window.scrollY;
+  await renderItem();
+  window.scrollTo(0, y);
+}
+
+// 右上のカメラ：今開いている項目の工程（17分類）で撮る
+function shootFromGroup() {
+  const it = groupItems[currentItemIdx];
+  if (it) shootFromManual(it.cat);
+  else shootFromManual(groupOf(currentGroupId).cats[0]);
 }
 
 /* ---------- 最近見た項目（ホームの「前回の続き」） ---------- */
@@ -1276,6 +1577,7 @@ async function onManualPicked() {
       importedAt: new Date().toISOString(),
       items: pack.items,
       guides: pack.guides || {},
+      schema: pack.schema || 1,
     });
     await loadManualMeta();
     toast(`マニュアル（${manualMeta.version}版）を取り込みました`);
@@ -1299,46 +1601,27 @@ async function deleteManual() {
   renderSettings();
 }
 
-async function openManualItem(index) {
-  manualItemIndex = index;
-  const it = manualCatItems[index];
-  releaseUrls("manual");
-  $("manualItemTitle").textContent = (it.no ? it.no + " " : "") + it.name;
-  const container = $("manualPages");
-  container.innerHTML = "";
-  for (const n of it.pages) {
-    const rec = await dbGet("manualPages", n);
-    if (!rec) continue;
-    const img = document.createElement("img");
-    img.alt = `${it.name} ${n}ページ`;
-    img.src = blobUrl("manual", rec.blob);
-    container.appendChild(img);
-  }
-  $("manualPrevBtn").disabled = index === 0;
-  $("manualNextBtn").disabled = index === manualCatItems.length - 1;
-  pushRecent(it);
-  showView("manualItemView");
-}
-
 // マニュアルから直接撮影する。iPhoneのSafariはユーザー操作から間を置くとカメラ起動を
 // 拒否することがあるので、DB読み込みを挟まず同期的にカメラを開く
 function shootFromManual(pid) {
   const sites = activeSitesCache;
   if (!sites.length) {
-    toast("先に「写真・報告」タブで担当現場を登録してください");
+    toast("先に「写真」タブで担当現場を登録してください");
     goHome();
     return;
   }
   const go = (site) => {
     currentSiteId = site.id;
+    shotFrom = "manual";
     if (!site.processes.includes(pid)) {
       site.processes = PROCESSES.filter((p) => p.id === pid || site.processes.includes(p.id)).map((p) => p.id);
       dbPut("sites", site);
     }
     startCamera(pid);
   };
-  if (sites.length === 1) {
-    go(sites[0]);
+  const checking = sites.find((x) => x.id === manualSiteId);
+  if (checking || sites.length === 1) {
+    go(checking || sites[0]);
     return;
   }
   openSheet("どの現場の写真ですか", (body, close) => {
@@ -1426,11 +1709,7 @@ async function renderDash() {
       `<span class="recentText"><span><span class="pill pillWood">${esc(g.name)}</span></span>` +
       `<span class="recentName">${esc(it.name)}</span><span class="recentMeta">最終閲覧：${fmtDateTime(r.at)}</span></span>` +
       `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
-    b.addEventListener("click", async () => {
-      await openGroup(g.id);
-      const index = manualCatItems.findIndex((x) => x.id === it.id);
-      if (index >= 0) openManualItem(index);
-    });
+    b.addEventListener("click", () => openGroup(g.id, it.id));
     list.appendChild(b);
   });
 }
@@ -1597,13 +1876,9 @@ function init() {
   $("dashPhotoBtn").addEventListener("click", goHome);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
-  $("manualItemBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("manualItemBackBtn").addEventListener("click", () => {
-    releaseUrls("manual");
-    showView("groupView");
-  });
-  $("manualPrevBtn").addEventListener("click", () => openManualItem(manualItemIndex - 1));
-  $("manualNextBtn").addEventListener("click", () => openManualItem(manualItemIndex + 1));
+  $("groupShootBtn").innerHTML = icon(ICONS.camera, 24);
+  $("manualSiteBar").addEventListener("click", pickManualSite);
+  document.querySelectorAll(".itemTab").forEach((t) => t.addEventListener("click", () => switchMTab(t.dataset.mtab)));
   $("manualInput").addEventListener("change", onManualPicked);
   $("importManualBtn").addEventListener("click", () => $("manualInput").click());
   $("deleteManualBtn").addEventListener("click", deleteManual);
