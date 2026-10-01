@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "工程マニュアルの画面を短くしました。メモは「メモを書く」を押すと書けます。「この項目のポイント」と「撮影ガイド」は見出しを押して開け閉めでき、閉じた状態は次も覚えています" },
   { date: "2026-10-02", type: "feature", text: "写真が読み込めない時は「？」ではなく「読み込めません」と出すようにしました。設定の「写真の点検」で、読み込めない写真が無いか確かめられます" },
   { date: "2026-10-02", type: "fix", text: "撮影中にアプリが読み込み直されて写真が保存されなかった時は、そのことをお知らせして、撮影していた項目・工程のページを開くようにしました。建物の種類の絵も新しくしました" },
   { date: "2026-10-02", type: "feature", text: "現場に「完成イメージ」（完成予想CG・パースなど）の画像と、建物の種類を登録できるようにしました。ホームの現場の写真に出ます。画像はこのiPhoneの中だけに保存し、報告では送りません" },
@@ -2407,21 +2408,23 @@ async function renderItem() {
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
-      else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの項目はない"}</button>`;
+      // 該当なしにしている時は、チェックが押せない理由が分かるよう、チェックのすぐ下に出す
+      else if (rec.na) html += `<button class="naBtn on" data-na="1">この現場では該当なし（解除する）</button>`;
       html += `<div id="memoSection" class="memoSection"></div>`;
+      // 毎回は読まない情報は、見出しだけ出して開け閉めする（閉じたかどうかは次も覚えておく）
       if (tx.purpose.length || tx.goal.length) {
-        html += `<div class="pointBox"><div class="pointTitle">${icon(ICONS.bulb, 20)}この項目のポイント</div>`;
+        html += `<details class="foldBox pointBox" data-fold="points"${foldOpen("points") ? " open" : ""}><summary class="pointTitle">${icon(ICONS.bulb, 20)}この項目のポイント<span class="foldMark">${icon(ICONS.chevron, 16)}</span></summary>`;
         if (tx.purpose.length) html += `<ul class="pointList">${tx.purpose.map(lineHtml).join("")}</ul>`;
         if (tx.goal.length) html += `<div class="pointSub">ゴール</div><ul class="pointList">${tx.goal.map(lineHtml).join("")}</ul>`;
-        html += `</div>`;
+        html += `</details>`;
       }
-      html += `<div class="guideBoxDetail">${guideHtml(p)}</div>`;
-      html += `<button class="btn btnOutline toReportBtn" data-toreport="1">${icon(ICONS.camera, 18)}${esc(shortProcessName(p))}の報告写真へ（撮る・見る）</button>`;
+      html += `<details class="foldBox guideBoxDetail" data-fold="guide"${foldOpen("guide") ? " open" : ""}><summary class="foldTitle">${icon(ICONS.camSmall, 20)}撮影ガイド<span class="foldMark">${icon(ICONS.chevron, 16)}</span></summary>${guideHtml(p)}</details>`;
     }
     if (it.pages.length > 1) {
       html += `<div class="secHead">${icon(ICONS.photo, 22)}参考図・写真</div><div class="figStrip" id="figStrip"></div>`;
     }
     html += relatedSoonHtml();
+    if (tx && currentSiteId && !rec.na) html += `<button class="naBtn bottom" data-na="1">この現場ではこの項目はない</button>`;
   } else if (currentMTab === "flow") {
     if (!tx) {
       html += `<div class="emptyNote">最新版のマニュアルを取り込み直すと、作業の流れが表示されます。</div>`;
@@ -2450,6 +2453,7 @@ async function renderItem() {
   box.innerHTML = html;
 
   box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
+  box.querySelectorAll("details[data-fold]").forEach((d) => d.addEventListener("toggle", () => setFold(d.dataset.fold, d.open)));
   if ($("memoSection")) renderMemoSection(it);
   const na = box.querySelector("[data-na]");
   if (na) na.addEventListener("click", () => toggleNa(it));
@@ -2487,6 +2491,23 @@ async function renderItem() {
       pages.appendChild(img);
     }
   }
+}
+
+// 開け閉めの状態（初めは開いている。閉じたら次も閉じたまま）
+const FOLD_KEY = "genba-photo-fold";
+function foldOpen(name) {
+  try {
+    return (JSON.parse(localStorage.getItem(FOLD_KEY) || "{}")[name] ?? true) !== false;
+  } catch (e) {
+    return true;
+  }
+}
+function setFold(name, open) {
+  try {
+    const o = JSON.parse(localStorage.getItem(FOLD_KEY) || "{}");
+    o[name] = open;
+    localStorage.setItem(FOLD_KEY, JSON.stringify(o));
+  } catch (e) {}
 }
 
 function lineHtml(x) {
@@ -2757,6 +2778,7 @@ const NOTE_TYPES = [
   { id: "request", label: "職人さんの要望", hint: "職人さんから" },
 ];
 let memoType = null; // 選び間違い（疑問のつもりが気づき）を防ぐため、毎回選んでもらう
+let memoOpenFor = null; // 「メモを書く」を開いている項目
 
 function renderMemoSection(it) {
   const sec = $("memoSection");
@@ -2766,11 +2788,13 @@ function renderMemoSection(it) {
   const me = getSetting(USER_NAME_KEY);
   sec.innerHTML =
     `<div class="secHead">${icon(ICONS.edit || ICONS.report, 22)}気づき・疑問メモ<span class="secRight">${notes.length ? notes.length + "件" : ""}</span></div>` +
-    (currentSiteId
+    (currentSiteId && memoOpenFor !== it.id
+      ? `<button id="memoOpenBtn" class="btn btnOutline memoOpenBtn">${icon(ICONS.plus, 18)}メモを書く</button>`
+      : currentSiteId
       ? `<div class="noteTypeLabel">種類を選んでから書いてください</div>` +
         `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}"><b>${t.label}</b><small>${t.hint}</small></button>`).join("")}</div>` +
         `<textarea id="memoInput" class="sheetTextarea memoInput" placeholder="現場で気づいたこと、疑問に思ったこと、職人さんからの要望など"></textarea>` +
-        `<button id="memoSaveBtn" class="btn btnPrimary memoSaveBtn" hidden>保存</button>`
+        `<div class="memoBtns"><button id="memoCancelBtn" class="btn btnSecondary">やめる</button><button id="memoSaveBtn" class="btn btnPrimary memoSaveBtn" hidden>保存</button></div>`
       : `<div class="hint">上の「今の現場」から現場を登録すると、メモを残せます。</div>`) +
     `<div class="noteList">${notes
       .map(
@@ -2799,6 +2823,21 @@ function renderMemoSection(it) {
       sec.querySelector(".noteTypes").classList.remove("need");
     })
   );
+  const openBtn = $("memoOpenBtn");
+  if (openBtn)
+    openBtn.addEventListener("click", () => {
+      memoOpenFor = it.id;
+      memoType = null;
+      renderMemoSection(it);
+      $("memoInput").focus();
+    });
+  const cancel = $("memoCancelBtn");
+  if (cancel)
+    cancel.addEventListener("click", () => {
+      if ($("memoInput").value.trim() && !confirm("書きかけのメモを消しますか？")) return;
+      memoOpenFor = null;
+      renderMemoSection(it);
+    });
   const save = $("memoSaveBtn");
   if (save) {
     save.addEventListener("click", () => saveMemo(it));
@@ -2837,6 +2876,7 @@ async function saveMemo(it) {
   rec.notes.push(note);
   await saveCheckRec(rec);
   memoType = null;
+  memoOpenFor = null;
   renderMemoSection(it);
   toast(note.type === "question" ? "疑問として残しました（報告で上司に届きます）" : "メモを残しました");
 }

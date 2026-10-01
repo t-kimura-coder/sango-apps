@@ -929,3 +929,19 @@ svg { flex: none; }
 img.imgBroken { visibility: hidden; }
 .imgBrokenNote { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 4px; text-align: center; font-size: 11px; font-weight: 700; color: var(--color-text-muted); background: var(--color-surface-sub); pointer-events: none; }
 .photoCell, .photoCardImg, .checkCam, .dsThumb, .coverPrev { position: relative; }
+
+/* 工程マニュアル：開け閉め・メモを書く・該当なし */
+.foldBox > summary { list-style: none; display: flex; align-items: center; gap: 6px; min-height: 40px; cursor: pointer; }
+.foldBox > summary::-webkit-details-marker { display: none; }
+.foldMark { margin-left: auto; display: flex; color: var(--color-text-muted); transition: transform 0.15s; }
+.foldBox[open] .foldMark { transform: rotate(90deg); }
+.foldBox:not([open]) { padding-top: 4px; padding-bottom: 4px; }
+.foldTitle { font-weight: 800; color: var(--color-heading); font-size: var(--fs-md); }
+.guideBoxDetail[open] .guideLines { margin-top: 4px; }
+.memoOpenBtn { align-self: flex-start; min-height: 44px; }
+.memoBtns { display: flex; gap: var(--space-sm); }
+.memoBtns .btn { flex: 1; min-height: 48px; }
+.naBtn.bottom { margin-top: var(--space-md); }
+.noteBadge { flex: none; white-space: nowrap; }
+.noteMeta { min-width: 0; }
+.noteStatus { flex: none; white-space: nowrap; }
