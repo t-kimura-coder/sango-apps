@@ -790,3 +790,20 @@ svg { flex: none; }
 .manualBody .groupProg b { font-size: var(--fs-xl); margin-left: 4px; }
 .manualBody .groupProg .kindLabel { font-size: var(--fs-xs); padding: 1px 8px; margin-right: 2px; vertical-align: 3px; }
 .manualBody .groupSub { margin-top: auto; padding: 7px 2px; font-size: 11.5px; letter-spacing: -0.04em; line-height: 1.35; white-space: normal; min-height: 36px; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- 上司からの返信 ---------- */
+#dashReplies:empty { display: none; }
+.replyCard { display: flex; flex-direction: column; gap: 6px; padding: var(--space-md) var(--space-lg); border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-card); }
+.replyCard.has { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.replyCardHead { display: flex; align-items: center; gap: 8px; color: var(--color-heading); font-size: var(--fs-md); }
+.replyCardHead .miniBtn { margin-left: auto; }
+.replyCardSub { font-size: var(--fs-sm); color: var(--color-text-sub); }
+.replyRow { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); text-align: left; }
+.replyRowMeta { font-size: var(--fs-xs); color: var(--color-text-sub); }
+.replyRowText { font-size: var(--fs-sm); color: var(--color-text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.newMark { padding: 1px 8px; border-radius: 8px; background: var(--color-danger); color: #fff; font-size: 12px; font-weight: 800; }
+.noteReply { margin: 8px 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--color-primary); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-primary-soft); }
+.noteReply.unread { border-left-color: var(--color-danger); }
+.noteReplyHead { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--color-text-sub); }
+.noteReplyHead b { color: var(--color-heading); }
+.noteStatus.replied { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary); }

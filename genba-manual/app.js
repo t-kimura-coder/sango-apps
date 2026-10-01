@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "上司からの返信を受け取れるようになりました。ホームの「上司からの返信」→「返信を取り込む」で、Boxの「返信」フォルダのファイルを選ぶと、気づき・疑問メモの下に返信が表示されます" },
   { date: "2026-10-02", type: "feature", text: "報告に、6つの工程の進み具合と、疑問を解決済みにしたことも入るようにしました（上司が報告をまとめて見られる仕組みの準備です）" },
   { date: "2026-10-01", type: "feature", text: "工程タブの最初の画面を見やすくしました。6つの工程ごとに、今の現場のチェックと品質写真の進み具合が大きく出ます" },
   { date: "2026-10-01", type: "feature", text: "「疑問」のメモに「回答待ち／解決済み」を付けられるようにしました。報告にも状態が入ります" },
@@ -133,6 +134,7 @@ const ICONS = {
   grid3: '<path d="M3.5 3.5h4.5v4.5H3.5zM9.75 3.5h4.5v4.5h-4.5zM16 3.5h4.5v4.5H16zM3.5 9.75h4.5v4.5H3.5zM9.75 9.75h4.5v4.5h-4.5zM16 9.75h4.5v4.5H16zM3.5 16h4.5v4.5H3.5zM9.75 16h4.5v4.5h-4.5zM16 16h4.5v4.5H16z"/>',
   dotsV: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
+  reply: '<path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 11 5-1-6-4-11-11-11z"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.3" r="0.6" fill="currentColor"/>',
   folder: '<path d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2.5H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
@@ -2435,10 +2437,18 @@ function renderMemoSection(it) {
           `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc((NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label)}</span>` +
           `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
           (n.type === "question"
-            ? `<button class="noteStatus${n.status === "resolved" ? " done" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : "回答待ち"}</button>`
+            ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).length ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).length ? "返信あり" : "回答待ち"}</button>`
             : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
-          `</div><div class="noteText">${esc(n.text)}</div></div>`
+          `</div><div class="noteText">${esc(n.text)}</div>` +
+          (n.replies || [])
+            .map(
+              (r) =>
+                `<div class="noteReply${r.readAt ? "" : " unread"}"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(r.from || "上司")}</b>` +
+                `<span>${esc(fmtDateTime(r.at))}</span>${r.readAt ? "" : '<span class="newMark">新着</span>'}</div><div class="noteText">${esc(r.text)}</div></div>`
+            )
+            .join("") +
+          `</div>`
       )
       .join("")}</div>`;
   sec.querySelectorAll(".noteType").forEach((b) =>
@@ -2454,6 +2464,13 @@ function renderMemoSection(it) {
   }
   sec.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteMemo(it, b.dataset.del)));
   sec.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", () => toggleNoteStatus(it, b.dataset.status)));
+  // 表示した返信は既読にする（「新着」の印は今回の表示までは残す）
+  const unread = (rec.notes || []).flatMap((n) => (n.replies || []).filter((r) => !r.readAt));
+  if (unread.length) {
+    const now = new Date().toISOString();
+    unread.forEach((r) => (r.readAt = now));
+    saveCheckRec(rec);
+  }
 }
 
 async function saveMemo(it) {
@@ -2471,6 +2488,100 @@ async function saveMemo(it) {
   await saveCheckRec(rec);
   renderMemoSection(it);
   toast("メモを残しました");
+}
+
+/* ---------- 上司からの返信（現場ナビ 見守りが Box の「返信」フォルダに書き出す genba-reply JSON） ---------- */
+// どのメモへの返信かは note_id で探す。ほかの監督あての返信も同じフォルダに入るので、この端末に無いメモへの返信は黙って飛ばす
+async function onRepliesPicked() {
+  const input = $("replyInput");
+  const files = [...input.files];
+  input.value = "";
+  if (!files.length) return;
+  const replies = [];
+  for (const f of files) {
+    try {
+      const j = JSON.parse(await f.text());
+      (Array.isArray(j) ? j : [j]).forEach((x) => x && x.kind === "genba-reply" && x.note_id && replies.push(x));
+    } catch (e) {}
+  }
+  if (!replies.length) {
+    alert("返信のファイルが見つかりませんでした。Box の「返信」フォルダにある「返信_〜.json」を選んでください。");
+    return;
+  }
+  const recs = await dbGetAll("checks");
+  const byNote = new Map();
+  recs.forEach((r) => (r.notes || []).forEach((n) => byNote.set(n.id, { r, n })));
+  const changed = new Set();
+  let added = 0;
+  let already = 0;
+  replies.forEach((x) => {
+    const hit = byNote.get(x.note_id);
+    if (!hit) return;
+    hit.n.replies = hit.n.replies || [];
+    if (hit.n.replies.some((y) => y.id === x.id)) {
+      already++;
+      return;
+    }
+    hit.n.replies.push({ id: x.id, from: x.from || "", text: x.text || "", at: x.at || new Date().toISOString(), readAt: null });
+    hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
+    changed.add(hit.r);
+    added++;
+  });
+  if (changed.size) await dbPutMany("checks", [...changed]);
+  await loadSiteChecks();
+  if (added) toast(`上司からの返信を${added}件取り込みました`);
+  else if (already) toast("新しい返信はありませんでした（取り込み済みです）");
+  else toast("この端末のメモへの返信はありませんでした");
+  rerenderCurrentView();
+}
+
+// まだ読んでいない返信（全現場）。ホームに出す
+async function unreadReplies() {
+  const out = [];
+  (await dbGetAll("checks")).forEach((r) =>
+    (r.notes || []).forEach((n) => (n.replies || []).forEach((x) => !x.readAt && out.push({ rec: r, note: n, reply: x })))
+  );
+  return out.sort((p, q) => (p.reply.at < q.reply.at ? 1 : -1));
+}
+
+// 返信の付いたメモの項目を開く（別の現場のメモなら、その現場に切り替える）
+async function openReplyItem(rec) {
+  if (rec.siteId !== currentSiteId) await setCurrentSite(rec.siteId);
+  const it = manualMeta && manualMeta.items.find((x) => x.id === rec.itemId);
+  if (!it) {
+    toast("この項目はマニュアルに見つかりませんでした");
+    return;
+  }
+  currentMTab = "check";
+  await openGroup(groupOfProcess(it.cat).id, it.id);
+  const sec = $("memoSection");
+  if (sec) sec.scrollIntoView({ block: "start" });
+}
+
+async function renderDashReplies() {
+  const box = $("dashReplies");
+  if (!box) return;
+  const list = await unreadReplies();
+  const sites = Object.fromEntries((await getSites()).map((x) => [x.id, x.name]));
+  box.innerHTML =
+    `<div class="replyCard${list.length ? " has" : ""}"><div class="replyCardHead">${icon(ICONS.reply, 20)}<b>上司からの返信</b>` +
+    (list.length ? `<span class="newMark">新着 ${list.length}件</span>` : "") +
+    `<button class="miniBtn" id="dashReplyImport">返信を取り込む</button></div>` +
+    (list.length
+      ? list
+          .slice(0, 3)
+          .map((x, i) => {
+            const it = manualMeta && manualMeta.items.find((y) => y.id === x.rec.itemId);
+            return (
+              `<button class="replyRow" data-i="${i}"><span class="replyRowMeta">${esc(sites[x.rec.siteId] || "")}・${esc(it ? it.name : "")}　${esc(x.reply.from)}</span>` +
+              `<span class="replyRowText">${esc(x.reply.text)}</span></button>`
+            );
+          })
+          .join("")
+      : `<div class="replyCardSub">Box の「返信」フォルダに届いた返信を取り込むと、メモの下に表示されます。</div>`) +
+    `</div>`;
+  $("dashReplyImport").addEventListener("click", () => $("replyInput").click());
+  box.querySelectorAll(".replyRow").forEach((b) => b.addEventListener("click", () => openReplyItem(list[Number(b.dataset.i)].rec)));
 }
 
 // 疑問の状態（回答待ち ⇔ 解決済み）。いつ・誰が解決にしたかも残す
@@ -2887,6 +2998,7 @@ async function renderDash() {
     b.addEventListener("click", () => openGroup(g.id, it.id));
     resume.appendChild(b);
   }
+  renderDashReplies();
   $("recentSection").hidden = recent.length <= 1;
   const list = $("recentList");
   list.innerHTML = "";
@@ -3135,7 +3247,9 @@ async function onRestorePicked() {
         const byId = new Map((cur.notes || []).map((n) => [n.id, n]));
         (r.notes || []).forEach((n) => {
           const c = byId.get(n.id);
-          if (!c || (n.updatedAt || n.at) > (c.updatedAt || c.at)) byId.set(n.id, n);
+          const newer = !c || (n.updatedAt || n.at) > (c.updatedAt || c.at) ? n : c;
+          const replies = [...(c && c.replies) || [], ...(n.replies || [])].filter((x, i, arr) => arr.findIndex((y) => y.id === x.id) === i);
+          byId.set(n.id, replies.length ? Object.assign({}, newer, { replies }) : newer);
         });
         const notes = [...byId.values()];
         const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
@@ -3421,6 +3535,8 @@ function init() {
   $("backupBtn").addEventListener("click", exportBackup);
   $("restoreBtn").addEventListener("click", () => $("restoreInput").click());
   $("restoreInput").addEventListener("change", onRestorePicked);
+  $("replyInput").addEventListener("change", onRepliesPicked);
+  $("settingsReplyBtn").addEventListener("click", () => $("replyInput").click());
   $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
   $("tourAgainBtn").addEventListener("click", startTour);
   $("helpTourBtn").addEventListener("click", startTour);

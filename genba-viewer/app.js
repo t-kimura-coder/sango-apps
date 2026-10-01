@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -630,7 +630,7 @@ function renderNotes(params) {
   const main = $("main");
   if (params.get("st")) noteFilter.status = params.get("st");
   let html =
-    `<section class="pageHead withArt"><img src="art/character.webp" class="pageArt" alt=""><h1>疑問・気づき一覧</h1><p class="sub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。早めの対応で、現場をスムーズに進めましょう。</p></section>`;
+    `<section class="pageHead withArt"><img src="art/site-bg.webp" class="pageBg" alt=""><img src="art/character.webp" class="pageArt" alt=""><h1>疑問・気づき一覧</h1><p class="sub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。早めの対応で、現場をスムーズに進めましょう。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
