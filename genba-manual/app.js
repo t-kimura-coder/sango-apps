@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "ホームの「やること」に、2週間以上報告していない現場が出るようにしました" },
   { date: "2026-10-02", type: "feature", text: "現場に「記録を始めた工程」を登録できるようにしました。途中から担当する現場やアプリを入れる前から進んでいる現場は、そこより前の工程を「導入前」として扱い、進み具合や撮り忘れに数えません（「現場の情報を変更」から）" },
   { date: "2026-10-02", type: "feature", text: "ホームを作り直しました。担当現場が全部並び、それぞれ今どの工程かが分かります。その下に「やること」（上司からの返信・報告日・撮り忘れの品質写真）と「次に見る項目」が出ます。6つの工程は下の「工程」タブから開けます" },
   { date: "2026-10-02", type: "feature", text: "現場に「工事番号」と「担当者（苗字）」を登録できるようにしました。同じ現場を二人で担当する時に、上司の画面で一つの現場としてまとめて見られます。登録済みの現場は「現場の管理」→「現場の情報を変更」から入れてください" },
@@ -3144,9 +3145,12 @@ async function siteSummary(site) {
   const cands = unreported(photos);
   const wd = new Date().getDay();
   const reportDue = (wd === 5 || wd === 6) && cands.length > 0;
+  // 前回の報告（なければ現場の登録日）から2週間以上たった現場。報告日（金・土）の行と重ならないようにする
+  const unreportedDays = daysBetween(periodStart(site, cands), todayKey()) + 1;
+  const overdue = !reportDue && unreportedDays >= 15;
   const unread = Object.values(recs).reduce((n, r) => n + (r.notes || []).reduce((m, x) => m + (x.replies || []).filter((y) => !y.readAt).length, 0), 0);
   const thumb = photos.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0] || photos.sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0];
-  return { site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, unread, thumb, recs };
+  return { site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, overdue, unreportedDays, unread, thumb, recs };
 }
 
 function siteThumbHtml(sm) {
@@ -3217,7 +3221,7 @@ async function renderDash() {
       .forEach((sm) => {
         const b = document.createElement("button");
         b.className = "dashSiteRow";
-        const alert = sm.unread || sm.reportDue || sm.missing.length;
+        const alert = sm.unread || sm.reportDue || sm.overdue || sm.missing.length;
         b.innerHTML =
           `<span class="dsThumb">${siteThumbHtml(sm)}</span><span class="dsText"><span class="dsName">${esc(sm.site.name)}${alert ? '<span class="redDot"></span>' : ""}</span>` +
           `<span class="dsMeta">${siteMetaText(sm.site)}</span></span>${stepDots(sm, false)}<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
@@ -3251,6 +3255,19 @@ async function renderDash() {
       },
     })
   );
+  sums
+    .filter((x) => x.overdue)
+    .forEach((x) =>
+      todo.push({
+        icon: ICONS.report,
+        cls: "wood",
+        html: `報告が <b class="em">${Math.floor(x.unreportedDays / 7)}週間</b> ありません<small>${esc(x.site.name)}・前回から${x.unreportedDays}日</small>`,
+        go: async () => {
+          if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
+          goReport();
+        },
+      })
+    );
   if (curSum && curSum.missing.length)
     todo.push({
       icon: ICONS.camera,
