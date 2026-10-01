@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -460,13 +460,15 @@ async function sendReply(n, text) {
   }
   if (dirHandle && data.source && data.source.writable) {
     try {
-      const sub = await dirHandle.getDirectoryHandle(REPLY_DIR, { create: true });
+      // 返信/<監督名>/ に分けて置く（Boxで監督ごとに自分のフォルダだけ共有できるように）
+      const top = await dirHandle.getDirectoryHandle(REPLY_DIR, { create: true });
+      const sub = await top.getDirectoryHandle(safeName(n.personName || "名前なし"), { create: true });
       const fh = await sub.getFileHandle(fileName, { create: true });
       const w = await fh.createWritable();
       await w.write(body);
       await w.close();
       addReplyToData(rp);
-      toast(`「${REPLY_DIR}」フォルダに書き出しました。Box で ${n.personName || "監督"} さんに届きます`);
+      toast(`「${REPLY_DIR}/${safeName(n.personName || "名前なし")}」フォルダに書き出しました`);
       return true;
     } catch (e) {
       console.error(e);
@@ -480,7 +482,7 @@ async function sendReply(n, text) {
   a.download = fileName;
   a.click();
   addReplyToData(rp);
-  toast(`ダウンロードしました。Box の「${REPLY_DIR}」フォルダに入れてください`);
+  toast(`ダウンロードしました。Box の「${REPLY_DIR}/${safeName(n.personName || "名前なし")}」フォルダに入れてください`);
   return true;
 }
 
@@ -895,7 +897,7 @@ function renderSettings() {
     `<div class="card setCard"><h2>あなたの名前</h2><p class="sub">返信に名前が入ります。</p><input id="myName" class="input" placeholder="山郷 太郎" value="${esc(getLS("name"))}"></div>` +
     `<div class="card setCard"><h2>報告フォルダ</h2>` +
     `<p class="sub">現場ナビから Box に届いた報告（JSONと写真）が入っているフォルダを、Box Drive の中から選びます。中のフォルダもまとめて読みます。` +
-    `返信は、そのフォルダの中の「${REPLY_DIR}」フォルダに書き出します。</p>` +
+    `返信は、そのフォルダの中の「${REPLY_DIR}／監督名」フォルダに書き出します。監督ごとに自分のフォルダだけを Box で共有すると、ほかの人あての返信は見えません。</p>` +
     (s ? `<div class="srcNow">${icon(s.demo ? "bulb" : "folder", 18)}<b>${esc(s.name)}</b>　報告 ${s.reports}件${s.photos != null ? `・写真 ${s.photos}枚` : ""}${s.writable === false && !s.demo ? "（読むだけ：返信はダウンロード）" : ""}</div>` : "") +
     `<div class="btnRow"><button class="btn btnPrimary" data-act="pick">${icon("folder", 18)}${s && !s.demo ? "フォルダを選び直す" : "報告フォルダを選ぶ"}</button>` +
     (dirHandle ? `<button class="btn btnOutline" data-act="reopen">${icon("reload", 18)}読み直す</button>` : "") +
