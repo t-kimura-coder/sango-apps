@@ -5,7 +5,7 @@
 | フォルダ | アプリ | 公開URL |
 |---|---|---|
 | `genba-manual/` | 現場訪問マニュアル（マニュアル閲覧＋工程別の写真・報告） | https://t-kimura-coder.github.io/sango-apps/genba-manual/ |
-| `genba-viewer/` | 報告ビューア（仮称・PC用。現場ナビの報告をBox Driveのフォルダから一覧し、返信を書き出す） | https://t-kimura-coder.github.io/sango-apps/genba-viewer/ |
+| `genba-viewer/` | 現場ナビ 見守り（管理者ビューア・PC用。現場ナビの報告をBox Driveのフォルダから一覧し、返信を書き出す） | https://t-kimura-coder.github.io/sango-apps/genba-viewer/ |
 
 ## ルール
 - **社内データ（マニュアル本文・顧客情報・Excel等）は載せない。** 公開するのは仕組みだけで、社内データは各iPhoneでJSONを取り込む

@@ -1,12 +1,12 @@
 /* ==========================================================
-   報告ビューア（仮称）
+   現場ナビ 見守り（管理者ビューア）
    現場ナビ（genba-manual）から Box に届いた報告JSON・写真を、PCで一覧する。
    - データはサーバーに置かない。Box Drive で同期しているフォルダを選んで、ブラウザの中で読むだけ
    - 返信は、選んだフォルダの「返信」フォルダに JSON で書き出す（現場ナビ側で取り込む）
    ========================================================== */
 
-const APP_NAME = "報告ビューア"; // 名前が決まったらここ（と index.html の title / manifest）を変える
-const APP_VERSION = 1;
+const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
+const APP_VERSION = 2;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -567,7 +567,7 @@ let homeFilter = "all";
 function renderHome() {
   const main = $("main");
   let html =
-    `<section class="hero"><img src="art/hero-sky.webp" class="heroSky" alt=""><img src="art/hero-frame.webp" class="heroArt" alt="">` +
+    `<section class="hero"><img src="art/hero-sky.webp" class="heroSky" alt=""><img src="art/hero-frame.webp" class="heroArt" alt=""><img src="art/hero-icons.webp" class="heroIcons" alt="">` +
     `<h1 class="heroTitle">現場の声に、<br>すぐに気づき、支える。</h1>` +
     `<p class="heroSub">現場からの疑問・気づき・相談をいち早く確認し、<br>必要なサポートにつなげましょう。</p></section>`;
   if (noData()) {
@@ -630,7 +630,7 @@ function renderNotes(params) {
   const main = $("main");
   if (params.get("st")) noteFilter.status = params.get("st");
   let html =
-    `<section class="pageHead"><h1>疑問・気づき一覧</h1><p class="sub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。早めの対応で、現場をスムーズに進めましょう。</p></section>`;
+    `<section class="pageHead withArt"><img src="art/character.webp" class="pageArt" alt=""><h1>疑問・気づき一覧</h1><p class="sub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。早めの対応で、現場をスムーズに進めましょう。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -819,7 +819,7 @@ function renderSite(key) {
   const prog = (s.reports.find((r) => r.progress) || {}).progress || null;
   const curGroup = prog ? (prog.find((g) => g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
   let html =
-    `<section class="hero small"><img src="art/hero-sky.webp" class="heroSky" alt=""><img src="art/hero-frame.webp" class="heroArt" alt="">` +
+    `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
     `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="#/person/${encodeURIComponent(s.personKey)}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
     `<h1 class="heroTitle">${esc(s.name)}の報告</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;

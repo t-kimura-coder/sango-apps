@@ -1,6 +1,6 @@
 {
-  "name": "報告ビューア",
-  "short_name": "報告ビューア",
+  "name": "現場ナビ 見守り（管理者ビューア）",
+  "short_name": "現場ナビ 見守り",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
