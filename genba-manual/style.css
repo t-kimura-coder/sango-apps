@@ -898,3 +898,12 @@ svg { flex: none; }
 .memberChips:empty { display: none; }
 .memberChip.on { background: var(--color-primary-soft); border-color: var(--color-primary-soft); color: var(--color-heading); font-size: var(--fs-md); gap: 8px; }
 .memberChip.add { border: 1.5px solid var(--color-primary); border-style: solid; }
+
+/* 記録を始めた工程 */
+.startGroups { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.startGroup { min-height: 44px; padding: 0 2px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-sub); }
+.startGroup.pre { background: var(--color-surface-sub); color: var(--color-text-muted); text-decoration: line-through; }
+.startGroup.on { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
+.dashStep.pre .dot { border-style: dashed; }
+.preLabel { padding: 1px 8px; border-radius: 6px; background: var(--color-surface-sub); color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 700; }
+.warnInline[data-editsite] { text-decoration: underline; }

@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -873,6 +873,7 @@ function siteProgress(s) {
   const per = personProgress(s);
   return latest.map((g) => ({
     group: g.group,
+    before_start: !!g.before_start && per.every((p) => (p.prog.find((x) => x.group === g.group) || {}).before_start), // 誰か一人でも記録していれば出す
     checks_total: g.checks_total,
     checks_done: Math.min(g.checks_total, Math.max(done[g.group] ? done[g.group].size : 0, ...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).checks_done || 0))),
     photos_total: g.photos_total,
@@ -898,7 +899,7 @@ function renderSite(key) {
   const open = [...data.notes.values()].filter((n) => n.siteKey === key && noteStatus(n) === "open");
   const prog = siteProgress(s);
   const personProg = personProgress(s);
-  const curGroup = prog ? (prog.find((g) => g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
+  const curGroup = prog ? (prog.find((g) => !g.before_start && g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
     `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="#/person/${encodeURIComponent(s.personKey)}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
@@ -920,6 +921,8 @@ function renderSite(key) {
         .map((g) => {
           const pc = g.checks_total ? Math.round((g.checks_done / g.checks_total) * 100) : 0;
           const pp = g.photos_total ? Math.round((g.photos_done / g.photos_total) * 100) : 0;
+          if (g.before_start)
+            return `<div class="progCard pre"><div class="pgHead"><img src="art/${GROUP_ART[g.group] || "g1"}.webp" alt=""><b>${esc(g.group)}</b></div><div class="pgPre">アプリ導入前<small>記録はありません</small></div><div class="pgState">導入前</div></div>`;
           const state = g.checks_total && g.checks_done >= g.checks_total ? ["done", "完了"] : g.checks_done ? ["doing", "進行中"] : ["todo", "未着手"];
           return (
             `<div class="progCard"><div class="pgHead"><img src="art/${GROUP_ART[g.group] || "g1"}.webp" alt=""><b>${esc(g.group)}</b></div>` +
@@ -939,6 +942,7 @@ function renderSite(key) {
           (pp) =>
             `<tr><th>${avatar(pp.name, 28)}${esc(pp.name)}</th>${pp.prog
               .map((g) => {
+                if (g.before_start) return `<td><small>導入前</small></td>`;
                 const pc = g.checks_total ? Math.round((g.checks_done / g.checks_total) * 100) : 0;
                 return `<td><div class="pgBar"><span style="width:${pc}%"></span></div><small>${pc}%</small></td>`;
               })

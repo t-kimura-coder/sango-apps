@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "現場に「記録を始めた工程」を登録できるようにしました。途中から担当する現場やアプリを入れる前から進んでいる現場は、そこより前の工程を「導入前」として扱い、進み具合や撮り忘れに数えません（「現場の情報を変更」から）" },
   { date: "2026-10-02", type: "feature", text: "ホームを作り直しました。担当現場が全部並び、それぞれ今どの工程かが分かります。その下に「やること」（上司からの返信・報告日・撮り忘れの品質写真）と「次に見る項目」が出ます。6つの工程は下の「工程」タブから開けます" },
   { date: "2026-10-02", type: "feature", text: "現場に「工事番号」と「担当者（苗字）」を登録できるようにしました。同じ現場を二人で担当する時に、上司の画面で一つの現場としてまとめて見られます。登録済みの現場は「現場の管理」→「現場の情報を変更」から入れてください" },
   { date: "2026-10-02", type: "feature", text: "気づき・疑問メモは、書く前に種類（疑問／気づき／職人さんの要望）を選ぶようにしました。上司に答えてほしい時は「疑問」を選んでください" },
@@ -673,6 +674,16 @@ function normKoujiNo(s) {
   return String(s || "").normalize("NFKC").replace(/\s/g, "");
 }
 
+async function editSiteInfo(site) {
+  const info = await editSiteSheet(site);
+  if (!info) return;
+  Object.assign(site, info);
+  await dbPut("sites", site);
+  await refreshSites();
+  toast("現場の情報を変更しました");
+  rerenderCurrentView();
+}
+
 function editSiteSheet(site) {
   return new Promise((resolve) => {
     openSheet(site ? "現場の情報を変更" : "現場を登録", (body, close) => {
@@ -750,6 +761,37 @@ function editSiteSheet(site) {
       hint.className = "mutedText";
       hint.textContent = "同じ現場を二人以上で担当する時は、全員が同じ工事番号を入れてください。上司の画面で一つの現場にまとまります。";
       body.appendChild(hint);
+      // 途中から担当する現場（担当交代・途中参加・アプリ導入前から進んでいる現場）用。
+      // 前の工程にチェックを自動で付けると、誰がいつ確認したかの記録が実際と合わなくなるので「導入前」として数えないだけにする
+      let startGroup = site ? site.startGroup || 0 : 0;
+      const sl = document.createElement("div");
+      sl.className = "fieldLabel strong";
+      sl.textContent = "記録を始めた工程";
+      body.appendChild(sl);
+      const sg = document.createElement("div");
+      sg.className = "startGroups";
+      body.appendChild(sg);
+      const sgHint = document.createElement("div");
+      sgHint.className = "mutedText";
+      body.appendChild(sgHint);
+      const drawSg = () => {
+        sg.innerHTML = "";
+        GROUPS.forEach((g, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "startGroup" + (i === startGroup ? " on" : i < startGroup ? " pre" : "");
+          b.textContent = g.name;
+          b.addEventListener("click", () => {
+            startGroup = i;
+            drawSg();
+          });
+          sg.appendChild(b);
+        });
+        sgHint.textContent = startGroup
+          ? `「${GROUPS[startGroup].name}」より前は「導入前」として、進み具合・撮り忘れに数えません（チェックは付きません）。`
+          : "着工から記録する現場は「基礎」のままでOK。途中から担当する現場だけ変えてください。";
+      };
+      drawSg();
       body.appendChild(
         sheetButton(site ? "変更する" : "登録する", "btnPrimary btnLarge", () => {
           const name = nameIn.value.trim();
@@ -768,7 +810,7 @@ function editSiteSheet(site) {
           }
           addMemberHistory(members);
           close();
-          resolve({ name, koujiNo: normKoujiNo(noIn.value), members });
+          resolve({ name, koujiNo: normKoujiNo(noIn.value), members, startGroup });
         })
       );
       body.appendChild(sheetButton("キャンセル", "btnSecondary", () => (close(), resolve(null))));
@@ -1778,9 +1820,9 @@ async function sendToBox() {
   // 6工程の進み具合（送信時点の累計。管理者側で現場ごとの進捗を出すため）
   if (site.id !== currentSiteId) await setCurrentSite(site.id);
   await loadSiteChecks();
-  const progress = GROUPS.map((g) => {
+  const progress = GROUPS.map((g, i) => {
     const pr = groupProgress(g, siteCheckRecs, siteRecordPhotos);
-    return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, photos_done: pr.photosDone, photos_total: pr.photos };
+    return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
   });
 
   openSheet("Boxへ送信", (body, close) => {
@@ -1824,7 +1866,7 @@ async function sendToBox() {
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
-          schema: 5, // 2: checks、3: 番号と疑問の状態、4: progress（6工程の累計）・写真id・解決日時、5: kouji_no（工事番号）・members（担当者の苗字）
+          schema: 6, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -1833,6 +1875,7 @@ async function sendToBox() {
           site: site.name,
           site_id: site.id,
           kouji_no: site.koujiNo || "",
+          start_group: GROUPS[site.startGroup || 0].name,
           members: site.members || [],
           period: { start, end },
           processes,
@@ -2007,10 +2050,13 @@ function renderGroupGrid(container, withProgress = false) {
     const b = document.createElement("button");
     b.className = "groupCard";
     const pr = withProgress ? groupProgress(g) : null;
+    const pre = withProgress && GROUPS.indexOf(g) < ((currentSite() || {}).startGroup || 0);
     b.innerHTML =
       `<span class="groupArt">${groupArt(g)}</span>` +
       `<span class="groupName">${esc(g.name)}<span class="chev">${icon(ICONS.chevron, 18, 2.6)}</span></span>` +
-      (pr && pr.checks
+      (pre
+        ? `<span class="groupProg"><span class="preLabel">導入前</span></span>`
+        : pr && pr.checks
         ? `<span class="groupProg"><span>チェック <b>${pr.checksDone}</b>/${pr.checks}</span>` +
           (pr.photos ? `<span><span class="kindLabel record">品質</span><b>${pr.photosDone}</b>/${pr.photos}</span>` : "") +
           `</span>`
@@ -2087,7 +2133,8 @@ async function openGroup(gid, itemId) {
   GROUPS.forEach((x, i) => {
     const b = document.createElement("button");
     const pr = groupProgress(x);
-    b.className = "step" + (pr.checks && pr.checksDone === pr.checks ? " done" : "") + (i === idx ? " current" : "");
+    const pre = i < ((currentSite() || {}).startGroup || 0);
+    b.className = "step" + (pre || (pr.checks && pr.checksDone === pr.checks) ? " done" : "") + (i === idx ? " current" : "");
     b.innerHTML = `<span class="stepDot"></span><span>${esc(x.name)}</span>`;
     b.addEventListener("click", () => openGroup(x.id));
     stepper.appendChild(b);
@@ -3076,18 +3123,20 @@ async function siteSummary(site) {
     .filter(isRecordPhoto)
     .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
     .forEach((p) => (recPhotos[`${p.itemId}|${p.checkKey}`] = p));
-  const groups = GROUPS.map((g) => groupProgress(g, recs, recPhotos));
-  let cur = 0;
+  const start = site.startGroup || 0; // 記録を始めた工程。これより前は「導入前」
+  const groups = GROUPS.map((g, i) => Object.assign(groupProgress(g, recs, recPhotos), { pre: i < start }));
+  let cur = start;
   groups.forEach((x, i) => {
-    if (x.checksDone > 0) cur = i;
+    if (x.checksDone > 0 && i > cur) cur = i;
   });
-  const total = groups.reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
+  const total = groups.filter((x) => !x.pre).reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
+  const preCats = new Set(GROUPS.slice(0, start).flatMap((g) => g.cats));
   // 撮り忘れ：チェックを始めた項目の「写真要」で、品質写真がまだ無いもの
   const missing = [];
   if (manualMeta)
     allManualItems().forEach((it) => {
       const rec = recs[it.id];
-      if (!rec || rec.na || !Object.keys(rec.marks || {}).length) return;
+      if (preCats.has(it.cat) || !rec || rec.na || !Object.keys(rec.marks || {}).length) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         if (c.photo === "要" && !recPhotos[`${it.id}|${checkKey("checks", c)}`]) missing.push(it);
       });
@@ -3110,7 +3159,7 @@ function siteMetaText(site) {
   const parts = [];
   if (site.koujiNo) parts.push("No." + esc(site.koujiNo));
   if ((site.members || []).length) parts.push("担当：" + esc(site.members.join("・")));
-  return parts.length ? parts.join('<span class="sep">｜</span>') : '<span class="warnInline">工事番号・担当者が未登録</span>';
+  return parts.length ? parts.join('<span class="sep">｜</span>') : `<span class="warnInline" data-editsite="${esc(site.id)}">工事番号・担当者を登録する ›</span>`;
 }
 
 // 6工程の現在地。済んだ工程は薄い緑、今の工程は濃い緑
@@ -3119,8 +3168,8 @@ function stepDots(sm, withLabels) {
     `<span class="dashSteps${withLabels ? " labels" : ""}">` +
     GROUPS.map((g, i) => {
       const x = sm.groups[i];
-      const done = x.checks && x.checksDone >= x.checks;
-      return `<span class="dashStep${i === sm.cur ? " cur" : done ? " done" : ""}"><span class="dot"></span>${withLabels || i === sm.cur ? `<span class="lbl">${esc(g.name)}</span>` : ""}</span>`;
+      const done = x.pre || (x.checks && x.checksDone >= x.checks);
+      return `<span class="dashStep${i === sm.cur ? " cur" : done ? " done" : ""}${x.pre ? " pre" : ""}"><span class="dot"></span>${withLabels || i === sm.cur ? `<span class="lbl">${esc(g.name)}</span>` : ""}</span>`;
     }).join("") +
     `</span>`
   );
@@ -3156,8 +3205,11 @@ async function renderDash() {
         `<span class="dsMeta">${siteMetaText(current)}</span></span><span class="chev">${icon(ICONS.chevron, 20)}</span></span>` +
         stepDots(curSum, true) +
         `<span class="dsProg"><span class="dsProgLabel">チェック進み具合</span><b>${curSum.pct}</b><span class="pctMark">%</span><span class="tileBar"><span style="width:${curSum.pct}%"></span></span></span>`;
-      // 今の工程の最初の項目（続きがその工程にあればそこ）を開く
-      b.addEventListener("click", () => openGroup(GROUPS[curSum.cur].id));
+      // 今の工程の最初の項目を開く（「未登録」の文字を押した時は、現場の情報の変更）
+      b.addEventListener("click", (e) => {
+        if (e.target.closest("[data-editsite]")) editSiteInfo(current);
+        else openGroup(GROUPS[curSum.cur].id);
+      });
       box.appendChild(b);
     }
     sums
@@ -3169,7 +3221,8 @@ async function renderDash() {
         b.innerHTML =
           `<span class="dsThumb">${siteThumbHtml(sm)}</span><span class="dsText"><span class="dsName">${esc(sm.site.name)}${alert ? '<span class="redDot"></span>' : ""}</span>` +
           `<span class="dsMeta">${siteMetaText(sm.site)}</span></span>${stepDots(sm, false)}<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
-        b.addEventListener("click", async () => {
+        b.addEventListener("click", async (e) => {
+          if (e.target.closest("[data-editsite]")) return editSiteInfo(sm.site);
           await setCurrentSite(sm.site.id);
           toast(`今の現場を「${sm.site.name}」にしました`);
         });
@@ -3237,7 +3290,8 @@ async function renderDash() {
     const cs = (it.text && it.text.checks) || [];
     return !!rec && cs.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
   };
-  const next = all.slice(from).find((it) => !isDone(it));
+  const preCats = new Set(GROUPS.slice(0, (current && current.startGroup) || 0).flatMap((g) => g.cats));
+  const next = all.slice(from).find((it) => !preCats.has(it.cat) && !isDone(it));
   if (next) {
     const prep = ((next.text && next.text.prep) || []).length;
     rows.push({ icon: ICONS.report, cls: "wood", label: "次の項目", it: next, extra: prep ? `（事前準備 ${prep}件）` : "" });
