@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "写真タブに見出しの絵を付けました（工程・報告タブとそろえました）" },
   { date: "2026-10-02", type: "feature", text: "工程マニュアルの画面を短くしました。メモは「メモを書く」を押すと書けます。「この項目のポイント」と「撮影ガイド」は見出しを押して開け閉めでき、閉じた状態は次も覚えています" },
   { date: "2026-10-02", type: "feature", text: "写真が読み込めない時は「？」ではなく「読み込めません」と出すようにしました。設定の「写真の点検」で、読み込めない写真が無いか確かめられます" },
   { date: "2026-10-02", type: "fix", text: "撮影中にアプリが読み込み直されて写真が保存されなかった時は、そのことをお知らせして、撮影していた項目・工程のページを開くようにしました。建物の種類の絵も新しくしました" },

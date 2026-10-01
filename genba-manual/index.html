@@ -101,11 +101,13 @@
 
 <!-- 写真：今の現場のアルバム（撮影はしない。見る・整理する・必要な写真が撮れているか確かめる） -->
 <section id="albumView" class="view" hidden>
-  <header class="topbar">
-    <h1 class="topbarTitle">写真整理</h1>
-    <button class="iconBtn settingsBtn" aria-label="設定"></button>
-  </header>
-  <div class="viewBody albumBody">
+  <div class="pageHero">
+    <img src="art/album-hero.webp?v=1" class="pageHeroArt" alt="">
+    <button class="iconBtn settingsBtn pageHeroBtn" aria-label="設定"></button>
+    <h1 class="pageHeroTitle">写真</h1>
+    <div class="pageHeroSub">現場ごとに撮った写真を、<br>工程ごとに見返せます。</div>
+  </div>
+  <div class="viewBody albumBody manualBody">
     <button class="siteBar curSiteBar"></button>
     <div id="albumStats" class="albumStats"></div>
     <div id="albumKinds" class="segRow"></div>
@@ -444,6 +446,6 @@
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>
