@@ -1,11 +1,12 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "会社のロゴを表示するようにしました（ホームの一番下と設定。最新のマニュアルを取り込むと表示されます）" },
   { date: "2026-10-01", type: "feature", text: "工程の検索を追加しました。ホームと工程タブの検索欄から、工程名やチェック項目の言葉で探せます（ひらがな可、「建て方」でも上棟が見つかります）" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルを見やすくしました。項目ごとに概要・ポイント・チェックポイント・作業の流れ・参考図を表示し、現場ごとにチェックを記録できます（マニュアルを最新版に取り込み直してください）" },
   { date: "2026-09-30", type: "feature", text: "お知らせと使い方のページを追加しました（ホーム右上のベルと？マーク）" },
@@ -1717,6 +1718,7 @@ async function onManualPicked() {
       items: pack.items,
       guides: pack.guides || {},
       synonyms: pack.synonyms || [],
+      branding: pack.branding || null,
       schema: pack.schema || 1,
     });
     await loadManualMeta();
@@ -1800,6 +1802,7 @@ function setSetting(key, value) {
 }
 
 async function renderSettings() {
+  renderBrand();
   $("userNameInput").value = getSetting(USER_NAME_KEY);
   $("boxEmailInput").value = getSetting(BOX_EMAIL_KEY);
   $("versionInfo").textContent = `バージョン ${APP_VERSION}`;
@@ -1823,10 +1826,33 @@ async function renderSettings() {
   info.textContent = text;
 }
 
+/* ---------- 会社ロゴ ---------- */
+// ロゴは社内データなのでアプリ本体には持たず、マニュアルパックの branding から表示する
+
+function brandLogoHtml(b) {
+  return (
+    `<div class="brandLogo">` +
+    (b.mark ? `<img class="mark" src="${b.mark}" alt="">` : "") +
+    (b.wordmark ? `<img class="wordmark" src="${b.wordmark}" alt="${esc(b.company || "")}">` : esc(b.company || "")) +
+    `</div>`
+  );
+}
+
+function renderBrand() {
+  const b = manualMeta && manualMeta.branding;
+  const footer = $("brandFooter");
+  const about = $("aboutBrand");
+  footer.hidden = about.hidden = !b;
+  if (!b) return;
+  footer.innerHTML = `<span>提供</span>${brandLogoHtml(b)}`;
+  about.innerHTML = brandLogoHtml(b);
+}
+
 /* ---------- ホーム ---------- */
 
 async function renderDash() {
   renderGroupGrid($("dashGroups"));
+  renderBrand();
   const sites = (await getSites()).filter((s) => !s.archived);
   let total = 0;
   for (const site of sites) total += unreported(await getSitePhotos(site.id)).length;

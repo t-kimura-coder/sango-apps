@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -65,6 +65,7 @@
       </div>
       <div id="recentList" class="recentList"></div>
     </div>
+    <div id="brandFooter" class="brandFooter" hidden></div>
   </div>
 </section>
 
@@ -255,6 +256,7 @@
     <div class="card">
       <div class="cardTitle">このアプリについて</div>
       <div class="mutedText">写真はこのiPhoneの中だけに保存されます。報告に使った写真は共有・保存で書き出してから、古い報告の写真を削除して容量を空けてください。</div>
+      <div id="aboutBrand" class="aboutBrand" hidden></div>
       <div id="versionInfo" class="mutedText versionInfo"></div>
     </div>
   </div>
@@ -368,6 +370,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

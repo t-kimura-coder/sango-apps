@@ -391,6 +391,19 @@ svg { flex: none; }
 /* 下部に操作バーがある画面は、バーがタブの真上に来るよう余白を詰める */
 .view:has(> .bottomActions) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 
+/* ---------- 会社ロゴ（マニュアルパックから。取り込んだ端末だけに出る） ---------- */
+.brandFooter { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--space-xl) 0 var(--space-sm); color: var(--color-text-muted); font-size: 11px; }
+.brandLogo { display: flex; align-items: center; gap: 10px; }
+.brandLogo .mark { height: 26px; width: auto; }
+.brandLogo .wordmark { height: 17px; width: auto; }
+.brandFooter .brandLogo { opacity: 0.75; }
+.aboutBrand { display: flex; align-items: center; gap: var(--space-md); margin: var(--space-sm) 0; }
+.aboutBrand .brandLogo .mark { height: 36px; }
+.aboutBrand .brandLogo .wordmark { height: 22px; }
+@media (prefers-color-scheme: dark) {
+  .brandLogo img { filter: invert(1); }
+}
+
 /* ---------- 工程の検索 ---------- */
 .searchBox { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: 50px; padding: 0 var(--space-lg); border-radius: 25px; border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); color: var(--color-text-muted); font-size: var(--fs-md); text-align: left; }
 .searchBox svg { color: var(--color-primary); }
