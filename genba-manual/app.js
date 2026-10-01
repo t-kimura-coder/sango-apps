@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 25;
+const APP_VERSION = 27;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -971,7 +971,7 @@ async function renderAlbum() {
     });
     chips.appendChild(b);
   });
-  chips.hidden = !byKind.length;
+  chips.hidden = false; // 写真がなくても大分類のタイルは並べておく（写真のない大分類は薄く表示）
 
   albumPhotos = byKind.filter((p) => albumState.group === "all" || groupOf(albumState.group).cats.includes(p.processId));
   const sorters = {
@@ -1284,7 +1284,7 @@ async function renderReport() {
   const weekday = new Date().getDay();
   const due = (weekday === 5 || weekday === 6) && cands.length > 0;
   let html =
-    `<div class="periodBar"><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
+    `<div class="periodBar withArt"><img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
     (due ? '<span class="badge badgeWarning">報告日</span>' : weeks >= 2 ? `<span class="badge badgeMuted">${weeks}週分</span>` : "") +
     `</div><div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
   body.innerHTML = html;
@@ -1303,7 +1303,7 @@ async function renderReport() {
     const thumb = latest ? `<img src="${blobUrl("report", latest.thumb)}" alt="">` : groupArt(groupOfProcess(pid), 46);
     card.innerHTML =
       `<button class="reportProcOpen"><span class="procThumb${latest ? " photo" : ""}">${thumb}</span>` +
-      `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
+      `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
       `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
       `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span></span>` +
       `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
@@ -1405,12 +1405,13 @@ async function renderReportProc() {
   if (!site || !reportProcId) return;
   const p = processOf(reportProcId);
   const g = groupOfProcess(reportProcId);
-  $("reportProcTitle").textContent = `${p.name}の報告`;
+  $("reportProcTitle").textContent = `${shortProcessName(p)}の報告`;
   const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const list = cands.filter((ph) => ph.processId === reportProcId).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
+  $("reportProcPeriodBar").className = "periodBar withArt";
   $("reportProcPeriodBar").innerHTML =
-    `<span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span>` +
+    `<img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span>` +
     `<span class="periodValue">${periodLabel(periodStart(site, cands)).text}</span>`;
   $("reportProcCard").innerHTML =
     `<span class="procHeroArt">${groupArt(g, 70)}</span>` +
@@ -1743,6 +1744,14 @@ async function loadManualMeta() {
     p.guideRecord = typeof g === "string" ? g : (g && g.record) || "";
     p.guideReport = typeof g === "object" && g ? g.report || "" : ""; // 文字列、または2〜3項目の配列
   });
+}
+
+// 見出し用の短い工程名（「大工工事（建方・上棟）」→「建方・上棟」など）
+function shortProcessName(p) {
+  return p.name
+    .replace(/^大工工事（(.+)）$/, "$1")
+    .replace(/^屋根仕上げ工事（板金）$/, "屋根板金")
+    .replace(/^仕上げ：/, "");
 }
 
 function reportGuideList(p) {
