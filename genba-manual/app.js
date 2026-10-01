@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,8 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "「疑問」のメモに「回答待ち／解決済み」を付けられるようにしました。報告にも状態が入ります" },
+  { date: "2026-10-01", type: "feature", text: "マニュアル改訂に備えて、チェックに固定の番号を付けました。新しいマニュアル（2026版の再配布分）を取り込むと、今までのチェックと品質写真はそのまま引き継がれます" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルの並びを変えました。開いてすぐ「チェックポイント」と品質写真のカメラが出ます。品質写真を撮ると、そのチェックにも自動で印が付きます" },
   { date: "2026-10-01", type: "feature", text: "ホームの「進み具合」をチェックの進み具合に変え、「続きから」を今の現場のすぐ下に出しました。文字とボタンを大きくし、屋外でも見やすくしています" },
   { date: "2026-10-01", type: "feature", text: "Boxへ送信の画面に送る写真の一覧を出し、送信時のメモを報告の記録にも残すようにしました。初回の案内にBoxのアドレスと品質写真の撮り方を足しました" },
@@ -724,7 +726,7 @@ async function renderSiteManage() {
 
 // 写真の見出し：品質写真はチェック項目、報告写真は工程名
 function photoTitle(ph) {
-  if (isRecordPhoto(ph) && ph.checkKey) return ph.checkKey.split("|").slice(1).join("|");
+  if (isRecordPhoto(ph) && ph.checkKey) return checkTextOf(ph.itemId, ph.checkKey);
   return processOf(ph.processId).name;
 }
 
@@ -909,7 +911,7 @@ async function recordCoverage(siteId) {
     ((it.text && it.text.checks) || []).forEach((c) => {
       if (c.photo !== "要") return;
       total++;
-      if (photos.some((p) => p.itemId === it.id && p.checkKey === "checks|" + c.text)) done++;
+      if (photos.some((p) => p.itemId === it.id && p.checkKey === checkKey("checks", c))) done++;
     });
   });
   return { total, done };
@@ -1553,12 +1555,12 @@ async function buildCheckSummary(siteId, start, end) {
     const checked = Object.entries(rec.marks || {})
       .filter(([, m]) => inPeriod(m.at))
       .map(([key, m]) => {
-        const [section, ...rest] = key.split("|");
-        const text = rest.join("|");
+        const [section] = key.split("|");
         const def = checkDefOf(it, key);
         return {
+          id: def && def.id ? def.id : "",
           section: section === "prep" ? "事前準備" : "チェック",
-          text,
+          text: def ? def.text : key.split("|").slice(1).join("|"),
           at: m.at,
           by: m.by || "",
           photo_required: !!(def && def.photo === "要"),
@@ -1569,10 +1571,19 @@ async function buildCheckSummary(siteId, start, end) {
     const na = rec.na && inPeriod(rec.naAt);
     const notes = (rec.notes || [])
       .filter((n) => inPeriod(n.at))
-      .map((n) => ({ type: (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label, text: n.text, at: n.at, by: n.by || "" }));
+      .map((n) => ({
+        id: n.id,
+        type: (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label,
+        type_id: n.type,
+        status: n.type === "question" ? n.status || "open" : "",
+        text: n.text,
+        at: n.at,
+        by: n.by || "",
+      }));
     if (!checked.length && !na && !notes.length) continue;
     const total = ((it.text && it.text.checks) || []).length;
     out.push({
+      item_id: it.id,
       item_no: it.no,
       item: it.name,
       process: processOf(it.cat).name,
@@ -1665,11 +1676,14 @@ async function sendToBox() {
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
-          schema: 2, // 2: checks（期間中に付けたチェック）を追加
+          schema: 3, // 2: checks（期間中に付けたチェック）、3: 番号（site_id・item_id・チェックid・メモid）と疑問の状態、manual_version
           app_version: APP_VERSION,
+          manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
           sender: getSetting(USER_NAME_KEY),
+          sender_id: deviceId(),
           site: site.name,
+          site_id: site.id,
           period: { start, end },
           processes,
           memo: memo.value.trim(),
@@ -1680,6 +1694,9 @@ async function sendToBox() {
             process: processOf(e.photo.processId).name,
             date: e.photo.dateKey,
             taken_at: e.photo.takenAt,
+            item_id: e.photo.itemId || "",
+            check_id: e.photo.checkKey && e.photo.checkKey.includes("|#") ? e.photo.checkKey.split("|#")[1] : "",
+            check: isRecordPhoto(e.photo) && e.photo.checkKey ? checkTextOf(e.photo.itemId, e.photo.checkKey) : "",
           })),
           checks: checkSummary,
         };
@@ -1769,6 +1786,7 @@ async function loadManualMeta() {
   searchIndex = null;
   const guides = (manualMeta && manualMeta.guides) || {};
   reportNote = guides._reportNote || DEFAULT_REPORT_NOTE;
+  await migrateCheckKeys();
   PROCESSES.forEach((p) => {
     const g = guides[p.id];
     // 古いパックは文字列1つ、新しいパックは {record, report}
@@ -1816,7 +1834,7 @@ function groupProgress(g) {
       const rec = siteCheckRecs[it.id];
       if (rec && rec.na) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
-        const key = "checks|" + c.text;
+        const key = checkKey("checks", c);
         out.checks++;
         if (rec && rec.marks[key]) out.checksDone++;
         if (c.photo === "要") {
@@ -1899,7 +1917,7 @@ function checkRecOf(itemId) {
 function itemProgress(it) {
   const checks = (it.text && it.text.checks) || [];
   const rec = checkRecOf(it.id);
-  const done = checks.filter((c) => rec.marks["checks|" + c.text]).length;
+  const done = checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
   return { done, total: checks.length, na: rec.na };
 }
 
@@ -2024,7 +2042,7 @@ async function renderItem() {
     if (!tx) {
       html += `<div class="emptyNote">このマニュアルには文章データが入っていません。設定から最新版のマニュアルを取り込み直すと、ポイントやチェックポイントが表示されます。</div>`;
     } else {
-      const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
+      const done = tx.checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
       html +=
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
         (tx.checks.length ? `<span id="checkProgress">${done}/${tx.checks.length}</span>` : "") +
@@ -2120,7 +2138,7 @@ function lineHtml(x) {
 }
 
 function checkRowHtml(sec, c, rec, it) {
-  const key = `${sec}|${c.text}`;
+  const key = checkKey(sec, c);
   const mark = rec.marks[key];
   const disabled = !currentSiteId || rec.na;
   // 「写真要」のチェックには品質写真のカメラ。撮る前は灰色、撮ったら写真が出る
@@ -2145,11 +2163,78 @@ function checkRowHtml(sec, c, rec, it) {
   );
 }
 
+// チェック記録・品質写真の鍵。マニュアルパック(schema 5〜)のチェックには固定番号 id があり "区分|#番号"、
+// 古いパックは "区分|チェック文"。古い鍵は migrateCheckKeys で番号の鍵に置き換える
+function checkKey(sec, c) {
+  return c.id ? `${sec}|#${c.id}` : `${sec}|${c.text}`;
+}
+
 function checkDefOf(it, key) {
   const [sec, ...rest] = key.split("|");
   const text = rest.join("|");
   const list = (it.text && it.text[sec]) || [];
-  return list.find((c) => c.text === text);
+  return text.startsWith("#") ? list.find((c) => c.id === text.slice(1)) : list.find((c) => c.text === text);
+}
+
+// 鍵からチェック文を引く（マニュアルから消えたチェックは番号のまま）
+function checkTextOf(itemId, key) {
+  const it = manualMeta && manualMeta.items.find((x) => x.id === itemId);
+  const def = it && checkDefOf(it, key);
+  return def ? def.text : key.split("|").slice(1).join("|");
+}
+
+// 古い鍵（区分|チェック文）を番号の鍵へ。マニュアルを取り込んだ時・バックアップから戻した時に1回だけ走らせる
+const KEY_MIGRATED_KEY = "genba-photo-checkkey-migrated";
+async function migrateCheckKeys(force = false) {
+  if (!manualMeta) return;
+  const stamp = `${manualMeta.builtAt}|${manualMeta.importedAt}`;
+  if (!force && localStorage.getItem(KEY_MIGRATED_KEY) === stamp) return;
+  const map = {}; // itemId → { 古い鍵: 新しい鍵 }
+  manualMeta.items.forEach((it) => {
+    const m = {};
+    ["checks", "prep"].forEach((sec) =>
+      ((it.text && it.text[sec]) || []).forEach((c) => {
+        if (c.id) m[`${sec}|${c.text}`] = checkKey(sec, c);
+      })
+    );
+    map[it.id] = m;
+  });
+  const recs = (await dbGetAll("checks")).filter((r) => {
+    const m = map[r.itemId];
+    if (!m) return false;
+    let changed = false;
+    Object.keys(r.marks || {}).forEach((k) => {
+      const nk = m[k];
+      if (!nk) return;
+      if (!r.marks[nk] || r.marks[nk].at < r.marks[k].at) r.marks[nk] = r.marks[k];
+      delete r.marks[k];
+      changed = true;
+    });
+    return changed;
+  });
+  if (recs.length) await dbPutMany("checks", recs);
+  // 写真は数が多いので、全部を一度に読まずに1枚ずつ見て書き換える
+  const db = await dbPromise;
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction("photos", "readwrite");
+    const req = tx.objectStore("photos").openCursor();
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (!cur) return;
+      const p = cur.value;
+      const nk = p.checkKey && map[p.itemId] && map[p.itemId][p.checkKey];
+      if (nk) {
+        p.checkKey = nk;
+        cur.update(p);
+      }
+      cur.continue();
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  try {
+    localStorage.setItem(KEY_MIGRATED_KEY, stamp);
+  } catch (e) {}
 }
 
 function bindCheckRow(row, it) {
@@ -2172,7 +2257,7 @@ function refreshCheckRow(it, key) {
   const prog = $("checkProgress");
   if (prog && it.text) {
     const rec = checkRecOf(it.id);
-    prog.textContent = `${it.text.checks.filter((c) => rec.marks["checks|" + c.text]).length}/${it.text.checks.length}`;
+    prog.textContent = `${it.text.checks.filter((c) => rec.marks[checkKey("checks", c)]).length}/${it.text.checks.length}`;
   }
 }
 
@@ -2335,6 +2420,9 @@ function renderMemoSection(it) {
         (n) =>
           `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc((NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label)}</span>` +
           `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
+          (n.type === "question"
+            ? `<button class="noteStatus${n.status === "resolved" ? " done" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : "回答待ち"}</button>`
+            : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
           `</div><div class="noteText">${esc(n.text)}</div></div>`
       )
@@ -2351,6 +2439,7 @@ function renderMemoSection(it) {
     $("memoInput").addEventListener("input", (e) => (save.hidden = !e.target.value.trim()));
   }
   sec.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteMemo(it, b.dataset.del)));
+  sec.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", () => toggleNoteStatus(it, b.dataset.status)));
 }
 
 async function saveMemo(it) {
@@ -2362,10 +2451,32 @@ async function saveMemo(it) {
   }
   const rec = checkRecOf(it.id);
   rec.notes = rec.notes || [];
-  rec.notes.push({ id: newId(), type: memoType, text, at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) });
+  const note = { id: newId(), type: memoType, text, at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
+  if (memoType === "question") note.status = "open";
+  rec.notes.push(note);
   await saveCheckRec(rec);
   renderMemoSection(it);
   toast("メモを残しました");
+}
+
+// 疑問の状態（回答待ち ⇔ 解決済み）。いつ・誰が解決にしたかも残す
+async function toggleNoteStatus(it, id) {
+  const rec = checkRecOf(it.id);
+  const n = (rec.notes || []).find((x) => x.id === id);
+  if (!n) return;
+  if (n.status === "resolved") {
+    n.status = "open";
+    delete n.resolvedAt;
+    delete n.resolvedBy;
+  } else {
+    if (!confirm("この疑問を「解決済み」にしますか？")) return;
+    n.status = "resolved";
+    n.resolvedAt = new Date().toISOString();
+    n.resolvedBy = getSetting(USER_NAME_KEY);
+  }
+  n.updatedAt = new Date().toISOString();
+  await saveCheckRec(rec);
+  renderMemoSection(it);
 }
 
 async function deleteMemo(it, id) {
@@ -2619,6 +2730,17 @@ function setSetting(key, value) {
   } catch (e) {
     /* ignore */
   }
+}
+
+// この端末の番号（同じ名前の人がいても、管理者側で送り手を区別できるように）
+const DEVICE_ID_KEY = "genba-photo-device-id";
+function deviceId() {
+  let v = getSetting(DEVICE_ID_KEY);
+  if (!v) {
+    v = newId();
+    setSetting(DEVICE_ID_KEY, v);
+  }
+  return v;
 }
 
 function getBoxEmail() {
@@ -2996,8 +3118,12 @@ async function onRestorePicked() {
         Object.entries(r.marks || {}).forEach(([k, m]) => {
           if (!marks[k] || marks[k].at < m.at) marks[k] = m;
         });
-        const noteIds = new Set((cur.notes || []).map((n) => n.id));
-        const notes = (cur.notes || []).concat((r.notes || []).filter((n) => !noteIds.has(n.id)));
+        const byId = new Map((cur.notes || []).map((n) => [n.id, n]));
+        (r.notes || []).forEach((n) => {
+          const c = byId.get(n.id);
+          if (!c || (n.updatedAt || n.at) > (c.updatedAt || c.at)) byId.set(n.id, n);
+        });
+        const notes = [...byId.values()];
         const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
         return Object.assign({}, cur, { marks, notes }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
       });
@@ -3027,6 +3153,7 @@ async function onRestorePicked() {
       if (!getSetting(USER_NAME_KEY) && data.settings.userName) setSetting(USER_NAME_KEY, data.settings.userName);
       if (!getSetting(BOX_EMAIL_KEY) && data.settings.boxEmail) setSetting(BOX_EMAIL_KEY, data.settings.boxEmail);
     }
+    await migrateCheckKeys(true);
     await refreshSites();
     await loadSiteChecks();
     toast(

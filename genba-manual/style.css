@@ -768,3 +768,7 @@ svg { flex: none; }
 /* Boxへ送信：送る写真の一覧 */
 .sendThumbs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
 .sendThumbs img { flex: none; width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
+
+/* 疑問の状態 */
+.noteStatus { min-height: 32px; padding: 0 10px; border-radius: 16px; border: 1.5px solid var(--color-warning-text); background: var(--color-warning-soft); color: var(--color-warning-text); font-size: var(--fs-xs); font-weight: 800; }
+.noteStatus.done { border-color: var(--color-ok-text); background: var(--color-ok-soft); color: var(--color-ok-text); }
