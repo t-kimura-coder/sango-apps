@@ -718,3 +718,20 @@ svg { flex: none; }
 .periodBar.withArt > span { position: relative; z-index: 1; }
 .periodArt { position: absolute; right: 18%; bottom: -26px; height: 170%; opacity: 0.32; pointer-events: none; -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); }
 @media (prefers-color-scheme: dark) { .periodArt { opacity: 0.18; } }
+
+/* ---------- 気づき・疑問メモ ---------- */
+.memoSection { display: flex; flex-direction: column; gap: var(--space-sm); padding-top: var(--space-sm); border-top: 1px dashed var(--color-border); }
+.noteTypes { display: flex; gap: 6px; flex-wrap: wrap; }
+.noteType { min-height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-sub); }
+.noteType.active { background: var(--color-heading); border-color: var(--color-heading); color: var(--color-surface); }
+.memoInput { min-height: 76px; }
+.noteList { display: flex; flex-direction: column; gap: 6px; }
+.noteList:empty { display: none; }
+.noteItem { padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-bg); border: 1px solid var(--color-border); }
+.noteHead { display: flex; align-items: center; gap: 6px; }
+.noteBadge { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 6px; background: var(--color-primary-soft); color: var(--color-primary); }
+.noteBadge.question { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.noteBadge.request { background: var(--color-wood-soft); color: var(--color-wood-text); }
+.noteMeta { font-size: 11px; color: var(--color-text-muted); }
+.noteDel { margin-left: auto; width: 28px; height: 28px; border: none; background: none; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; }
+.noteText { margin-top: 4px; font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }

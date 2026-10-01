@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "工程マニュアルに「気づき・疑問メモ」を追加しました（原本の「気づき・職人さんからの要望」欄）。現場ごとに、いつ・誰が書いたかと一緒に残り、報告にも含まれます" },
   { date: "2026-10-01", type: "feature", text: "写真整理・報告の画面を見やすくしました。写真整理は2列／3列を切り替えられ、写真ごとの「︙」から拡大・工程の変更・削除ができます" },
   { date: "2026-10-01", type: "fix", text: "現場の管理や設定から戻ったとき、工程マニュアルや報告のページが前の現場のまま残ることがある不具合を直しました" },
   { date: "2026-10-01", type: "fix", text: "過去の報告の写真を削除したり品質写真を撮り直したりしたとき、品質写真や報告済みの写真まで消えてしまう不具合を直しました" },
@@ -124,6 +125,7 @@ const ICONS = {
   grid2: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.5"/>',
   grid3: '<path d="M3.5 3.5h4.5v4.5H3.5zM9.75 3.5h4.5v4.5h-4.5zM16 3.5h4.5v4.5H16zM3.5 9.75h4.5v4.5H3.5zM9.75 9.75h4.5v4.5h-4.5zM16 9.75h4.5v4.5H16zM3.5 16h4.5v4.5H3.5zM9.75 16h4.5v4.5h-4.5zM16 16h4.5v4.5H16z"/>',
   dotsV: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.3" r="0.6" fill="currentColor"/>',
   folder: '<path d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2.5H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
@@ -1552,7 +1554,10 @@ async function buildCheckSummary(siteId, start, end) {
       })
       .sort((a, b) => (a.at < b.at ? -1 : 1));
     const na = rec.na && inPeriod(rec.naAt);
-    if (!checked.length && !na) continue;
+    const notes = (rec.notes || [])
+      .filter((n) => inPeriod(n.at))
+      .map((n) => ({ type: (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label, text: n.text, at: n.at, by: n.by || "" }));
+    if (!checked.length && !na && !notes.length) continue;
     const total = ((it.text && it.text.checks) || []).length;
     out.push({
       item_no: it.no,
@@ -1562,6 +1567,7 @@ async function buildCheckSummary(siteId, start, end) {
       checks_done: Object.keys(rec.marks || {}).filter((k) => k.startsWith("checks|")).length,
       not_applicable: !!rec.na,
       checked,
+      notes,
     });
   }
   return out.sort((a, b) => allManualItems().findIndex((x) => x.name === a.item) - allManualItems().findIndex((x) => x.name === b.item));
@@ -2010,6 +2016,7 @@ async function renderItem() {
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
       else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの工程はない"}</button>`;
+      html += `<div id="memoSection" class="memoSection"></div>`;
     }
     if (it.pages.length > 1) {
       html += `<div class="secHead">${icon(ICONS.photo, 22)}参考図・写真</div><div class="figStrip" id="figStrip"></div>`;
@@ -2043,6 +2050,7 @@ async function renderItem() {
   box.innerHTML = html;
 
   box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
+  if ($("memoSection")) renderMemoSection(it);
   const na = box.querySelector("[data-na]");
   if (na) na.addEventListener("click", () => toggleNa(it));
   const toReport = box.querySelector("[data-toreport]");
@@ -2257,6 +2265,72 @@ async function toggleNa(it) {
   const y = window.scrollY;
   await renderItem();
   window.scrollTo(0, y);
+}
+
+/* ---------- 気づき・疑問メモ（原本の「気づき・職人さんからの要望」欄） ---------- */
+// 1つの欄を書き換えるのではなく、書くたびに1件ずつ残す（いつ・誰が・何を感じたかを後で追えるように）。
+// 「疑問」は将来、会議などで答える場につなげる想定
+const NOTE_TYPES = [
+  { id: "notice", label: "気づき" },
+  { id: "question", label: "疑問" },
+  { id: "request", label: "職人さんの要望" },
+];
+let memoType = "notice";
+
+function renderMemoSection(it) {
+  const sec = $("memoSection");
+  if (!sec) return;
+  const rec = checkRecOf(it.id);
+  const notes = (rec.notes || []).slice().sort((a, b) => (a.at < b.at ? 1 : -1));
+  const me = getSetting(USER_NAME_KEY);
+  sec.innerHTML =
+    `<div class="secHead">${icon(ICONS.edit || ICONS.report, 22)}気づき・疑問メモ<span class="secRight">${notes.length ? notes.length + "件" : ""}</span></div>` +
+    (currentSiteId
+      ? `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}">${t.label}</button>`).join("")}</div>` +
+        `<textarea id="memoInput" class="sheetTextarea memoInput" placeholder="現場で気づいたこと、疑問に思ったこと、職人さんからの要望など"></textarea>` +
+        `<button id="memoSaveBtn" class="btn btnOutline">メモを残す</button>`
+      : `<div class="hint">上の「今の現場」から現場を登録すると、メモを残せます。</div>`) +
+    `<div class="noteList">${notes
+      .map(
+        (n) =>
+          `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc((NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label)}</span>` +
+          `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
+          (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
+          `</div><div class="noteText">${esc(n.text)}</div></div>`
+      )
+      .join("")}</div>`;
+  sec.querySelectorAll(".noteType").forEach((b) =>
+    b.addEventListener("click", () => {
+      memoType = b.dataset.type;
+      sec.querySelectorAll(".noteType").forEach((x) => x.classList.toggle("active", x === b));
+    })
+  );
+  const save = $("memoSaveBtn");
+  if (save) save.addEventListener("click", () => saveMemo(it));
+  sec.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteMemo(it, b.dataset.del)));
+}
+
+async function saveMemo(it) {
+  const text = $("memoInput").value.trim();
+  if (!text) {
+    toast("メモの内容を入力してください");
+    $("memoInput").focus();
+    return;
+  }
+  const rec = checkRecOf(it.id);
+  rec.notes = rec.notes || [];
+  rec.notes.push({ id: newId(), type: memoType, text, at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) });
+  await saveCheckRec(rec);
+  renderMemoSection(it);
+  toast("メモを残しました");
+}
+
+async function deleteMemo(it, id) {
+  if (!confirm("このメモを削除しますか？")) return;
+  const rec = checkRecOf(it.id);
+  rec.notes = (rec.notes || []).filter((n) => n.id !== id);
+  await saveCheckRec(rec);
+  renderMemoSection(it);
 }
 
 // 右上のカメラ：今開いている項目の工程（17分類）の報告写真のページへ
@@ -2865,8 +2939,10 @@ async function onRestorePicked() {
         Object.entries(r.marks || {}).forEach(([k, m]) => {
           if (!marks[k] || marks[k].at < m.at) marks[k] = m;
         });
+        const noteIds = new Set((cur.notes || []).map((n) => n.id));
+        const notes = (cur.notes || []).concat((r.notes || []).filter((n) => !noteIds.has(n.id)));
         const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
-        return Object.assign({}, cur, { marks }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
+        return Object.assign({}, cur, { marks, notes }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
       });
       await dbPutMany("checks", merged);
       added.checks = merged.length;
