@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,9 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "fix", text: "現場の管理や設定から戻ったとき、工程マニュアルや報告のページが前の現場のまま残ることがある不具合を直しました" },
+  { date: "2026-10-01", type: "fix", text: "過去の報告の写真を削除したり品質写真を撮り直したりしたとき、品質写真や報告済みの写真まで消えてしまう不具合を直しました" },
+  { date: "2026-10-01", type: "fix", text: "写真タブで、一度「報告に使う」にした写真を外せるようにしました（選ぶと「報告から外す」になります）" },
   { date: "2026-10-01", type: "feature", text: "「記録写真」を「品質写真」に名前を変えました。並びはどこでも「品質（左）・報告（右）」にそろえています" },
   { date: "2026-10-01", type: "feature", text: "ホームに「写真整理」の入口を戻しました。工程タブでは、今の現場のチェックと品質写真の進み具合が分かるようにしました" },
   { date: "2026-10-01", type: "feature", text: "現場をアプリ全体で1つにまとめました。ホームの「今の現場」や各画面の上の欄から切り替え・追加ができ、「現場の管理」で名前の変更・完了・削除ができます" },
@@ -272,9 +275,10 @@ function unreported(photos) {
 // 今回の報告期間の開始日 = 前回報告の終了日の翌日
 // （初回は現場登録日。登録日より前の写真を取り込んだ場合はその日付まで遡る）
 function periodStart(site, currentPhotos) {
-  let start = site.lastReportEnd ? addDays(site.lastReportEnd, 1) : site.createdAt.slice(0, 10);
+  let start = site.lastReportEnd ? addDays(site.lastReportEnd, 1) : toDateKey(new Date(site.createdAt));
   currentPhotos.forEach((p) => {
-    if (p.dateKey < start) start = p.dateKey;
+    // 「報告に使う」にした古い品質写真で期間が遡らないよう、期間の計算は報告写真だけで行う
+    if (!isRecordPhoto(p) && p.dateKey < start) start = p.dateKey;
   });
   return start;
 }
@@ -544,7 +548,10 @@ async function refreshSites() {
   activeSitesCache = (await getSites()).filter((s) => !s.archived);
   const saved = getSetting(CURRENT_SITE_KEY);
   if (!activeSitesCache.some((s) => s.id === currentSiteId)) {
+    // 今の現場が完了・削除されたら別の現場に切り替わる。その現場のチェック記録を読み直さないと、前の現場に書き込んでしまう
     currentSiteId = activeSitesCache.some((s) => s.id === saved) ? saved : activeSitesCache[0] ? activeSitesCache[0].id : null;
+    setSetting(CURRENT_SITE_KEY, currentSiteId || "");
+    if (typeof loadSiteChecks === "function") await loadSiteChecks();
   }
   renderSiteBars();
   return activeSitesCache.find((s) => s.id === currentSiteId) || null;
@@ -618,6 +625,7 @@ async function addSite() {
 function rerenderCurrentView() {
   const fns = {
     dashView: renderDash,
+    manualView: renderManual,
     albumView: renderAlbum,
     reportView: renderReport,
     reportProcView: renderReportProc,
@@ -627,6 +635,9 @@ function rerenderCurrentView() {
   if (fns[currentView]) fns[currentView]();
 }
 
+// 描画の世代番号。await の間に次の描画が始まったら古い方は画面を触らない（写真が2倍に並ぶのを防ぐ）
+const renderGen = { album: 0, report: 0, manage: 0 };
+
 /* ---------- 現場の管理 ---------- */
 
 function openSiteManage() {
@@ -635,18 +646,22 @@ function openSiteManage() {
 }
 
 async function renderSiteManage() {
+  const gen = ++renderGen.manage;
   const sites = await getSites();
+  const photosBySite = {};
+  for (const site of sites) photosBySite[site.id] = await getSitePhotos(site.id);
+  if (gen !== renderGen.manage) return;
   const list = $("manageList");
   list.innerHTML = "";
   if (!sites.length) list.innerHTML = '<div class="emptyState"><div class="emptyText">まだ現場が登録されていません。</div></div>';
   for (const site of sites) {
-    const photos = await getSitePhotos(site.id);
+    const photos = photosBySite[site.id];
     const card = document.createElement("div");
     card.className = "siteCard manageCard";
     card.innerHTML =
       `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
       (site.id === currentSiteId ? '<span class="badge badgeOk">今の現場</span>' : site.archived ? '<span class="badge badgeMuted">完了</span>' : "") +
-      `</div><div class="siteMeta">登録 ${fmtDate(site.createdAt.slice(0, 10))} ・ 写真 ${photos.length}枚</div>` +
+      `</div><div class="siteMeta">登録 ${fmtDate(toDateKey(new Date(site.createdAt)))} ・ 写真 ${photos.length}枚</div>` +
       `<div class="manageBtns"></div>`;
     const btns = card.querySelector(".manageBtns");
     const add = (label, cls, fn) => {
@@ -848,8 +863,12 @@ async function recordCoverage(siteId) {
 }
 
 async function renderAlbum() {
-  releaseUrls("album");
+  const gen = ++renderGen.album;
   const site = await refreshSites();
+  const all = site ? await getSitePhotos(site.id) : [];
+  const cov = site ? await recordCoverage(site.id) : null;
+  if (gen !== renderGen.album) return;
+  releaseUrls("album");
   const grid = $("albumGrid");
   grid.innerHTML = "";
   const empty = $("albumEmpty");
@@ -864,8 +883,6 @@ async function renderAlbum() {
     $("albumBar").hidden = true;
     return;
   }
-  const all = await getSitePhotos(site.id);
-  const cov = await recordCoverage(site.id);
   const nReport = all.filter((p) => !isRecordPhoto(p)).length;
   const nRecord = all.length - nReport;
   $("albumStats").innerHTML =
@@ -945,9 +962,15 @@ async function renderAlbum() {
   updateAlbumBar();
 }
 
+function albumSelAllPicked() {
+  const sel = albumPhotos.filter((p) => albumSel.has(p.id) && !p.reportId);
+  return sel.length > 0 && sel.every((p) => p.sendPick);
+}
+
 function updateAlbumBar() {
   $("albumBar").hidden = albumSel.size === 0;
   $("albumSelCount").textContent = albumSel.size;
+  $("albumUseBtn").textContent = albumSelAllPicked() ? "報告から外す" : "報告に使う";
 }
 
 async function albumSelected() {
@@ -956,6 +979,18 @@ async function albumSelected() {
 
 // 選んだ写真を「送る写真」にする（品質写真も報告に使えるようにする）
 async function albumUseForReport() {
+  if (albumSelAllPicked()) {
+    const picked = (await albumSelected()).filter((p) => !p.reportId);
+    picked.forEach((p) => {
+      p.sendPick = false;
+      if (isRecordPhoto(p)) p.forReport = false;
+    });
+    await dbPutMany("photos", picked);
+    albumSel.clear();
+    await renderAlbum();
+    toast(`${picked.length}枚を報告から外しました`);
+    return;
+  }
   const photos = await albumSelected();
   const usable = photos.filter((p) => !p.reportId);
   usable.forEach((p) => {
@@ -992,7 +1027,8 @@ async function albumDelete() {
 let shootProcessId = null;
 let lastShotId = null;
 let libraryProcessId = null;
-let shotFrom = "report"; // 撮影を始めた画面（"manual" なら工程マニュアル、"report" なら報告の工程ページに戻る）
+let shotFrom = "report"; // 撮影を始めた画面（今は報告の工程ページだけ）
+let lastSavedProcessId = null; // 撮影直後の画面で最後に保存した写真の工程（「終わる」の戻り先）
 
 // 品質写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
 let recordTarget = null;
@@ -1035,6 +1071,7 @@ async function onCameraPicked() {
     const rec = await makePhotoRecord(file, currentSiteId, shootProcessId, new Date());
     await dbPut("photos", rec);
     lastShotId = rec.id;
+    lastSavedProcessId = shootProcessId;
     await renderShot(rec);
     showView("shotView");
   } catch (e) {
@@ -1126,11 +1163,7 @@ function pickOtherProcess() {
 function leaveShot() {
   releaseUrls("shot");
   lastShotId = null;
-  if (shotFrom === "manual" && manualMeta) {
-    openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id);
-    return;
-  }
-  openReportProc(shootProcessId);
+  openReportProc(lastSavedProcessId || reportProcId || shootProcessId);
 }
 
 async function onLibraryPicked() {
@@ -1163,6 +1196,8 @@ async function onLibraryPicked() {
 
 let reportProcId = null;
 let reportPastId = null;
+let reportCache = { site: null, all: [] }; // 報告タブを描いた時の写真（「写真を保存」をタップの中ですぐ共有するため）
+let pastPhotos = [];                        // 過去の報告の画面に出している写真
 
 function sendPicks(photos) {
   return unreported(photos).filter((p) => p.sendPick);
@@ -1174,8 +1209,13 @@ function goReport() {
 }
 
 async function renderReport() {
-  releaseUrls("report");
+  const gen = ++renderGen.report;
   const site = await refreshSites();
+  const all = site ? await getSitePhotos(site.id) : [];
+  const reports = site ? (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1)) : [];
+  if (gen !== renderGen.report) return;
+  releaseUrls("report");
+  reportCache = { site, all };
   const body = $("reportBody");
   body.innerHTML = "";
   if (!site) {
@@ -1183,7 +1223,6 @@ async function renderReport() {
     $("reportBar").hidden = true;
     return;
   }
-  const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const picks = cands.filter((p) => p.sendPick);
   const { text, weeks } = periodLabel(periodStart(site, cands));
@@ -1227,7 +1266,6 @@ async function renderReport() {
   body.appendChild(list);
   body.appendChild(sheetButton("＋ 工程を追加", "btnDashed", openProcessPicker));
 
-  const reports = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1));
   if (reports.length) {
     const past = document.createElement("div");
     past.className = "pastReports";
@@ -1363,6 +1401,7 @@ async function renderReportPast() {
   if (!site || !r) return goReport();
   $("reportPastTitle").textContent = `${fmtDate(r.start)}〜${fmtDate(r.end)}の報告`;
   const list = (await getSitePhotos(site.id)).filter((p) => p.reportId === r.id).sort((a, b) => processOf(a.processId).no - processOf(b.processId).no);
+  pastPhotos = list;
   const grid = $("reportPastGrid");
   grid.innerHTML = "";
   list.forEach((ph) =>
@@ -1384,8 +1423,20 @@ async function deleteReportPhotos() {
   const site = currentSite();
   const list = (await getSitePhotos(site.id)).filter((p) => p.reportId === reportPastId);
   if (!list.length) return;
-  if (!confirm(`この報告の写真${list.length}枚を削除します。必要な写真は先に「保存」で書き出してください。削除しますか？`)) return;
-  await dbDeleteMany("photos", list.map((p) => p.id));
+  const reportPhotos = list.filter((p) => !isRecordPhoto(p));
+  const quality = list.filter(isRecordPhoto);
+  const msg =
+    `この報告の報告写真${reportPhotos.length}枚を削除します。必要な写真は先に「保存」で書き出してください。` +
+    (quality.length ? `\n（報告に使った品質写真${quality.length}枚は、マニュアルの記録として残します）` : "") +
+    "\n削除しますか？";
+  if (!confirm(msg)) return;
+  await dbDeleteMany("photos", reportPhotos.map((p) => p.id));
+  quality.forEach((p) => {
+    p.reportId = null;
+    p.forReport = false;
+    p.sendPick = false;
+  });
+  if (quality.length) await dbPutMany("photos", quality);
   toast("写真を削除しました");
   goReport();
 }
@@ -1442,10 +1493,9 @@ async function buildCheckSummary(siteId, start, end) {
   return out.sort((a, b) => allManualItems().findIndex((x) => x.name === a.item) - allManualItems().findIndex((x) => x.name === b.item));
 }
 
-async function shareSelected() {
-  const site = currentSite();
-  if (!site) return;
-  await sharePhotos(site, sendPicks(await getSitePhotos(site.id)));
+function shareSelected() {
+  if (!reportCache.site) return;
+  sharePhotos(reportCache.site, sendPicks(reportCache.all));
 }
 
 async function sendToBox() {
@@ -2054,8 +2104,13 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
     const rec = await makePhotoRecord(file, t.siteId, shootProcessId, takenAt, { kind: "record", itemId: t.itemId, checkKey: t.checkKey });
     const mapKey = `${t.itemId}|${t.checkKey}`;
     const old = siteRecordPhotos[mapKey];
+    if (old && !old.reportId) {
+      rec.forReport = !!old.forReport;
+      rec.sendPick = !!old.sendPick;
+    }
     await dbPut("photos", rec);
-    if (old) await dbDeleteMany("photos", [old.id]); // 撮り直しは前の1枚と入れ替える
+    // 撮り直しは前の1枚と入れ替える（ただし報告済みの写真は過去の報告から欠けないよう残す）
+    if (old && !old.reportId) await dbDeleteMany("photos", [old.id]);
     if (t.siteId === currentSiteId) siteRecordPhotos[mapKey] = rec;
     const it = groupItems[currentItemIdx];
     if (it && it.id === t.itemId) refreshCheckRow(it, t.checkKey);
@@ -2417,8 +2472,8 @@ async function renderSettings() {
 function brandLogoHtml(b) {
   return (
     `<div class="brandLogo">` +
-    (b.mark ? `<img class="mark" src="${b.mark}" alt="">` : "") +
-    (b.wordmark ? `<img class="wordmark" src="${b.wordmark}" alt="${esc(b.company || "")}">` : esc(b.company || "")) +
+    (b.mark ? `<img class="mark" src="${esc(b.mark)}" alt="">` : "") +
+    (b.wordmark ? `<img class="wordmark" src="${esc(b.wordmark)}" alt="${esc(b.company || "")}">` : esc(b.company || "")) +
     `</div>`
   );
 }
@@ -2503,7 +2558,11 @@ function openSubView(id) {
 function backFromSubView() {
   const back = { dashView: goDash, manualView: goManual, albumView: goAlbum, reportView: goReport }[viewBeforeSettings];
   if (back) back();
-  else showView(viewBeforeSettings);
+  else {
+    // 工程マニュアル・報告の工程ページなど：サブ画面で現場やマニュアルが変わっていることがあるので描き直す
+    showView(viewBeforeSettings);
+    rerenderCurrentView();
+  }
 }
 
 function openSettings() {
@@ -2713,14 +2772,22 @@ async function onRestorePicked() {
         Object.entries(r.marks || {}).forEach(([k, m]) => {
           if (!marks[k] || marks[k].at < m.at) marks[k] = m;
         });
-        return Object.assign({}, cur, { marks, na: cur.na || r.na });
+        const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
+        return Object.assign({}, cur, { marks }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
       });
       await dbPutMany("checks", merged);
       added.checks = merged.length;
     }
     if (data.photos && data.photos.length) {
       const exist = new Set((await dbGetAll("photos")).map((p) => p.id));
-      const fresh = data.photos.filter((p) => !exist.has(p.id));
+      const siteIds = new Set((await dbGetAll("sites")).map((x) => x.id));
+      const reportIds = new Set((await dbGetAll("reports")).map((x) => x.id));
+      // 現場が無い写真は見えなくなるので入れない（写真だけのバックアップを別の端末に戻した時など）
+      const fresh = data.photos.filter((p) => !exist.has(p.id) && siteIds.has(p.siteId));
+      added.skipped = data.photos.filter((p) => !exist.has(p.id) && !siteIds.has(p.siteId)).length;
+      fresh.forEach((p) => {
+        if (p.reportId && !reportIds.has(p.reportId)) p.reportId = null;
+      });
       for (let i = 0; i < fresh.length; i++) {
         if (i % 10 === 0) setProcessing(true, `写真を戻しています... ${i} / ${fresh.length}`);
         const p = fresh[i];
@@ -2734,7 +2801,12 @@ async function onRestorePicked() {
       if (!getSetting(USER_NAME_KEY) && data.settings.userName) setSetting(USER_NAME_KEY, data.settings.userName);
       if (!getSetting(BOX_EMAIL_KEY) && data.settings.boxEmail) setSetting(BOX_EMAIL_KEY, data.settings.boxEmail);
     }
-    toast(`戻しました（現場${added.sites || 0}・チェック${added.checks || 0}・写真${added.photos || 0}）`);
+    await refreshSites();
+    await loadSiteChecks();
+    toast(
+      `戻しました（現場${added.sites || 0}・チェック${added.checks || 0}・写真${added.photos || 0}）` +
+        (added.skipped ? `。現場の登録がない写真${added.skipped}枚は戻しませんでした（登録情報も含めたバックアップから戻してください）` : "")
+    );
     renderSettings();
   } catch (e) {
     console.error(e);
@@ -2895,7 +2967,7 @@ function init() {
   });
   $("albumUseBtn").addEventListener("click", albumUseForReport);
   $("albumRetagBtn").addEventListener("click", albumRetag);
-  $("albumSaveBtn").addEventListener("click", async () => sharePhotos(currentSite(), await albumSelected()));
+  $("albumSaveBtn").addEventListener("click", () => sharePhotos(currentSite(), albumPhotos.filter((p) => albumSel.has(p.id))));
   $("albumDeleteBtn").addEventListener("click", albumDelete);
   $("reportProcBackBtn").addEventListener("click", goReport);
   $("reportPastBackBtn").addEventListener("click", goReport);
@@ -2904,9 +2976,7 @@ function init() {
     startCamera(reportProcId);
   });
   $("reportImportBtn").addEventListener("click", () => startLibrary(reportProcId));
-  $("pastShareBtn").addEventListener("click", async () =>
-    sharePhotos(currentSite(), (await getSitePhotos(currentSiteId)).filter((p) => p.reportId === reportPastId))
-  );
+  $("pastShareBtn").addEventListener("click", () => sharePhotos(currentSite(), pastPhotos));
   $("recordLibraryInput").addEventListener("change", onRecordLibraryPicked);
   $("cameraInput").addEventListener("change", onCameraPicked);
   $("libraryInput").addEventListener("change", onLibraryPicked);

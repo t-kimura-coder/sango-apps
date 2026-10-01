@@ -230,7 +230,7 @@
       <span id="reportProcPeriod" class="pill pillMuted"></span>
     </div>
     <div id="reportProcGrid" class="photoGrid"></div>
-    <div id="reportProcEmpty" class="emptyState" hidden><div class="emptyText">まだ報告写真がありません。上の「報告写真を撮る」から撮影してください。</div></div>
+    <div id="reportProcEmpty" class="emptyState" hidden><div class="emptyText">まだ報告写真がありません。上の「撮影する」か「取り込む」から入れてください。</div></div>
     <div class="hint">タップで「送る写真」に選ぶ／外す。長押しで拡大・工程の変更・削除。</div>
   </div>
 </section>
@@ -362,7 +362,7 @@
       <ol class="helpList">
         <li>ホームか「工程」タブで、基礎〜引渡しの6つから工程を選びます。</li>
         <li>上に並んだ番号を左右にスクロールして項目を選ぶと、概要・ポイント・チェックポイントが出ます。「作業手順」で前後の工程と事前準備、「参考資料」でマニュアル原本のページを見られます。</li>
-        <li><b>チェックする現場</b>を選ぶと、チェックポイントにチェックを付けられます。付けた日時と名前が残るので、後から見返せます。その現場にない工程は「この現場ではこの工程はない」で灰色にできます。</li>
+        <li>上の<b>今の現場</b>に、チェックポイントのチェックが記録されます。付けた日時と名前が残るので、後から見返せます。その現場にない工程は「この現場ではこの工程はない」で灰色にできます。</li>
         <li>最近見た項目は、ホームの「前回の続き」からすぐ開けます。</li>
         <li>工程名が分からないときは、ホームか「工程」タブの<b>検索欄</b>に、現場で聞いた言葉を入れてください。チェック項目の文章からも探します（ひらがな可）。</li>
       </ol>
@@ -377,7 +377,6 @@
       </ol>
     </div>
     <div class="card helpCard">
-      <div class="helpStep">週の報告を送る（金・土曜）</div>    <div class="card helpCard">
       <div class="helpStep">週の報告を送る（金・土曜）</div>
       <ol class="helpList">
         <li>「報告」タブで工程を開き、送る写真をタップして選びます（工程をまたいで選べます）。写真タブで「報告に使う」を付けた写真もここに入ります。</li>
@@ -445,6 +444,6 @@
 <input type="file" id="restoreInput" accept="application/json,.json" hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>
