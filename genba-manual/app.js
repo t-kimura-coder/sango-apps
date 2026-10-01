@@ -1,7 +1,9 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 22;
+const APP_VERSION = 23;
+// 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
+const HAS_SITE_BOARD = false;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "写真整理・報告の画面を見やすくしました。写真整理は2列／3列を切り替えられ、写真ごとの「︙」から拡大・工程の変更・削除ができます" },
   { date: "2026-10-01", type: "fix", text: "現場の管理や設定から戻ったとき、工程マニュアルや報告のページが前の現場のまま残ることがある不具合を直しました" },
   { date: "2026-10-01", type: "fix", text: "過去の報告の写真を削除したり品質写真を撮り直したりしたとき、品質写真や報告済みの写真まで消えてしまう不具合を直しました" },
   { date: "2026-10-01", type: "fix", text: "写真タブで、一度「報告に使う」にした写真を外せるようにしました（選ぶと「報告から外す」になります）" },
@@ -118,6 +121,15 @@ const ICONS = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  grid2: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.5"/>',
+  grid3: '<path d="M3.5 3.5h4.5v4.5H3.5zM9.75 3.5h4.5v4.5h-4.5zM16 3.5h4.5v4.5H16zM3.5 9.75h4.5v4.5H3.5zM9.75 9.75h4.5v4.5h-4.5zM16 9.75h4.5v4.5H16zM3.5 16h4.5v4.5H3.5zM9.75 16h4.5v4.5h-4.5zM16 16h4.5v4.5H16z"/>',
+  dotsV: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.3" r="0.6" fill="currentColor"/>',
+  folder: '<path d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4.5l2 2.5H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
+  download: '<path d="M12 4v11M7 10.5l5 5 5-5"/><path d="M4.5 19.5h15"/>',
+  trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+  camSmall: '<path d="M5 7h2l2-3h6l2 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2"/><circle cx="12" cy="13" r="3.5"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
   checkSquare: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12l3 3 5-6"/>',
@@ -705,6 +717,36 @@ async function renderSiteManage() {
 
 /* ---------- 写真のマス目（アルバム・報告で共通） ---------- */
 
+// 写真の見出し：品質写真はチェック項目、報告写真は工程名
+function photoTitle(ph) {
+  if (isRecordPhoto(ph) && ph.checkKey) return ph.checkKey.split("|").slice(1).join("|");
+  return processOf(ph.processId).name;
+}
+
+// 説明つきのカード（2列表示・報告の工程ページ）
+function photoCard(ph, opts) {
+  const card = document.createElement("button");
+  card.className = "photoCard" + (opts.selected && opts.selected.has(ph.id) ? " selected" : "");
+  const kind = isRecordPhoto(ph) ? '<span class="kindLabel record">品質</span>' : '<span class="kindLabel report">報告</span>';
+  const mark = ph.reportId ? '<span class="cardMark">報告済</span>' : ph.sendPick ? '<span class="cardMark use">送る</span>' : "";
+  card.innerHTML =
+    `<span class="photoCardImg"><img src="${blobUrl(opts.bucket, ph.thumb)}" alt=""><span class="check">${icon(ICONS.check, 18, 3)}</span></span>` +
+    `<span class="photoCardInfo">` +
+    (opts.compact
+      ? ""
+      : `<span class="photoCardTags">${opts.showKind ? kind : ""}<span class="procPill">${esc(processOf(ph.processId).short)}</span>${mark}</span>` +
+        `<span class="photoCardTitle">${esc(photoTitle(ph))}</span>`) +
+    `<span class="photoCardDate">${esc(fmtDateTime(ph.takenAt))}</span></span>` +
+    `<span class="photoMenu" role="button" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</span>`;
+  card.querySelector(".photoMenu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openPhotoViewer(ph.blob, opts.actions ? opts.actions(ph) : []);
+  });
+  card.addEventListener("contextmenu", (e) => e.preventDefault());
+  card.addEventListener("click", () => opts.onTap(ph, card));
+  return card;
+}
+
 // opts: { bucket, selected:Set, onTap(ph, cell), actions(ph) → ビューアのボタン, showKind }
 function photoCell(ph, opts) {
   const cell = document.createElement("button");
@@ -716,7 +758,12 @@ function photoCell(ph, opts) {
     (opts.showKind ? kind : "") +
     (ph.reportId ? '<span class="cellDone">報告済</span>' : ph.forReport && isRecordPhoto(ph) ? '<span class="cellDone use">報告に使う</span>' : "") +
     `<span class="photoTag">${esc(processOf(ph.processId).short)}</span>` +
-    `<span class="photoDate">${fmtDate(ph.dateKey)}</span>`;
+    `<span class="photoDate">${fmtDate(ph.dateKey)}</span>` +
+    `<span class="photoMenu small" role="button" aria-label="メニュー">${icon(ICONS.dotsV, 18)}</span>`;
+  cell.querySelector(".photoMenu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openPhotoViewer(ph.blob, opts.actions ? opts.actions(ph) : []);
+  });
   // 長押しで拡大（工程の変更・削除など）、通常タップは選択
   let pressTimer = null;
   let longPressed = false;
@@ -834,7 +881,8 @@ async function sharePhotos(site, photos) {
 
 /* ---------- 写真タブ：今の現場のアルバム ---------- */
 
-const albumState = { kind: "all", group: "all", sort: "new" };
+const ALBUM_COLS_KEY = "genba-photo-album-cols";
+const albumState = { kind: "all", group: "all", sort: "new", cols: getSetting(ALBUM_COLS_KEY) === "3" ? 3 : 2 };
 const albumSel = new Set();
 let albumPhotos = [];
 
@@ -889,7 +937,7 @@ async function renderAlbum() {
     `<div class="statBox"><span class="kindLabel record">品質</span><b>${nRecord}</b>枚</div>` +
     `<div class="statBox"><span class="kindLabel report">報告</span><b>${nReport}</b>枚</div>` +
     (cov
-      ? `<div class="statBox wide"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span></div>`
+      ? `<div class="statBox wide"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span><span class="statPct">${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%</span></div>`
       : "");
 
   const kinds = $("albumKinds");
@@ -910,17 +958,20 @@ async function renderAlbum() {
   if (albumState.group !== "all" && !groupsWith.some((g) => g.id === albumState.group)) albumState.group = "all";
   const chips = $("albumChips");
   chips.innerHTML = "";
-  [{ id: "all", name: "すべて" }, ...groupsWith].forEach((g) => {
+  // 大分類はイラスト付きのタイル（写真がない大分類は薄く表示して押せない）
+  [{ id: "all", name: "すべて" }, ...GROUPS].forEach((g) => {
     const b = document.createElement("button");
-    b.className = "chip" + (albumState.group === g.id ? " active" : "");
-    b.textContent = g.name;
+    const has = g.id === "all" || groupsWith.some((x) => x.id === g.id);
+    b.className = "groupChip" + (albumState.group === g.id ? " active" : "") + (has ? "" : " empty");
+    b.disabled = !has;
+    b.innerHTML = `<span class="groupChipArt">${g.id === "all" ? icon(ICONS.grid2, 24) : groupArt(g, 30)}</span><span>${esc(g.name)}</span>`;
     b.addEventListener("click", () => {
       albumState.group = g.id;
       renderAlbum();
     });
     chips.appendChild(b);
   });
-  chips.hidden = !groupsWith.length;
+  chips.hidden = !byKind.length;
 
   albumPhotos = byKind.filter((p) => albumState.group === "all" || groupOf(albumState.group).cats.includes(p.processId));
   const sorters = {
@@ -930,13 +981,17 @@ async function renderAlbum() {
   };
   albumPhotos.sort(sorters[albumState.sort]);
   $("albumSort").value = albumState.sort;
+  $("albumColsBtn").innerHTML = icon(albumState.cols === 2 ? ICONS.grid3 : ICONS.grid2, 22);
+  $("albumColsBtn").setAttribute("aria-label", albumState.cols === 2 ? "3列で表示" : "2列で表示");
+  grid.className = "photoGrid" + (albumState.cols === 2 ? " cols2" : "");
   const gName = albumState.group === "all" ? "" : groupOf(albumState.group).name;
   const kName = { all: "写真", report: "報告写真", record: "品質写真" }[albumState.kind];
   $("albumHeading").textContent = `${gName ? gName + "の" : ""}${kName}`;
   $("albumCount").textContent = `${albumPhotos.length}枚あります。`;
+  const maker = albumState.cols === 2 ? photoCard : photoCell;
   albumPhotos.forEach((ph) =>
     grid.appendChild(
-      photoCell(ph, {
+      maker(ph, {
         bucket: "album",
         selected: albumSel,
         showKind: true,
@@ -970,7 +1025,7 @@ function albumSelAllPicked() {
 function updateAlbumBar() {
   $("albumBar").hidden = albumSel.size === 0;
   $("albumSelCount").textContent = albumSel.size;
-  $("albumUseBtn").textContent = albumSelAllPicked() ? "報告から外す" : "報告に使う";
+  $("albumUseLabel").textContent = albumSelAllPicked() ? "報告から外す" : "報告に使う";
 }
 
 async function albumSelected() {
@@ -1229,7 +1284,7 @@ async function renderReport() {
   const weekday = new Date().getDay();
   const due = (weekday === 5 || weekday === 6) && cands.length > 0;
   let html =
-    `<div class="periodBar"><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
+    `<div class="periodBar"><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
     (due ? '<span class="badge badgeWarning">報告日</span>' : weeks >= 2 ? `<span class="badge badgeMuted">${weeks}週分</span>` : "") +
     `</div><div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
   body.innerHTML = html;
@@ -1243,23 +1298,17 @@ async function renderReport() {
     const sel = inProc.filter((ph) => ph.sendPick).length;
     const card = document.createElement("div");
     card.className = "processCard reportProcCard";
+    // 左の絵：いちばん新しい写真、なければ大分類のイラスト
+    const latest = inProc.sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0];
+    const thumb = latest ? `<img src="${blobUrl("report", latest.thumb)}" alt="">` : groupArt(groupOfProcess(pid), 46);
     card.innerHTML =
-      `<button class="reportProcOpen"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
-      `<span class="processCount">写真${inProc.length}枚・送る${sel}枚</span><span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
-      `<div class="reportThumbs"></div>` +
-      `<button class="iconBtn removeProcessBtn" aria-label="今回の工程から外す">${icon(ICONS.x, 18)}</button>`;
-    const thumbs = card.querySelector(".reportThumbs");
-    inProc
-      .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))
-      .slice(0, 5)
-      .forEach((ph) => {
-        const im = document.createElement("img");
-        im.src = blobUrl("report", ph.thumb);
-        if (ph.sendPick) im.className = "picked";
-        thumbs.appendChild(im);
-      });
+      `<button class="reportProcOpen"><span class="procThumb${latest ? " photo" : ""}">${thumb}</span>` +
+      `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
+      `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
+      `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span></span>` +
+      `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
+      `<button class="iconBtn removeProcessBtn" aria-label="今回の工程から外す">${icon(ICONS.x, 16)}</button>`;
     card.querySelector(".reportProcOpen").addEventListener("click", () => openReportProc(pid));
-    thumbs.addEventListener("click", () => openReportProc(pid));
     card.querySelector(".removeProcessBtn").addEventListener("click", () => removeProcess(pid, inProc.length));
     list.appendChild(card);
   });
@@ -1355,34 +1404,58 @@ async function renderReportProc() {
   const site = currentSite();
   if (!site || !reportProcId) return;
   const p = processOf(reportProcId);
-  $("reportProcTitle").textContent = p.name;
-  $("reportProcGuide").innerHTML = guideHtml(p, { report: true, record: false });
+  const g = groupOfProcess(reportProcId);
+  $("reportProcTitle").textContent = `${p.name}の報告`;
   const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const list = cands.filter((ph) => ph.processId === reportProcId).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
-  $("reportProcPeriod").textContent = periodLabel(periodStart(site, cands)).text;
-  const sel = list.filter((ph) => ph.sendPick).length;
-  $("reportProcCount").textContent = `${list.length}枚（送る写真 ${sel}枚）`;
+  $("reportProcPeriodBar").innerHTML =
+    `<span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span>` +
+    `<span class="periodValue">${periodLabel(periodStart(site, cands)).text}</span>`;
+  $("reportProcCard").innerHTML =
+    `<span class="procHeroArt">${groupArt(g, 70)}</span>` +
+    `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
+    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span><span class="procHeroDesc">${esc(g.desc)}</span></span>`;
+  $("reportProcGuide").innerHTML =
+    `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
+    `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
+    `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
   const grid = $("reportProcGrid");
   grid.innerHTML = "";
   const picked = new Set(list.filter((ph) => ph.sendPick).map((ph) => ph.id));
+  const updateCounts = () => {
+    $("reportProcCount").innerHTML = `選択数 <b>${picked.size}</b>/${list.length}`;
+    $("procBarCount").textContent = picked.size;
+    const thumbs = $("procBarThumbs");
+    thumbs.innerHTML = "";
+    list
+      .filter((ph) => picked.has(ph.id))
+      .slice(0, 3)
+      .forEach((ph) => {
+        const im = document.createElement("img");
+        im.src = blobUrl("reportProc", ph.thumb);
+        thumbs.appendChild(im);
+      });
+  };
   list.forEach((ph) =>
     grid.appendChild(
-      photoCell(ph, {
+      photoCard(ph, {
         bucket: "reportProc",
         selected: picked,
-        showKind: true,
+        compact: true,
         actions: (x) => photoActions(x, renderReportProc),
         onTap: async (x, cell) => {
           x.sendPick = !x.sendPick;
-          await dbPut("photos", x);
+          if (x.sendPick) picked.add(x.id);
+          else picked.delete(x.id);
           cell.classList.toggle("selected", x.sendPick);
-          const n = (await getSitePhotos(site.id)).filter((q) => !q.reportId && q.processId === reportProcId && q.sendPick).length;
-          $("reportProcCount").textContent = `${list.length}枚（送る写真 ${n}枚）`;
+          updateCounts();
+          await dbPut("photos", x);
         },
       })
     )
   );
+  updateCounts();
   $("reportProcEmpty").hidden = list.length > 0;
 }
 
@@ -1668,8 +1741,14 @@ async function loadManualMeta() {
     const g = guides[p.id];
     // 古いパックは文字列1つ、新しいパックは {record, report}
     p.guideRecord = typeof g === "string" ? g : (g && g.record) || "";
-    p.guideReport = typeof g === "object" && g ? g.report || "" : "";
+    p.guideReport = typeof g === "object" && g ? g.report || "" : ""; // 文字列、または2〜3項目の配列
   });
+}
+
+function reportGuideList(p) {
+  const g = p.guideReport;
+  if (Array.isArray(g)) return g.filter(Boolean);
+  return [g || "進み具合が分かる全景"];
 }
 
 // 撮影メモ。報告写真（お客様向け）と品質写真（マニュアル用）で撮り方が違うので、色付きラベルで分けて出す
@@ -1681,7 +1760,7 @@ function guideHtml(p, opts = { report: true, record: true }) {
     if (opts.recordHint) lines.push(`<div class="guideHint">品質写真は「工程」タブのマニュアルで、写真要のチェック横のカメラから撮ります</div>`);
   }
   if (opts.report) {
-    lines.push(`<div class="guideLine"><span class="kindLabel report">報告</span><span>${esc(p.guideReport || "進み具合が分かる全景")}</span></div>`);
+    lines.push(`<div class="guideLine"><span class="kindLabel report">報告</span><span>${esc(reportGuideList(p).join("、"))}</span></div>`);
     lines.push(`<div class="guideNote">${esc(reportNote)}</div>`);
   }
   return lines.length ? `<div class="guideLines">${lines.join("")}</div>` : "";
@@ -2507,12 +2586,17 @@ async function renderDash() {
     const all = await getSitePhotos(site.id);
     const cands = unreported(all);
     const cov = await recordCoverage(site.id);
+    const pct = cov && cov.total ? Math.round((cov.done / cov.total) * 100) : 0;
     card.innerHTML =
-      `<button class="curSiteCard"><span class="curSiteIcon">${icon(ICONS.building, 24)}</span>` +
+      `<button class="curSiteCard rich">` +
+      `<span class="siteBoard">${HAS_SITE_BOARD ? '<img src="art/site-board.webp?v=1" alt="">' : icon(ICONS.building, 40)}</span>` +
       `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
-      `<span class="curSiteMeta">今回 ${periodLabel(periodStart(site, cands)).text} ・ 報告写真 ${cands.length}枚` +
-      (cov ? ` ・ 写真要 ${cov.done}/${cov.total}` : "") +
-      `</span></span><span class="siteSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
+      `<span class="curSiteMeta">${icon(ICONS.calendar, 14)}${periodLabel(periodStart(site, cands)).text}</span>` +
+      `<span class="siteTiles">` +
+      `<span class="siteTile"><span class="tileLabel">${icon(ICONS.camSmall, 14)}報告写真</span><span><b>${cands.length}</b> 枚</span></span>` +
+      (cov ? `<span class="siteTile"><span class="tileLabel">${icon(ICONS.report, 14)}写真要</span><span><b>${cov.done}</b>/${cov.total}</span></span>` : "") +
+      (cov ? `<span class="siteTile"><span class="tileLabel">進み具合</span><span class="tileBar"><span style="width:${pct}%"></span></span><span class="tilePct">${pct}%</span></span>` : "") +
+      `</span></span><span class="siteSwitch pillSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
     card.firstElementChild.addEventListener("click", openSiteSwitcher);
     const nRec = all.filter(isRecordPhoto).length;
     $("dashAlbumSub").textContent = all.length
@@ -2955,7 +3039,7 @@ function init() {
     b.addEventListener("click", openSettings);
   });
   document.querySelectorAll("[data-icon]").forEach((el) => {
-    const size = el.classList.contains("tabIcon") ? 24 : el.classList.contains("reportCardIcon") ? 40 : el.classList.contains("bannerIcon") || el.classList.contains("albumCardIcon") ? 28 : 20;
+    const size = el.classList.contains("tabIcon") ? 24 : el.classList.contains("reportCardIcon") ? 40 : el.classList.contains("bannerIcon") || el.classList.contains("albumCardIcon") ? 28 : el.closest(".toolBtn") ? 22 : 20;
     el.innerHTML = icon(ICONS[el.dataset.icon], size);
   });
 
@@ -2966,6 +3050,12 @@ function init() {
     renderAlbum();
   });
   $("albumUseBtn").addEventListener("click", albumUseForReport);
+  $("albumColsBtn").addEventListener("click", () => {
+    albumState.cols = albumState.cols === 2 ? 3 : 2;
+    setSetting(ALBUM_COLS_KEY, String(albumState.cols));
+    renderAlbum();
+  });
+  $("procBarDoneBtn").addEventListener("click", goReport);
   $("albumRetagBtn").addEventListener("click", albumRetag);
   $("albumSaveBtn").addEventListener("click", () => sharePhotos(currentSite(), albumPhotos.filter((p) => albumSel.has(p.id))));
   $("albumDeleteBtn").addEventListener("click", albumDelete);

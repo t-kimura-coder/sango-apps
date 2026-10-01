@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=27">
+<link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
 
@@ -136,28 +136,26 @@
         <div id="albumHeading" class="sectionTitle small"></div>
         <div id="albumCount" class="sectionSub"></div>
       </div>
+      <div class="headTools">
+      <button id="albumColsBtn" class="iconBtn colsBtn" type="button" aria-label="列の数を切り替え"></button>
       <select id="albumSort" class="sortSelect">
         <option value="new">撮影日 新しい順</option>
         <option value="old">撮影日 古い順</option>
         <option value="proc">工程順</option>
       </select>
+      </div>
     </div>
     <div id="albumGrid" class="photoGrid"></div>
     <div id="albumEmpty" class="emptyState" hidden></div>
-    <div class="hint">タップで選択、長押しで拡大。写真は工程マニュアルと報告タブから撮ります。</div>
+    <div class="hint">タップで選択、「︙」で拡大・工程の変更・削除。写真は工程マニュアルと報告タブから撮ります。</div>
   </div>
   <footer id="albumBar" class="bottomActions selectBar" hidden>
-    <div class="selectBarRow">
-      <div class="selectBarText">
-        <div class="selectBarTitle">選択中</div>
-        <div class="selectBarCount"><b id="albumSelCount">0</b> 枚</div>
-      </div>
-      <button id="albumUseBtn" class="btn btnPrimary">報告に使う</button>
-    </div>
-    <div class="btnRow subActions">
-      <button id="albumRetagBtn" class="btn btnOutline">工程で仕分け</button>
-      <button id="albumSaveBtn" class="btn btnOutline">保存</button>
-      <button id="albumDeleteBtn" class="btn btnOutline dangerOutline">削除</button>
+    <div class="selectBarTitle"><b id="albumSelCount">0</b> 枚を選択中</div>
+    <div class="toolRow">
+      <button id="albumUseBtn" class="toolBtn primary"><span data-icon="report"></span><span id="albumUseLabel">報告に使う</span></button>
+      <button id="albumRetagBtn" class="toolBtn"><span data-icon="folder"></span><span>工程で仕分け</span></button>
+      <button id="albumSaveBtn" class="toolBtn"><span data-icon="download"></span><span>保存</span></button>
+      <button id="albumDeleteBtn" class="toolBtn danger"><span data-icon="trash"></span><span>削除</span></button>
     </div>
   </footer>
 </section>
@@ -217,22 +215,29 @@
     <h1 id="reportProcTitle" class="topbarTitle"></h1>
   </header>
   <div class="viewBody">
-    <div id="reportProcGuide" class="guideBoxDetail"></div>
+    <button class="siteBar curSiteBar"></button>
+    <div id="reportProcPeriodBar" class="periodBar"></div>
+    <div id="reportProcCard" class="procHeroCard"></div>
+    <div id="reportProcGuide" class="memoCard"></div>
     <div class="btnRow">
       <button id="reportShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>撮影する</button>
       <button id="reportImportBtn" class="btn btnSecondary btnLarge"><span data-icon="photo"></span>取り込む</button>
     </div>
     <div class="summaryHead">
-      <div>
-        <div class="sectionTitle small">この工程の報告写真</div>
-        <div id="reportProcCount" class="sectionSub"></div>
-      </div>
-      <span id="reportProcPeriod" class="pill pillMuted"></span>
+      <div class="sectionTitle small">この工程の報告写真</div>
+      <div id="reportProcCount" class="selCount"></div>
     </div>
-    <div id="reportProcGrid" class="photoGrid"></div>
+    <div id="reportProcGrid" class="photoGrid captioned"></div>
     <div id="reportProcEmpty" class="emptyState" hidden><div class="emptyText">まだ報告写真がありません。上の「撮影する」か「取り込む」から入れてください。</div></div>
-    <div class="hint">タップで「送る写真」に選ぶ／外す。長押しで拡大・工程の変更・削除。</div>
+    <div class="hint">タップで「送る写真」に選ぶ／外す。「︙」で拡大・工程の変更・削除。</div>
   </div>
+  <footer class="bottomActions selectBar procBar">
+    <div class="procBarRow">
+      <div id="procBarThumbs" class="procBarThumbs"></div>
+      <div class="procBarText">選択中 <b id="procBarCount">0</b> 枚</div>
+      <button id="procBarDoneBtn" class="btn btnPrimary">報告に追加<span data-icon="chevron"></span></button>
+    </div>
+  </footer>
 </section>
 
 <!-- 報告：過去の報告の写真 -->
@@ -444,6 +449,6 @@
 <input type="file" id="restoreInput" accept="application/json,.json" hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
