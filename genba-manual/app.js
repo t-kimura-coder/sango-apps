@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "気づき・疑問メモは、書く前に種類（疑問／気づき／職人さんの要望）を選ぶようにしました。上司に答えてほしい時は「疑問」を選んでください" },
   { date: "2026-10-02", type: "feature", text: "報告の送り先（Boxのアドレス）を最初から入れました。設定での入力は不要です。報告のファイル名に、送った人の名前が入るようにしました" },
   { date: "2026-10-02", type: "feature", text: "上司からの返信を受け取れるようになりました。ホームの「上司からの返信」→「返信を取り込む」で、Boxの「返信」フォルダのファイルを選ぶと、気づき・疑問メモの下に返信が表示されます" },
   { date: "2026-10-02", type: "feature", text: "報告に、6つの工程の進み具合と、疑問を解決済みにしたことも入るようにしました（上司が報告をまとめて見られる仕組みの準備です）" },
@@ -2413,11 +2414,11 @@ async function toggleNa(it) {
 // 1つの欄を書き換えるのではなく、書くたびに1件ずつ残す（いつ・誰が・何を感じたかを後で追えるように）。
 // 「疑問」は将来、会議などで答える場につなげる想定
 const NOTE_TYPES = [
-  { id: "notice", label: "気づき" },
-  { id: "question", label: "疑問" },
-  { id: "request", label: "職人さんの要望" },
+  { id: "question", label: "疑問", hint: "上司に答えてほしい" },
+  { id: "notice", label: "気づき", hint: "共有だけ" },
+  { id: "request", label: "職人さんの要望", hint: "職人さんから" },
 ];
-let memoType = "notice";
+let memoType = null; // 選び間違い（疑問のつもりが気づき）を防ぐため、毎回選んでもらう
 
 function renderMemoSection(it) {
   const sec = $("memoSection");
@@ -2428,7 +2429,8 @@ function renderMemoSection(it) {
   sec.innerHTML =
     `<div class="secHead">${icon(ICONS.edit || ICONS.report, 22)}気づき・疑問メモ<span class="secRight">${notes.length ? notes.length + "件" : ""}</span></div>` +
     (currentSiteId
-      ? `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}">${t.label}</button>`).join("")}</div>` +
+      ? `<div class="noteTypeLabel">種類を選んでから書いてください</div>` +
+        `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}"><b>${t.label}</b><small>${t.hint}</small></button>`).join("")}</div>` +
         `<textarea id="memoInput" class="sheetTextarea memoInput" placeholder="現場で気づいたこと、疑問に思ったこと、職人さんからの要望など"></textarea>` +
         `<button id="memoSaveBtn" class="btn btnPrimary memoSaveBtn" hidden>保存</button>`
       : `<div class="hint">上の「今の現場」から現場を登録すると、メモを残せます。</div>`) +
@@ -2456,6 +2458,7 @@ function renderMemoSection(it) {
     b.addEventListener("click", () => {
       memoType = b.dataset.type;
       sec.querySelectorAll(".noteType").forEach((x) => x.classList.toggle("active", x === b));
+      sec.querySelector(".noteTypes").classList.remove("need");
     })
   );
   const save = $("memoSaveBtn");
@@ -2481,14 +2484,23 @@ async function saveMemo(it) {
     $("memoInput").focus();
     return;
   }
+  if (!memoType) {
+    toast("「疑問」「気づき」「職人さんの要望」のどれかを選んでください");
+    const box = $("memoSection").querySelector(".noteTypes");
+    box.classList.remove("need");
+    void box.offsetWidth;
+    box.classList.add("need");
+    return;
+  }
   const rec = checkRecOf(it.id);
   rec.notes = rec.notes || [];
   const note = { id: newId(), type: memoType, text, at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
   if (memoType === "question") note.status = "open";
   rec.notes.push(note);
   await saveCheckRec(rec);
+  memoType = null;
   renderMemoSection(it);
-  toast("メモを残しました");
+  toast(note.type === "question" ? "疑問として残しました（報告で上司に届きます）" : "メモを残しました");
 }
 
 /* ---------- 上司からの返信（現場ナビ 見守りが Box の「返信」フォルダに書き出す genba-reply JSON） ---------- */

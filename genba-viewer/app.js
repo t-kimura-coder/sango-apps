@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -161,7 +161,8 @@ function buildData(reports, replies) {
         if (prev && prev._ver > ver) return; // 古い報告に入っていた同じメモは、新しい方を使う
         data.notes.set(id, {
           id,
-          type: typeId,
+          type: typeOverrides()[id] || typeId, // 上司が「疑問として扱う」にしたものは疑問として数える
+          origType: typeId,
           text: n.text || "",
           at: n.at,
           by: n.by || r.sender || "",
@@ -196,11 +197,31 @@ function addReplyToData(rp) {
   data.replies.set(rp.note_id, list);
 }
 
-// 状態：疑問は 未回答 → 返信済み → 解決済み（解決は監督が現場ナビで付ける）。気づき・要望は返信したら「返信済み」
+// 状態：疑問は 未回答 → 返信済み → 解決済み（解決は監督が現場ナビで付ける）。
+// 職人さんの要望も返事が要ることが多いので、返信するまで「未回答」に数える。気づきは返信したら「返信済み」
 function noteStatus(n) {
   if (n.type === "question" && n.status === "resolved") return "resolved";
   if ((data.replies.get(n.id) || []).length) return "replied";
-  return n.type === "question" ? "open" : "";
+  return n.type === "question" || n.type === "request" ? "open" : "";
+}
+
+// 「疑問として扱う」（監督が種類を選び間違えた時など）。この PC だけに覚える
+function typeOverrides() {
+  try {
+    return JSON.parse(getLS("typeOverrides", "{}"));
+  } catch (e) {
+    return {};
+  }
+}
+function toggleAsQuestion(n) {
+  const o = typeOverrides();
+  if (n.type === "question" && n.origType !== "question") delete o[n.id];
+  else o[n.id] = "question";
+  setLS("typeOverrides", JSON.stringify(o));
+  n.type = o[n.id] || n.origType;
+  updateNavBadge();
+  route();
+  openNote(n.id);
 }
 const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み" };
 
@@ -507,9 +528,11 @@ function avatar(name, size = 52) {
   for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:hsl(${h} 35% 88%);color:hsl(${h} 40% 28%)">${esc(s.slice(0, 1))}</span>`;
 }
-function typeBadge(t) {
+function typeBadge(t, orig) {
   const x = NOTE_TYPES[t] || NOTE_TYPES.notice;
-  return `<span class="tBadge ${x.cls}">${esc(x.short || x.label)}</span>`;
+  const o = NOTE_TYPES[orig] || NOTE_TYPES.notice;
+  const from = orig && orig !== t ? `<small>（${esc(o.short || o.label)}から）</small>` : "";
+  return `<span class="tBadge ${x.cls}">${esc(x.short || x.label)}${from}</span>`;
 }
 function statusBadge(n) {
   const st = noteStatus(n);
@@ -580,8 +603,8 @@ function renderHome() {
   const open = openQuestions().sort((a, b) => (a.at < b.at ? 1 : -1));
   const recent = [...data.notes.values()].filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
   html +=
-    `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">未回答の疑問</div>` +
-    `<div class="bigNum"><b>${open.length}</b>件</div></div><a class="btn btnOutline bigBtn" href="#/notes?st=open">すべての疑問を確認${icon("chevron", 16)}</a></div>` +
+    `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">未回答の疑問・要望</div>` +
+    `<div class="bigNum"><b>${open.length}</b>件</div></div><a class="btn btnOutline bigBtn" href="#/notes?st=open">未回答をすべて確認${icon("chevron", 16)}</a></div>` +
     `<div class="card newCard"><div class="cardHead"><h2>新着の疑問・気づき<span class="sub">（未回答 ${open.length}件）</span></h2><a href="#/notes" class="moreLink">すべて見る${icon("chevron", 16)}</a></div>` +
     (recent.length
       ? `<div class="newList">${recent
@@ -593,7 +616,7 @@ function renderHome() {
   const people = [...data.people.values()].map((p) => ({ p, st: personStats(p) }));
   const hit = (x, k) => k === "all" || (k === "need" ? x.st.open > 0 : k === "late" ? x.st.late : x.st.state === "ok");
   const cnt = Object.fromEntries(["all", "need", "late", "ok"].map((k) => [k, people.filter((x) => hit(x, k)).length]));
-  const chips = [["all", "すべて"], ["need", "未回答の疑問あり"], ["late", "報告の遅れあり"], ["ok", "順調"]];
+  const chips = [["all", "すべて"], ["need", "未回答あり"], ["late", "報告の遅れあり"], ["ok", "順調"]];
   html +=
     `<div class="secHead"><div><h2>担当者の状況</h2><div class="sub">各担当者の報告状況と、対応が必要な内容を確認できます。</div></div>` +
     `<div class="chips">${chips.map(([k, l]) => `<button class="chip${homeFilter === k ? " on" : ""}" data-hf="${k}">${l}<span class="chipNum ${k}">${cnt[k]}</span></button>`).join("")}</div></div>`;
@@ -619,7 +642,7 @@ function personCard({ p, st }) {
   return (
     `<button class="personCard" data-person="${esc(p.key)}"><div class="pcHead">${avatar(p.name)}<div class="pcName"><div><b>${esc(p.name)}</b><span class="stBadge ${ps.cls}">${ps.label}</span></div>` +
     `<div class="pcSites">担当現場${sites.map((s) => `<span class="tag">${esc(s.name)}</span>`).join("")}</div></div>${icon("chevron", 20)}</div>` +
-    `<div class="pcStats"><div class="stat${st.open ? " alert" : ""}"><span class="statLabel">${icon("chat", 16)}未回答の疑問</span><span><b>${st.open}</b>件</span></div>` +
+    `<div class="pcStats"><div class="stat${st.open ? " alert" : ""}"><span class="statLabel">${icon("chat", 16)}未回答</span><span><b>${st.open}</b>件</span></div>` +
     `<div class="stat"><span class="statLabel">${icon("photo", 16)}今週の写真</span><span><b>${st.weekPhotos}</b>枚</span></div>` +
     `<div class="stat"><span class="statLabel">${icon("calendar", 16)}最終報告</span><span class="lastRep">${st.last ? fmtMD(st.last.sent_at) : "－"}</span>` +
     `<span class="ago${st.lastDays != null && st.lastDays >= LATE_DAYS - 1 ? " late" : ""}">${st.last ? agoLabel(st.last.sent_at) : ""}</span></div></div></button>`
@@ -680,7 +703,7 @@ function noteRow(n) {
   const rest = restText(n.text);
   return (
     `<div class="noteRow ${st === "open" ? "open" : ""} ${t.cls}"><div class="noteIcon ${t.cls}">${icon(t.icon, 26, 1.8)}</div>` +
-    `<div class="noteMain"><div class="noteBadges">${typeBadge(n.type)}${statusBadge(n)}</div><div class="noteTitle">${esc(headline(n.text))}</div>` +
+    `<div class="noteMain"><div class="noteBadges">${typeBadge(n.type, n.origType)}${statusBadge(n)}</div><div class="noteTitle">${esc(headline(n.text))}</div>` +
     (rest ? `<div class="noteBody">${esc(rest)}</div>` : "") +
     `</div><div class="noteMeta"><div>${icon("user", 16)}${esc(n.personName)}</div><div>${icon("building", 16)}${esc(n.siteName)}</div>` +
     `<div>${icon("list", 16)}${esc(shortProc(n.process))} › ${esc(n.item || "")}</div><div>${icon("clock", 16)}${fmtDateTime(n.at)}</div></div>` +
@@ -710,7 +733,10 @@ function openNote(id) {
   );
   const body = $("drawerBody");
   body.innerHTML =
-    `<div class="card origCard"><div class="origHead">${icon("chat", 22)}<span>元の投稿内容</span>${typeBadge(n.type)}${statusBadge(n)}</div>` +
+    `<div class="card origCard"><div class="origHead">${icon("chat", 22)}<span>元の投稿内容</span>${typeBadge(n.type, n.origType)}${statusBadge(n)}</div>` +
+    (n.origType !== "question" && st !== "replied"
+      ? `<div class="asQ"><span>${n.type === "question" ? "疑問として扱っています（未回答に数えます）" : "答えが必要な内容なら、疑問として扱えます"}</span><button class="btn btnOutline asQBtn" id="asQBtn">${n.type === "question" ? "元の種類に戻す" : "疑問として扱う"}</button></div>`
+      : "") +
     `<div class="origTitle">${esc(headline(n.text))}</div>` +
     `<dl class="origMeta"><dt>${icon("user", 16)}監督名</dt><dd>${esc(n.personName)}</dd><dt>${icon("building", 16)}現場名</dt><dd>${esc(n.siteName)}</dd>` +
     `<dt>${icon("list", 16)}工程・項目</dt><dd>${esc(shortProc(n.process))} › ${esc(n.item || "")}</dd><dt>${icon("clock", 16)}投稿日</dt><dd>${fmtDateTime(n.at)}</dd></dl>` +
@@ -758,6 +784,7 @@ function openNote(id) {
     route();
     openNote(id);
   });
+  if ($("asQBtn")) $("asQBtn").addEventListener("click", () => toggleAsQuestion(n));
   bindCommon(body);
   $("drawer").hidden = false;
   setTimeout(() => ta.focus(), 50);
@@ -785,7 +812,7 @@ function renderSites() {
       const sites = [...p.sites].map((k) => data.sites.get(k));
       return (
         `<div class="card personBlock"><button class="pbHead" data-person="${esc(p.key)}">${avatar(p.name, 44)}<b>${esc(p.name)}</b><span class="stBadge ${ps.cls}">${ps.label}</span>` +
-        `<span class="pbMeta">未回答の疑問 ${st.open}件・最終報告 ${st.last ? fmtMD(st.last.sent_at) : "－"}</span>${icon("chevron", 18)}</button>` +
+        `<span class="pbMeta">未回答 ${st.open}件・最終報告 ${st.last ? fmtMD(st.last.sent_at) : "－"}</span>${icon("chevron", 18)}</button>` +
         `<div class="siteRows">${sites
           .map((s) => {
             const last = s.reports[0];
@@ -830,7 +857,7 @@ function renderSite(key) {
     `<div class="ssSub"><span class="tag">担当現場 ${p ? p.sites.size : 1}件</span></div></div></div>` +
     `<div class="ssCell">${icon("calendar", 28)}<div><div class="ssLabel">最新の報告期間</div><div class="ssValue">${last ? `${fmtMD(last.period.start)} 〜 ${fmtMD(last.period.end)}` : "－"}</div>` +
     `<div class="ssSub">${last ? `${agoLabel(last.sent_at)}に届きました` : ""}</div></div></div>` +
-    `<button class="ssCell ssAlert${open.length ? "" : " zero"}" ${open.length ? `data-note="${esc(open[0].id)}"` : ""}>${icon("chat", 30)}<div><div class="ssLabel">未回答の疑問</div><div class="ssValue big"><b>${open.length}</b>件</div></div>${open.length ? icon("chevron", 18) : ""}</button></div>`;
+    `<button class="ssCell ssAlert${open.length ? "" : " zero"}" ${open.length ? `data-note="${esc(open[0].id)}"` : ""}>${icon("chat", 30)}<div><div class="ssLabel">未回答の疑問・要望</div><div class="ssValue big"><b>${open.length}</b>件</div></div>${open.length ? icon("chevron", 18) : ""}</button></div>`;
 
   html += `<div class="secHead"><div><h2>工程の進捗</h2><div class="sub">6つの工程のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。</div></div></div>`;
   html += prog
