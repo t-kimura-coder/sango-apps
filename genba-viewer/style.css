@@ -321,7 +321,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 
 /* ---------- 名前・GPT素材（2026-10-02） ---------- */
 .brandTag { align-self: center; margin-left: -2px; padding: 2px 10px; border-radius: 8px; background: var(--color-wood-soft); color: var(--color-wood-text); font-size: 13px; font-weight: 700; white-space: nowrap; }
-.heroIcons { position: absolute; z-index: 2; right: -1%; top: -4px; width: 27%; max-width: 380px; pointer-events: none; }
+.heroIcons { position: absolute; z-index: 2; right: 1%; top: 22px; width: 26%; max-width: 360px; pointer-events: none; }
 .heroArt { bottom: -60px; right: 17%; width: 34%; }
 .pageHead.withArt { position: relative; min-height: 200px; padding-right: 420px; }
 .pageArt { position: absolute; right: 0; bottom: 0; width: 400px; max-width: 40%; pointer-events: none; }
