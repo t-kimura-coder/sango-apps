@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,9 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "工程マニュアルの並びを変えました。開いてすぐ「チェックポイント」と品質写真のカメラが出ます。品質写真を撮ると、そのチェックにも自動で印が付きます" },
+  { date: "2026-10-01", type: "feature", text: "ホームの「進み具合」をチェックの進み具合に変え、「続きから」を今の現場のすぐ下に出しました。文字とボタンを大きくし、屋外でも見やすくしています" },
+  { date: "2026-10-01", type: "feature", text: "Boxへ送信の画面に送る写真の一覧を出し、送信時のメモを報告の記録にも残すようにしました。初回の案内にBoxのアドレスと品質写真の撮り方を足しました" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルに「気づき・疑問メモ」を追加しました（原本の「気づき・職人さんからの要望」欄）。現場ごとに、いつ・誰が書いたかと一緒に残り、報告にも含まれます" },
   { date: "2026-10-01", type: "feature", text: "写真整理・報告の画面を見やすくしました。写真整理は2列／3列を切り替えられ、写真ごとの「︙」から拡大・工程の変更・削除ができます" },
   { date: "2026-10-01", type: "fix", text: "現場の管理や設定から戻ったとき、工程マニュアルや報告のページが前の現場のまま残ることがある不具合を直しました" },
@@ -1309,9 +1312,19 @@ async function renderReport() {
       `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
       `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span></span>` +
       `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
-      `<button class="iconBtn removeProcessBtn" aria-label="今回の工程から外す">${icon(ICONS.x, 16)}</button>`;
+      `<button class="iconBtn removeProcessBtn" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button>`;
     card.querySelector(".reportProcOpen").addEventListener("click", () => openReportProc(pid));
-    card.querySelector(".removeProcessBtn").addEventListener("click", () => removeProcess(pid, inProc.length));
+    card.querySelector(".removeProcessBtn").addEventListener("click", () =>
+      openSheet(p.name, (body, close) => {
+        body.appendChild(
+          sheetButton("今回の工程から外す", "btnDanger", () => {
+            close();
+            removeProcess(pid, inProc.length);
+          })
+        );
+        body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+      })
+    );
     list.appendChild(card);
   });
   body.appendChild(list);
@@ -1416,9 +1429,9 @@ async function renderReportProc() {
     `<img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span>` +
     `<span class="periodValue">${periodLabel(periodStart(site, cands)).text}</span>`;
   $("reportProcCard").innerHTML =
-    `<span class="procHeroArt">${groupArt(g, 70)}</span>` +
+    `<span class="procHeroArt">${groupArt(g, 44)}</span>` +
     `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
-    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span><span class="procHeroDesc">${esc(g.desc)}</span></span>`;
+    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span></span>`;
   $("reportProcGuide").innerHTML =
     `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
     `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
@@ -1620,6 +1633,16 @@ async function sendToBox() {
       `写真：${entries.length}枚（約${(photoBytes / 1024 / 1024).toFixed(1)}MB）<br>` +
       `チェック：${checkSummary.length}項目・${checkCount}件（期間中に付けたもの）`;
     body.appendChild(box);
+    const thumbs = document.createElement("div");
+    thumbs.className = "sendThumbs";
+    releaseUrls("send");
+    entries.forEach((e) => {
+      const im = document.createElement("img");
+      im.src = blobUrl("send", e.photo.thumb);
+      im.alt = "";
+      thumbs.appendChild(im);
+    });
+    body.appendChild(thumbs);
     if (photoBytes > MAIL_WARN_BYTES) {
       const warn = document.createElement("div");
       warn.className = "warnText";
@@ -1674,15 +1697,17 @@ async function sendToBox() {
           return; // キャンセル時はシートを開いたまま
         }
         close();
-        if (confirm("送信しました。今回の分を報告済みにしますか？")) markReported();
-        else toast("送信しました");
+        const memoText = memo.value.trim();
+        if (confirm("メールを送れましたか？\n送れていたら「OK」で、今回の分を報告済みにします。")) markReported(memoText);
+        else toast("報告済みにはしていません。送れたら「報告済みにする」を押してください");
       })
     );
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
 
-async function markReported() {
+async function markReported(memo = "") {
+  if (typeof memo !== "string") memo = ""; // ボタンから呼ばれた時はイベントが入るので捨てる
   const site = currentSite();
   if (!site) return;
   const cands = unreported(await getSitePhotos(site.id));
@@ -1710,7 +1735,7 @@ async function markReported() {
           toast(`${fmtDate(start)}以降の日付を選んでください`);
           return;
         }
-        const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString() };
+        const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo };
         const targets = cands.filter((p) => p.dateKey <= end);
         targets.forEach((p) => {
           p.reportId = report.id;
@@ -1885,9 +1910,12 @@ async function openGroup(gid, itemId) {
   const idx = GROUPS.indexOf(g);
   const stepper = $("groupStepper");
   stepper.innerHTML = "";
+  await refreshSites();
+  await loadSiteChecks();
   GROUPS.forEach((x, i) => {
     const b = document.createElement("button");
-    b.className = "step" + (i < idx ? " done" : "") + (i === idx ? " current" : "");
+    const pr = groupProgress(x);
+    b.className = "step" + (pr.checks && pr.checksDone === pr.checks ? " done" : "") + (i === idx ? " current" : "");
     b.innerHTML = `<span class="stepDot"></span><span>${esc(x.name)}</span>`;
     b.addEventListener("click", () => openGroup(x.id));
     stepper.appendChild(b);
@@ -1896,12 +1924,10 @@ async function openGroup(gid, itemId) {
   $("groupDesc").textContent = g.desc;
   $("groupHeroArt").innerHTML = groupArt(g, 100);
 
-  await refreshSites();
-  await loadSiteChecks();
-
   groupItems = manualMeta ? g.cats.flatMap((pid) => manualMeta.items.filter((it) => it.cat === pid)) : [];
   $("groupEmpty").innerHTML = "";
   if (!manualMeta) $("groupEmpty").appendChild(manualEmptyCard());
+  $("groupView").classList.toggle("hasItems", groupItems.length > 0);
   $("itemTabs").hidden = !groupItems.length;
   $("itemDetail").hidden = !groupItems.length;
   const found = itemId ? groupItems.findIndex((it) => it.id === itemId) : -1;
@@ -1929,7 +1955,7 @@ function renderItemStrip(scrollToActive = true) {
     const b = document.createElement("button");
     b.className =
       "itemChip" + (i === currentItemIdx ? " active" : "") + (pr.na ? " na" : "") + (!pr.na && pr.total && pr.done === pr.total ? " done" : "");
-    b.innerHTML = `<span class="itemChipNo">${esc(it.no || "・")}</span><span class="itemChipName">${esc(it.name)}</span>`;
+    b.innerHTML = (it.no ? `<span class="itemChipNo">${esc(it.no)}</span>` : "") + `<span class="itemChipName">${esc(it.name)}</span>`;
     b.addEventListener("click", async () => {
       currentItemIdx = i;
       renderItemStrip();
@@ -1990,7 +2016,7 @@ async function renderItem() {
   const rec = checkRecOf(it.id);
   const p = processOf(it.cat);
   let html =
-    `<div class="itemHead"><span class="itemHeadNo">${esc(it.no || "・")}</span>` +
+    `<div class="itemHead">${it.no ? `<span class="itemHeadNo">${esc(it.no)}</span>` : ""}` +
     `<div class="itemHeadText"><div class="itemTitle">${esc(it.name)}</div><div class="itemCat">${esc(p.name)}</div></div></div>`;
   if (tx && tx.summary) html += `<div class="itemSummary">${esc(tx.summary)}</div>`;
 
@@ -1998,25 +2024,25 @@ async function renderItem() {
     if (!tx) {
       html += `<div class="emptyNote">このマニュアルには文章データが入っていません。設定から最新版のマニュアルを取り込み直すと、ポイントやチェックポイントが表示されます。</div>`;
     } else {
+      const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
+      html +=
+        `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
+        (tx.checks.length ? `<span id="checkProgress">${done}/${tx.checks.length}</span>` : "") +
+        `<button class="miniBtn" data-go="docs">原本を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
+      html += tx.checks.length
+        ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
+        : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
+      if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
+      else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの項目はない"}</button>`;
+      html += `<div id="memoSection" class="memoSection"></div>`;
       if (tx.purpose.length || tx.goal.length) {
-        html += `<div class="pointBox"><div class="pointTitle">${icon(ICONS.bulb, 20)}この工程のポイント</div>`;
+        html += `<div class="pointBox"><div class="pointTitle">${icon(ICONS.bulb, 20)}この項目のポイント</div>`;
         if (tx.purpose.length) html += `<ul class="pointList">${tx.purpose.map(lineHtml).join("")}</ul>`;
         if (tx.goal.length) html += `<div class="pointSub">ゴール</div><ul class="pointList">${tx.goal.map(lineHtml).join("")}</ul>`;
         html += `</div>`;
       }
       html += `<div class="guideBoxDetail">${guideHtml(p)}</div>`;
-      html += `<button class="btn btnOutline toReportBtn" data-toreport="1">${icon(ICONS.camera, 18)}この工程の報告写真（撮る・見る）</button>`;
-      const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
-      html +=
-        `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
-        (tx.checks.length ? `<span id="checkProgress">${done}/${tx.checks.length}</span>` : "") +
-        `<button class="miniBtn" data-go="docs">詳細を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
-      html += tx.checks.length
-        ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
-        : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
-      if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
-      else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの工程はない"}</button>`;
-      html += `<div id="memoSection" class="memoSection"></div>`;
+      html += `<button class="btn btnOutline toReportBtn" data-toreport="1">${icon(ICONS.camera, 18)}${esc(shortProcessName(p))}の報告写真へ（撮る・見る）</button>`;
     }
     if (it.pages.length > 1) {
       html += `<div class="secHead">${icon(ICONS.photo, 22)}参考図・写真</div><div class="figStrip" id="figStrip"></div>`;
@@ -2029,7 +2055,7 @@ async function renderItem() {
       html += `<div class="secHead">${icon(ICONS.list, 22)}作業の流れ</div><div class="flowList">`;
       html += tx.before.map((f) => flowCardHtml("前の工程", f)).join("");
       if (tx.before.length) html += `<div class="flowArrow">▼</div>`;
-      html += `<div class="flowCard current"><span class="flowLabel">この工程</span>${esc(it.name)}</div>`;
+      html += `<div class="flowCard current"><span class="flowLabel">この項目</span>${esc(it.name)}</div>`;
       if (tx.after.length) html += `<div class="flowArrow">▼</div>`;
       html += tx.after.map((f) => flowCardHtml("次の工程", f)).join("");
       html += `</div>`;
@@ -2061,7 +2087,7 @@ async function renderItem() {
     el.addEventListener("click", () => {
       const target = allManualItems().find((x) => x.no && x.no === el.dataset.flow);
       if (target) openItemAnywhere(target.id);
-      else toast("この工程のマニュアルは見つかりませんでした");
+      else toast("この項目のマニュアルは見つかりませんでした");
     })
   );
 
@@ -2207,10 +2233,22 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
     await dbPut("photos", rec);
     // 撮り直しは前の1枚と入れ替える（ただし報告済みの写真は過去の報告から欠けないよう残す）
     if (old && !old.reportId) await dbDeleteMany("photos", [old.id]);
-    if (t.siteId === currentSiteId) siteRecordPhotos[mapKey] = rec;
+    let autoChecked = false;
+    if (t.siteId === currentSiteId) {
+      siteRecordPhotos[mapKey] = rec;
+      const crec = checkRecOf(t.itemId);
+      if (!crec.marks[t.checkKey]) {
+        crec.marks[t.checkKey] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
+        await saveCheckRec(crec);
+        autoChecked = true;
+      }
+    }
     const it = groupItems[currentItemIdx];
-    if (it && it.id === t.itemId) refreshCheckRow(it, t.checkKey);
-    toast("品質写真を保存しました");
+    if (it && it.id === t.itemId) {
+      renderItemStrip(false);
+      refreshCheckRow(it, t.checkKey);
+    }
+    toast(autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました");
   } catch (e) {
     console.error(e);
     alert("写真を保存できませんでした。もう一度撮影してください。");
@@ -2224,8 +2262,10 @@ function flowCardHtml(label, f) {
   );
 }
 
-// 関連資料（施工要領書など）は今後マニュアルパックに入れる予定。今は枠だけ
+// 関連資料（施工要領書など）は今後マニュアルパックに入れる予定。中身ができるまでは出さない
+const RELATED_DOCS_READY = false;
 function relatedSoonHtml() {
+  if (!RELATED_DOCS_READY) return "";
   return (
     `<div class="secHead">${icon(ICONS.report, 22)}関連資料<span class="secRight">準備中</span></div>` +
     `<div class="soonGrid"><div class="soonCard">${icon(ICONS.report, 22)}<span><b>施工要領書</b>準備中</span></div>` +
@@ -2288,7 +2328,7 @@ function renderMemoSection(it) {
     (currentSiteId
       ? `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}">${t.label}</button>`).join("")}</div>` +
         `<textarea id="memoInput" class="sheetTextarea memoInput" placeholder="現場で気づいたこと、疑問に思ったこと、職人さんからの要望など"></textarea>` +
-        `<button id="memoSaveBtn" class="btn btnOutline">メモを残す</button>`
+        `<button id="memoSaveBtn" class="btn btnPrimary memoSaveBtn" hidden>保存</button>`
       : `<div class="hint">上の「今の現場」から現場を登録すると、メモを残せます。</div>`) +
     `<div class="noteList">${notes
       .map(
@@ -2306,7 +2346,10 @@ function renderMemoSection(it) {
     })
   );
   const save = $("memoSaveBtn");
-  if (save) save.addEventListener("click", () => saveMemo(it));
+  if (save) {
+    save.addEventListener("click", () => saveMemo(it));
+    $("memoInput").addEventListener("input", (e) => (save.hidden = !e.target.value.trim()));
+  }
   sec.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteMemo(it, b.dataset.del)));
 }
 
@@ -2669,16 +2712,18 @@ async function renderDash() {
     const all = await getSitePhotos(site.id);
     const cands = unreported(all);
     const cov = await recordCoverage(site.id);
-    const pct = cov && cov.total ? Math.round((cov.done / cov.total) * 100) : 0;
+    await loadSiteChecks();
+    const prog = GROUPS.map(groupProgress).reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
+    const pct = prog.c ? Math.round((prog.d / prog.c) * 100) : 0;
     card.innerHTML =
       `<button class="curSiteCard rich">` +
       `<span class="siteBoard">${HAS_SITE_BOARD ? '<img class="boardBg" src="art/site-bg.webp?v=1" alt=""><img class="boardImg" src="art/site-board.webp?v=1" alt="">' : icon(ICONS.building, 40)}</span>` +
       `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
       `<span class="curSiteMeta">${icon(ICONS.calendar, 14)}${periodLabel(periodStart(site, cands)).text}</span>` +
       `<span class="siteTiles">` +
-      (cov ? `<span class="siteTile"><span class="tileLabel">${icon(ICONS.report, 14)}写真要</span><span><b>${cov.done}</b>/${cov.total}</span></span>` : "") +
+      (cov ? `<span class="siteTile"><span class="tileLabel">${icon(ICONS.report, 14)}品質写真</span><span><b>${cov.done}</b>/${cov.total}</span></span>` : "") +
       `<span class="siteTile"><span class="tileLabel">${icon(ICONS.camSmall, 14)}報告写真</span><span><b>${cands.length}</b> 枚</span></span>` +
-      (cov ? `<span class="siteTile"><span class="tileLabel">進み具合</span><span class="tileBar"><span style="width:${pct}%"></span></span><span class="tilePct">${pct}%</span></span>` : "") +
+      (prog.c ? `<span class="siteTile"><span class="tileLabel">チェック</span><span class="tileBar"><span style="width:${pct}%"></span></span><span class="tilePct">${pct}%</span></span>` : "") +
       `</span></span><span class="siteSwitch pillSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
     card.firstElementChild.addEventListener("click", openSiteSwitcher);
     const nRec = all.filter(isRecordPhoto).length;
@@ -2694,10 +2739,22 @@ async function renderDash() {
   const recent = manualMeta
     ? getRecent().map((r) => ({ r, it: manualMeta.items.find((x) => x.id === r.id) })).filter((x) => x.it)
     : [];
-  $("recentSection").hidden = recent.length === 0;
+  // いちばん最近の1件は今の現場のすぐ下に「続きから」として出す
+  const resume = $("dashResume");
+  resume.innerHTML = "";
+  if (recent.length) {
+    const { it } = recent[0];
+    const g = groupOfProcess(it.cat);
+    const b = document.createElement("button");
+    b.className = "resumeBtn";
+    b.innerHTML = `<span class="resumeLabel">続きから</span><span class="resumeName">${esc(it.name)}</span><span class="pill pillWood">${esc(g.name)}</span>${icon(ICONS.chevron, 18)}`;
+    b.addEventListener("click", () => openGroup(g.id, it.id));
+    resume.appendChild(b);
+  }
+  $("recentSection").hidden = recent.length <= 1;
   const list = $("recentList");
   list.innerHTML = "";
-  recent.forEach(({ r, it }) => {
+  recent.slice(1).forEach(({ r, it }) => {
     const g = groupOfProcess(it.cat);
     const b = document.createElement("button");
     b.className = "recentItem";
@@ -3022,6 +3079,20 @@ const TOUR_STEPS = [
     scroll: true,
   },
   {
+    view: "settingsView",
+    target: () => $("boxEmailInput"),
+    text: () =>
+      getBoxEmail()
+        ? "報告の送り先（Boxのアドレス）は登録済みです。報告を送る時に、このアドレスをメールの宛先に使います。"
+        : "報告の送り先になる、Boxのアップロード用メールアドレスをここに入れます。分からなければ「次へ」で、あとから入れても大丈夫です。",
+    next: true,
+    scroll: true,
+    onNext: () => {
+      const v = $("boxEmailInput").value.trim();
+      if (v && !BOX_UPLOAD_EMAIL) setSetting(BOX_EMAIL_KEY, v);
+    },
+  },
+  {
     view: "*",
     target: () => document.querySelector('.tabBtn[data-tab="home"]'),
     text: "最後に、担当現場を登録します。下の「ホーム」をタップしてください。",
@@ -3032,6 +3103,18 @@ const TOUR_STEPS = [
     target: () => $("dashSiteCard"),
     text: "ここが「今の現場」です。タップして現場名を登録・切り替えします。写真やチェックは、この現場に記録されます。",
     next: true,
+    onNext: () => {
+      if (currentSiteId) return true;
+      toast("先にここをタップして、現場名を登録してください");
+      return false;
+    },
+  },
+  {
+    view: "dashView",
+    target: () => $("dashGroups"),
+    text: "最後に、品質写真の撮り方です。工程を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。",
+    next: true,
+    scroll: true,
     nextLabel: "完了",
   },
 ];
@@ -3180,7 +3263,7 @@ function init() {
   $("dashAlbumBtn").addEventListener("click", goAlbum);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
-  $("groupShootBtn").innerHTML = icon(ICONS.camera, 24);
+  $("groupShootBtn").innerHTML = `${icon(ICONS.camera, 18)}<span>報告写真</span>`;
   document.querySelectorAll(".openSearchBtn").forEach((b) => b.addEventListener("click", openSearch));
   $("searchInput").addEventListener("input", renderSearch);
   $("searchInput").addEventListener("keydown", (e) => {
@@ -3203,7 +3286,7 @@ function init() {
   $("tourSkip").addEventListener("click", endTour);
   $("tourNext").addEventListener("click", () => {
     const step = TOUR_STEPS[tourIdx];
-    if (step && step.onNext) step.onNext();
+    if (step && step.onNext && step.onNext() === false) return;
     tourIdx++;
     renderTourStep();
   });

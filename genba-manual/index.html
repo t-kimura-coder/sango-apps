@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
 
@@ -37,6 +37,7 @@
   </div>
   <div class="viewBody">
     <div id="dashSiteCard"></div>
+    <div id="dashResume"></div>
     <div class="sectionHead">
       <h2 class="sectionTitle">工程から探す</h2>
       <div class="sectionSub">工程を選んで、確認ポイントやマニュアルを表示します。</div>
@@ -92,7 +93,7 @@
   <header class="topbar">
     <button id="groupBackBtn" class="iconBtn" aria-label="戻る"></button>
     <h1 class="topbarTitle center">工程マニュアル</h1>
-    <button id="groupShootBtn" class="iconBtn" aria-label="この工程の報告写真"></button>
+    <button id="groupShootBtn" class="headTextBtn" aria-label="この工程の報告写真へ"></button>
   </header>
   <div id="groupStepper" class="stepper"></div>
   <div class="viewBody groupBody">
@@ -218,11 +219,11 @@
     <button class="siteBar curSiteBar"></button>
     <div id="reportProcPeriodBar" class="periodBar"></div>
     <div id="reportProcCard" class="procHeroCard"></div>
-    <div id="reportProcGuide" class="memoCard"></div>
     <div class="btnRow">
       <button id="reportShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>撮影する</button>
       <button id="reportImportBtn" class="btn btnSecondary btnLarge"><span data-icon="photo"></span>取り込む</button>
     </div>
+    <div id="reportProcGuide" class="memoCard"></div>
     <div class="summaryHead">
       <div class="sectionTitle small">この工程の報告写真</div>
       <div id="reportProcCount" class="selCount"></div>
@@ -369,7 +370,8 @@
         <li>上に並んだ番号を左右にスクロールして項目を選ぶと、概要・ポイント・チェックポイントが出ます。「作業手順」で前後の工程と事前準備、「参考資料」でマニュアル原本のページを見られます。</li>
         <li>上の<b>今の現場</b>に、チェックポイントのチェックが記録されます。付けた日時と名前が残るので、後から見返せます。その現場にない工程は「この現場ではこの工程はない」で灰色にできます。</li>
         <li>チェックポイントの下の<b>気づき・疑問メモ</b>に、現場で気づいたこと・疑問・職人さんの要望を残せます。日時と名前が一緒に残り、報告にも含まれます。</li>
-        <li>最近見た項目は、ホームの「前回の続き」からすぐ開けます。</li>
+        <li>品質写真を撮ると、そのチェックにも自動で印が付きます。</li>
+        <li>最近見た項目は、ホームの「続きから」「前回の続き」からすぐ開けます。</li>
         <li>工程名が分からないときは、ホームか「工程」タブの<b>検索欄</b>に、現場で聞いた言葉を入れてください。チェック項目の文章からも探します（ひらがな可）。</li>
       </ol>
     </div>
@@ -450,6 +452,6 @@
 <input type="file" id="restoreInput" accept="application/json,.json" hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>
