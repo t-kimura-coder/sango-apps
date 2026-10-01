@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 17;
+const APP_VERSION = 19;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,8 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "初めて使う人向けに、画面の場所を照らして案内する「使い方の案内」を付けました（設定・使い方からいつでも見られます）" },
+  { date: "2026-10-01", type: "feature", text: "設定にバックアップを追加しました。登録情報・チェックの記録・写真から選んで書き出し、機種変更のときに戻せます" },
   { date: "2026-10-01", type: "feature", text: "Boxへ送る報告に、期間中に付けたチェック（誰が・いつ）を含めるようにしました" },
   { date: "2026-10-01", type: "feature", text: "違う工程で撮った写真を、あとから正しい工程に変更できるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて開いたときに、お名前の登録を案内するようにしました（チェックの記録に名前が残ります）" },
@@ -427,6 +429,7 @@ function showView(id) {
   const tab = VIEW_TABS[id];
   document.querySelectorAll(".tabBtn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   window.scrollTo(0, 0);
+  if (typeof tourOnView === "function") tourOnView(id);
 }
 
 let toastTimer = null;
@@ -2046,6 +2049,10 @@ async function onManualPicked() {
     });
     await loadManualMeta();
     toast(`マニュアル（${manualMeta.version}版）を取り込みました`);
+    if (tourIdx >= 0 && TOUR_STEPS[tourIdx] && TOUR_STEPS[tourIdx].target() === $("manualCard")) {
+      tourIdx++;
+      setTimeout(renderTourStep, 60);
+    }
     if (!$("settingsView").hidden) renderSettings();
     else if (currentView === "groupView") openGroup(currentGroupId);
     else goManual();
@@ -2144,6 +2151,12 @@ async function copyBoxEmail() {
 
 async function renderSettings() {
   renderBrand();
+  const bk = getBackupOpts();
+  $("bkSites").checked = bk.sites;
+  $("bkChecks").checked = bk.checks;
+  $("bkPhotos").checked = bk.photos;
+  updateBackupNote();
+  $("tourAlwaysChk").checked = getSetting(TOUR_ALWAYS_KEY) === "1";
   $("userNameInput").value = getSetting(USER_NAME_KEY);
   $("boxEmailInput").value = getBoxEmail();
   $("boxEmailInput").readOnly = !!BOX_UPLOAD_EMAIL;
@@ -2309,48 +2322,327 @@ function openAnnouncements() {
   openSubView("announceView");
 }
 
-/* ---------- 名前の登録（初回のみ案内） ---------- */
-// チェックの記録に「誰が」を残すため。後で品質管理・育成の指標にも使う想定
-const NAME_ASKED_KEY = "genba-photo-name-asked";
+/* ---------- バックアップ ---------- */
+// 機種変更・故障に備えた書き出しと戻し。マニュアルはBoxから取り込み直せるので含めない。
+// 写真を含めるとメールで送れない大きさになるため、その時は「ファイルに保存」（BoxアプリのフォルダもOK）を案内する
 
-function askNameOnce() {
-  let asked = false;
+const BACKUP_OPT_KEY = "genba-photo-backup-opts";
+const BACKUP_KIND = "genba-nav-backup";
+
+function getBackupOpts() {
   try {
-    asked = localStorage.getItem(NAME_ASKED_KEY) === "1";
+    return Object.assign({ sites: true, checks: true, photos: false }, JSON.parse(getSetting(BACKUP_OPT_KEY) || "{}"));
   } catch (e) {
-    /* ignore */
+    return { sites: true, checks: true, photos: false };
   }
-  if (asked || getSetting(USER_NAME_KEY)) return;
-  openSheet("お名前を登録してください", (body, close) => {
-    const intro = document.createElement("div");
-    intro.className = "nameIntro";
-    intro.textContent = "工程マニュアルのチェックや報告に、名前が一緒に記録されます。あとから設定で変更できます。";
-    const input = document.createElement("input");
-    input.className = "sheetInput";
-    input.placeholder = "山郷 太郎";
-    input.autocomplete = "name";
-    const done = (save) => {
-      if (save) {
-        const v = input.value.trim();
-        if (!v) {
-          input.focus();
-          return;
-        }
-        setSetting(USER_NAME_KEY, v);
-        toast(`${v}さんで登録しました`);
-      }
-      setSetting(NAME_ASKED_KEY, "1");
-      close();
-    };
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.isComposing) done(true);
-    });
-    body.appendChild(intro);
-    body.appendChild(input);
-    body.appendChild(sheetButton("登録する", "btnPrimary", () => done(true)));
-    body.appendChild(sheetButton("あとで", "btnSecondary", () => done(false)));
+}
+
+async function updateBackupNote() {
+  const opts = { sites: $("bkSites").checked, checks: $("bkChecks").checked, photos: $("bkPhotos").checked };
+  setSetting(BACKUP_OPT_KEY, JSON.stringify(opts));
+  const note = $("bkNote");
+  if (opts.photos) {
+    const photos = await dbGetAll("photos");
+    const mb = photos.reduce((n, p) => n + (p.blob ? p.blob.size : 0) + (p.thumb ? p.thumb.size : 0), 0) * 1.37 / 1024 / 1024;
+    const big = mb * 1024 * 1024 > MAIL_WARN_BYTES;
+    note.className = big ? "mutedText warn" : "mutedText";
+    note.textContent = big
+      ? `写真${photos.length}枚を含めると約${Math.round(mb)}MBになり、メールでは送れません。` +
+        "書き出したら共有画面の「ファイルに保存」で、iPhoneの中かBoxアプリのフォルダに保存してください。"
+      : `写真${photos.length}枚を含めて約${Math.max(1, Math.round(mb))}MBです。今はメールでも送れますが、写真が増えて15MBを超えるとメールでは送れなくなり、「ファイルに保存」での保存になります。`;
+  } else {
+    note.className = "mutedText";
+    note.textContent = "写真を含めない場合は小さいファイルなので、メールでBoxへ送れます（宛先をコピーします）。";
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
   });
 }
+
+async function exportBackup() {
+  const opts = { sites: $("bkSites").checked, checks: $("bkChecks").checked, photos: $("bkPhotos").checked };
+  if (!opts.sites && !opts.checks && !opts.photos) {
+    toast("書き出すものを1つ以上選んでください");
+    return;
+  }
+  setProcessing(true, "バックアップを作成中...");
+  let file;
+  try {
+    const head = {
+      kind: BACKUP_KIND,
+      schema: 1,
+      app_version: APP_VERSION,
+      created_at: new Date().toISOString(),
+      user: getSetting(USER_NAME_KEY),
+      include: opts,
+    };
+    if (opts.sites) {
+      head.sites = await dbGetAll("sites");
+      head.reports = await dbGetAll("reports");
+      head.settings = { userName: getSetting(USER_NAME_KEY), boxEmail: getSetting(BOX_EMAIL_KEY), manualSite: getSetting(MANUAL_SITE_KEY) };
+    }
+    if (opts.checks) head.checks = await dbGetAll("checks");
+    // 写真は1枚ずつ文字にして並べる（全体を1つの巨大な文字列にするとiPhoneのメモリが足りなくなるため）
+    const parts = [JSON.stringify(head).slice(0, -1), ',"photos":['];
+    if (opts.photos) {
+      const photos = await dbGetAll("photos");
+      for (let i = 0; i < photos.length; i++) {
+        if (i % 10 === 0) setProcessing(true, `写真を書き出し中... ${i} / ${photos.length}`);
+        const p = photos[i];
+        const rec = Object.assign({}, p, { blob: await blobToDataUrl(p.blob), thumb: p.thumb ? await blobToDataUrl(p.thumb) : null });
+        parts.push((i ? "," : "") + JSON.stringify(rec));
+      }
+    }
+    parts.push("]}");
+    const name = safeFileName(`現場ナビ_バックアップ_${todayKey()}${opts.photos ? "_写真あり" : ""}_${getSetting(USER_NAME_KEY) || "未登録"}.json`);
+    file = new File(parts, name, { type: "application/json" });
+  } catch (e) {
+    console.error(e);
+    alert("バックアップを作成できませんでした。写真を含めない形で試してください。");
+    return;
+  } finally {
+    setProcessing(false);
+  }
+  const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+  openSheet("バックアップを書き出す", (body, close) => {
+    const info = document.createElement("div");
+    info.className = "summaryBox";
+    info.innerHTML = `ファイル：${esc(file.name)}<br>大きさ：約${sizeMb}MB`;
+    body.appendChild(info);
+    const mailable = file.size <= MAIL_WARN_BYTES;
+    const how = document.createElement("div");
+    how.className = mailable ? "mutedText" : "warnText";
+    how.textContent = mailable
+      ? "共有画面でメールを選び、宛先にBoxのアドレスを貼り付けて送ってください（宛先をコピーします）。「ファイルに保存」も選べます。"
+      : "メールでは送れない大きさです。共有画面で「ファイルに保存」を選び、iPhoneの中かBoxアプリのフォルダに保存してください。";
+    body.appendChild(how);
+    body.appendChild(
+      sheetButton("共有画面を開く", "btnPrimary btnLarge", async () => {
+        const email = getBoxEmail();
+        if (mailable && email && navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: file.name });
+            close();
+            toast("バックアップを書き出しました");
+          } catch (e) {
+            /* キャンセル */
+          }
+        } else {
+          const a2 = document.createElement("a");
+          a2.href = URL.createObjectURL(file);
+          a2.download = file.name;
+          a2.click();
+          setTimeout(() => URL.revokeObjectURL(a2.href), 2000);
+          close();
+        }
+      })
+    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
+// 戻すときは「足す」。同じIDのものがあればそのまま残し、チェックは新しい方を残してまとめる
+async function onRestorePicked() {
+  const input = $("restoreInput");
+  const file = input.files[0];
+  input.value = "";
+  if (!file) return;
+  setProcessing(true, "バックアップを読み込み中...");
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+    if (!data || data.kind !== BACKUP_KIND) throw new Error("not a backup");
+  } catch (e) {
+    setProcessing(false);
+    alert("バックアップのファイルを読み込めませんでした。「現場ナビ_バックアップ_○○.json」を選んでください。");
+    return;
+  }
+  setProcessing(false);
+  const n = (k) => (Array.isArray(data[k]) ? data[k].length : 0);
+  const msg =
+    `${fmtDateTime(data.created_at)}（${data.user || "名前なし"}）のバックアップです。\n` +
+    `現場${n("sites")}件・報告${n("reports")}件・チェック${n("checks")}項目・写真${n("photos")}枚\n\n` +
+    "今のデータに足して戻します（すでにあるものは消えません）。よろしいですか？";
+  if (!confirm(msg)) return;
+  setProcessing(true, "戻しています...");
+  try {
+    const add = async (store, rows, keyName) => {
+      if (!rows || !rows.length) return 0;
+      const exist = new Set((await dbGetAll(store)).map((r) => r[keyName]));
+      const fresh = rows.filter((r) => !exist.has(r[keyName]));
+      for (let i = 0; i < fresh.length; i += 20) await dbPutMany(store, fresh.slice(i, i + 20));
+      return fresh.length;
+    };
+    const added = {};
+    added.sites = await add("sites", data.sites, "id");
+    added.reports = await add("reports", data.reports, "id");
+    if (data.checks && data.checks.length) {
+      const current = Object.fromEntries((await dbGetAll("checks")).map((r) => [r.key, r]));
+      const merged = data.checks.map((r) => {
+        const cur = current[r.key];
+        if (!cur) return r;
+        const marks = Object.assign({}, cur.marks);
+        Object.entries(r.marks || {}).forEach(([k, m]) => {
+          if (!marks[k] || marks[k].at < m.at) marks[k] = m;
+        });
+        return Object.assign({}, cur, { marks, na: cur.na || r.na });
+      });
+      await dbPutMany("checks", merged);
+      added.checks = merged.length;
+    }
+    if (data.photos && data.photos.length) {
+      const exist = new Set((await dbGetAll("photos")).map((p) => p.id));
+      const fresh = data.photos.filter((p) => !exist.has(p.id));
+      for (let i = 0; i < fresh.length; i++) {
+        if (i % 10 === 0) setProcessing(true, `写真を戻しています... ${i} / ${fresh.length}`);
+        const p = fresh[i];
+        p.blob = await (await fetch(p.blob)).blob();
+        p.thumb = p.thumb ? await (await fetch(p.thumb)).blob() : p.blob;
+        await dbPut("photos", p);
+      }
+      added.photos = fresh.length;
+    }
+    if (data.settings) {
+      if (!getSetting(USER_NAME_KEY) && data.settings.userName) setSetting(USER_NAME_KEY, data.settings.userName);
+      if (!getSetting(BOX_EMAIL_KEY) && data.settings.boxEmail) setSetting(BOX_EMAIL_KEY, data.settings.boxEmail);
+    }
+    toast(`戻しました（現場${added.sites || 0}・チェック${added.checks || 0}・写真${added.photos || 0}）`);
+    renderSettings();
+  } catch (e) {
+    console.error(e);
+    alert("途中で失敗しました。もう一度試してください（すでに戻した分は残っています）。");
+  } finally {
+    setProcessing(false);
+  }
+}
+
+/* ---------- 使い方の案内（チュートリアル） ---------- */
+// 照らした場所を吹き出しで説明する。ページの操作は止めないので、照らした所をそのままタップして進める。
+// 名前はチェックの記録に「誰が」を残すため（後で品質管理・育成の指標にも使う想定）
+
+const TOUR_DONE_KEY = "genba-photo-tour-done";
+const TOUR_ALWAYS_KEY = "genba-photo-tour-always";
+
+let tourIdx = -1;
+
+const TOUR_STEPS = [
+  {
+    view: "dashView",
+    target: () => document.querySelector("#dashView .settingsBtn"),
+    text: "ようこそ！まずはお名前を登録しましょう。右上の歯車をタップしてください。",
+    waitView: "settingsView",
+  },
+  {
+    view: "settingsView",
+    target: () => $("userNameInput"),
+    text: "ここにお名前を入力してください。工程マニュアルのチェックや報告に、名前が一緒に記録されます。",
+    next: true,
+    onNext: () => {
+      const v = $("userNameInput").value.trim();
+      if (v) setSetting(USER_NAME_KEY, v);
+    },
+  },
+  {
+    view: "settingsView",
+    target: () => $("manualCard"),
+    text: () =>
+      manualMeta
+        ? "マニュアルは取り込み済みです。新しい版が出たら、ここから取り込み直します。"
+        : "次に、Boxにある「マニュアル_○○.json」をここから取り込みます（初回だけ）。あとで取り込む場合は「次へ」。",
+    next: true,
+    scroll: true,
+  },
+  {
+    view: "*",
+    target: () => document.querySelector('.tabBtn[data-tab="photos"]'),
+    text: "最後に、担当現場を登録します。下の「写真」をタップしてください。",
+    waitView: "homeView",
+  },
+  {
+    view: "homeView",
+    target: () => $("addSiteBtn"),
+    text: "右上の「＋」から現場名を登録すると、工程ごとに写真を撮れるようになります。",
+    next: true,
+    nextLabel: "完了",
+  },
+];
+
+function tourShouldStart() {
+  return getSetting(TOUR_ALWAYS_KEY) === "1" || getSetting(TOUR_DONE_KEY) !== "1";
+}
+
+function startTour() {
+  tourIdx = 0;
+  if (currentView !== "dashView") goDash();
+  else renderTourStep();
+}
+
+function endTour() {
+  tourIdx = -1;
+  $("tour").hidden = true;
+  setSetting(TOUR_DONE_KEY, "1");
+}
+
+function tourOnView(id) {
+  if (tourIdx < 0) return;
+  const step = TOUR_STEPS[tourIdx];
+  if (step.waitView && id === step.waitView) {
+    tourIdx++;
+  }
+  setTimeout(renderTourStep, 60);
+}
+
+function renderTourStep() {
+  if (tourIdx < 0) return;
+  if (tourIdx >= TOUR_STEPS.length) {
+    endTour();
+    toast("準備完了です。使い方はホーム右上の「？」からいつでも見られます");
+    return;
+  }
+  const step = TOUR_STEPS[tourIdx];
+  const tour = $("tour");
+  const onRightView = step.view === "*" || step.view === currentView;
+  const target = onRightView ? step.target() : null;
+  if (!target || target.offsetParent === null) {
+    tour.hidden = true; // 別の画面に移ったときは隠しておき、戻ったら再表示する
+    return;
+  }
+  if (step.scroll) target.scrollIntoView({ block: "center" });
+  tour.hidden = false;
+  $("tourStep").textContent = `使い方の案内 ${tourIdx + 1} / ${TOUR_STEPS.length}`;
+  $("tourText").textContent = typeof step.text === "function" ? step.text() : step.text;
+  $("tourNext").hidden = !step.next;
+  $("tourNext").textContent = step.nextLabel || "次へ";
+  requestAnimationFrame(placeTourSpot);
+}
+
+function placeTourSpot() {
+  if (tourIdx < 0 || $("tour").hidden) return;
+  const step = TOUR_STEPS[tourIdx];
+  const target = step && step.target();
+  if (!target) return;
+  const r = target.getBoundingClientRect();
+  const pad = 6;
+  const spot = $("tourSpot");
+  spot.style.left = `${r.left - pad}px`;
+  spot.style.top = `${r.top - pad}px`;
+  spot.style.width = `${r.width + pad * 2}px`;
+  spot.style.height = `${r.height + pad * 2}px`;
+  const bubble = $("tourBubble");
+  const bh = bubble.offsetHeight;
+  const below = r.bottom + 16;
+  bubble.style.top = below + bh < window.innerHeight - 80 ? `${below}px` : `${Math.max(16, r.top - bh - 16)}px`;
+}
+
+window.addEventListener("scroll", () => requestAnimationFrame(placeTourSpot), { passive: true });
+window.addEventListener("resize", () => requestAnimationFrame(placeTourSpot));
 
 /* ---------- 起動 ---------- */
 
@@ -2443,6 +2735,20 @@ function init() {
   $("copyBoxEmailBtn").addEventListener("click", copyBoxEmail);
   $("deleteSelectedBtn").addEventListener("click", deleteSelectedPhotos);
   $("retagSelectedBtn").addEventListener("click", retagSelectedPhotos);
+  ["bkSites", "bkChecks", "bkPhotos"].forEach((id) => $(id).addEventListener("change", updateBackupNote));
+  $("backupBtn").addEventListener("click", exportBackup);
+  $("restoreBtn").addEventListener("click", () => $("restoreInput").click());
+  $("restoreInput").addEventListener("change", onRestorePicked);
+  $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
+  $("tourAgainBtn").addEventListener("click", startTour);
+  $("helpTourBtn").addEventListener("click", startTour);
+  $("tourSkip").addEventListener("click", endTour);
+  $("tourNext").addEventListener("click", () => {
+    const step = TOUR_STEPS[tourIdx];
+    if (step && step.onNext) step.onNext();
+    tourIdx++;
+    renderTourStep();
+  });
   $("markReportedBtn").addEventListener("click", markReported);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   document.querySelector(".sheetBackdrop").addEventListener("click", () => ($("sheet").hidden = true));
@@ -2461,7 +2767,7 @@ function init() {
 
   loadManualMeta().then(() => {
     goDash();
-    askNameOnce();
+    if (tourShouldStart()) startTour();
   });
 }
 

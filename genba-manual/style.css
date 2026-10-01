@@ -527,3 +527,22 @@ svg { flex: none; }
 .subActions .btn { min-height: 40px; font-size: var(--fs-sm); }
 .subActions .dangerOutline { flex: 1 1 0 !important; }
 .nameIntro { font-size: var(--fs-sm); color: var(--color-text-sub); }
+
+/* ---------- 設定：バックアップ・案内 ---------- */
+.checkOpt { display: flex; align-items: center; gap: var(--space-sm); min-height: 40px; font-size: var(--fs-sm); color: var(--color-text); }
+.checkOpt input { width: 20px; height: 20px; accent-color: var(--color-primary); }
+#bkNote:empty { display: none; }
+#bkNote.warn { color: var(--color-warning-text); background: var(--color-warning-soft); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+
+/* ---------- 初回の案内（チュートリアル） ---------- */
+.tour { position: fixed; inset: 0; z-index: 80; pointer-events: none; }
+.tourSpot { position: absolute; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(10, 20, 15, 0.62); transition: all 0.25s ease; }
+.tourSpot::after { content: ""; position: absolute; inset: -4px; border-radius: 18px; border: 3px solid var(--color-wood); animation: tourPulse 1.4s ease-in-out infinite; }
+@keyframes tourPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.05); } }
+.tourBubble { position: absolute; left: 16px; right: 16px; pointer-events: auto; background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg); padding: var(--space-lg); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; gap: var(--space-sm); transition: top 0.25s ease; }
+.tourStep { font-size: var(--fs-xs); font-weight: 800; color: var(--color-wood-text); }
+.tourText { font-size: var(--fs-md); font-weight: 700; color: var(--color-heading); line-height: 1.6; }
+.tourBtns { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-top: 4px; }
+.tourSkip { background: none; border: none; color: var(--color-text-muted); font-size: var(--fs-sm); text-decoration: underline; padding: var(--space-sm) 0; }
+.tourNext { min-height: 44px; }
+.tourNext[hidden] { display: none !important; }

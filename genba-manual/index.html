@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -248,7 +248,7 @@
         <button id="copyBoxEmailBtn" class="btn btnSecondary copyBtn" type="button">コピー</button>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="manualCard">
       <div class="cardTitle">マニュアル</div>
       <div id="manualInfo" class="mutedText preLine"></div>
       <div class="btnRow settingsBtns">
@@ -256,6 +256,23 @@
         <button id="deleteManualBtn" class="btn btnDanger" hidden>削除</button>
       </div>
       <div class="mutedText">マニュアルは社内資料のため、アプリには含まれていません。Boxの「マニュアル_○○.json」を取り込んでください。</div>
+    </div>
+    <div class="card">
+      <div class="cardTitle">バックアップ</div>
+      <div class="mutedText">機種変更や故障に備えて、このiPhoneの中のデータを書き出します。マニュアルはBoxから取り込み直せるので含めません。</div>
+      <label class="checkOpt"><input type="checkbox" id="bkSites" checked>登録情報（現場・報告の記録・設定）</label>
+      <label class="checkOpt"><input type="checkbox" id="bkChecks" checked>チェックの記録</label>
+      <label class="checkOpt"><input type="checkbox" id="bkPhotos">写真（報告写真・記録写真）</label>
+      <div id="bkNote" class="mutedText"></div>
+      <div class="btnRow settingsBtns">
+        <button id="backupBtn" class="btn btnPrimary">書き出す</button>
+        <button id="restoreBtn" class="btn btnSecondary">バックアップから戻す</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardTitle">使い方の案内</div>
+      <label class="checkOpt"><input type="checkbox" id="tourAlwaysChk">起動するたびに案内を表示する</label>
+      <div class="btnRow settingsBtns"><button id="tourAgainBtn" class="btn btnSecondary">案内をもう一度見る</button></div>
     </div>
     <div class="card">
       <div class="cardTitle">保存容量</div>
@@ -300,6 +317,7 @@
     <h1 class="topbarTitle">使い方</h1>
   </header>
   <div class="viewBody">
+    <button id="helpTourBtn" class="btn btnOutline">画面で案内を見る</button>
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
@@ -340,7 +358,7 @@
     <div class="card helpCard">
       <div class="helpStep">データについて</div>
       <ul class="helpList">
-        <li>写真とマニュアルは、このiPhoneの中だけに保存されます。</li>
+        <li>写真とマニュアルは、このiPhoneの中だけに保存されます。機種変更に備えて、設定の「バックアップ」で書き出しておけます。</li>
         <li>容量が気になったら、「写真」タブの現場画面にある過去の報告から、送った写真を削除してください。</li>
       </ul>
     </div>
@@ -378,10 +396,24 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<!-- 初回の案内（照らした場所を吹き出しで説明。ページはそのまま操作できる） -->
+<div id="tour" class="tour" hidden>
+  <div id="tourSpot" class="tourSpot"></div>
+  <div id="tourBubble" class="tourBubble">
+    <div id="tourStep" class="tourStep"></div>
+    <div id="tourText" class="tourText"></div>
+    <div class="tourBtns">
+      <button id="tourSkip" class="tourSkip" type="button">案内を終わる</button>
+      <button id="tourNext" class="btn btnPrimary tourNext" type="button">次へ</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
+<input type="file" id="restoreInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
