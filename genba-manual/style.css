@@ -816,3 +816,10 @@ svg { flex: none; }
 .noteType small { font-size: 11px; font-weight: 500; opacity: 0.85; }
 .noteTypes.need { animation: needPulse 0.6s ease 2; }
 @keyframes needPulse { 50% { transform: translateX(4px); box-shadow: 0 0 0 3px var(--color-warning-soft); } }
+
+/* 現場の情報：担当者 */
+.memberChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.memberChip { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-sm); font-weight: 700; color: var(--color-text-sub); }
+.memberChip.on { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
+.memberChip.add { border-style: dashed; color: var(--color-primary); }
+.warnInline { color: var(--color-warning-text); font-weight: 700; }

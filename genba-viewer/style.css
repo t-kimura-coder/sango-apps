@@ -359,3 +359,13 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .asQ { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning-text); font-size: 13px; }
 .asQ span { flex: 1; }
 .asQBtn { min-height: 38px; padding: 0 12px; font-size: 13px; }
+
+/* 二人以上の現場 */
+.warnTag { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.personProg { margin-top: 12px; padding: 14px 18px; overflow-x: auto; }
+.ppHead { font-size: 14px; font-weight: 700; color: var(--color-heading); margin-bottom: 8px; }
+.personProg table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.personProg th { text-align: left; font-weight: 700; color: var(--color-text-sub); padding: 4px 8px; white-space: nowrap; }
+.personProg tbody th { display: flex; align-items: center; gap: 8px; color: var(--color-heading); }
+.personProg td { padding: 4px 8px; min-width: 90px; }
+.personProg td small { color: var(--color-text-sub); }

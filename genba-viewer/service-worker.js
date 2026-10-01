@@ -1,7 +1,7 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 7;
+const CACHE_VERSION = 8;
 const CACHE_NAME = `genba-viewer-v${CACHE_VERSION}`;
-const APP_SHELL = ['./', 'index.html', 'app.js?v=5', 'demo.js?v=1', 'style.css?v=5', 'manifest.webmanifest', 'icon-96.png?v=2', 'icon-180.png?v=2', 'icon-192.png?v=2', 'icon-512.png?v=2', 'art/hero-frame.webp', 'art/hero-sky.webp', 'art/hero-icons.webp', 'art/character.webp', 'art/site-bg.webp', 'art/g1.webp', 'art/g2.webp', 'art/g3.webp', 'art/g4.webp', 'art/g5.webp', 'art/g6.webp'];
+const APP_SHELL = ['./', 'index.html', 'app.js?v=6', 'demo.js?v=2', 'style.css?v=6', 'manifest.webmanifest', 'icon-96.png?v=2', 'icon-180.png?v=2', 'icon-192.png?v=2', 'icon-512.png?v=2', 'art/hero-frame.webp', 'art/hero-sky.webp', 'art/hero-icons.webp', 'art/character.webp', 'art/site-bg.webp', 'art/g1.webp', 'art/g2.webp', 'art/g3.webp', 'art/g4.webp', 'art/g5.webp', 'art/g6.webp'];
 // 報告データ（社内データ）はキャッシュしない。PCの Box Drive フォルダから毎回読む
 
 self.addEventListener('install', (event) => {

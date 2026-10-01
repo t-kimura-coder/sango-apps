@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "現場に「工事番号」と「担当者（苗字）」を登録できるようにしました。同じ現場を二人で担当する時に、上司の画面で一つの現場としてまとめて見られます。登録済みの現場は「現場の管理」→「現場の情報を変更」から入れてください" },
   { date: "2026-10-02", type: "feature", text: "気づき・疑問メモは、書く前に種類（疑問／気づき／職人さんの要望）を選ぶようにしました。上司に答えてほしい時は「疑問」を選んでください" },
   { date: "2026-10-02", type: "feature", text: "報告の送り先（Boxのアドレス）を最初から入れました。設定での入力は不要です。報告のファイル名に、送った人の名前が入るようにしました" },
   { date: "2026-10-02", type: "feature", text: "上司からの返信を受け取れるようになりました。ホームの「上司からの返信」→「返信を取り込む」で、Boxの「返信」フォルダのファイルを選ぶと、気づき・疑問メモの下に返信が表示されます" },
@@ -638,12 +639,111 @@ function openSiteSwitcher() {
 }
 
 async function addSite() {
-  const name = await askText("現場を追加", "", "登録する");
-  if (!name) return;
-  const site = { id: newId(), name, createdAt: new Date().toISOString(), archived: false, processes: [], lastReportEnd: null };
+  const info = await editSiteSheet(null);
+  if (!info) return;
+  const site = { id: newId(), ...info, createdAt: new Date().toISOString(), archived: false, processes: [], lastReportEnd: null };
   await dbPut("sites", site);
-  toast(`「${name}」を登録しました`);
+  toast(`「${info.name}」を登録しました`);
   await setCurrentSite(site.id);
+}
+
+/* ---------- 現場の情報（現場名・工事番号・担当者） ---------- */
+// 工事番号は経理で使っている番号。同じ現場を二人で担当した時に、上司の画面（見守り）でまとめる鍵になる。
+// 担当者は社員番号が無いので苗字で持つ。表記ゆれを防ぐため、一度入れた苗字は候補として出す
+const MEMBER_HISTORY_KEY = "genba-photo-member-history";
+function memberHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(MEMBER_HISTORY_KEY) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+function addMemberHistory(names) {
+  const list = [...new Set([...names, ...memberHistory()])].slice(0, 30);
+  try {
+    localStorage.setItem(MEMBER_HISTORY_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+function mySurname() {
+  return (getSetting(USER_NAME_KEY) || "").trim().split(/[\s　]+/)[0] || "";
+}
+function normKoujiNo(s) {
+  return String(s || "").normalize("NFKC").replace(/\s/g, "");
+}
+
+function editSiteSheet(site) {
+  return new Promise((resolve) => {
+    openSheet(site ? "現場の情報を変更" : "現場を追加", (body, close) => {
+      const me = mySurname();
+      let members = site && site.members ? [...site.members] : me ? [me] : []; // まだ担当者を入れていない現場は、自分を選んだ状態から
+      const field = (label, value, placeholder, mode) => {
+        const l = document.createElement("label");
+        l.className = "fieldLabel";
+        l.textContent = label;
+        const i = document.createElement("input");
+        i.className = "sheetInput";
+        i.value = value || "";
+        i.placeholder = placeholder;
+        if (mode) i.inputMode = mode;
+        body.appendChild(l);
+        body.appendChild(i);
+        return i;
+      };
+      const nameIn = field("現場名", site && site.name, "例：山田様邸 新築");
+      const noIn = field("工事番号（経理で使っている番号）", site && site.koujiNo, "例：2026-0143", "text");
+      const ml = document.createElement("div");
+      ml.className = "fieldLabel";
+      ml.textContent = "担当者（苗字）";
+      body.appendChild(ml);
+      const chips = document.createElement("div");
+      chips.className = "memberChips";
+      body.appendChild(chips);
+      const draw = () => {
+        const cands = [...new Set([...members, ...memberHistory(), ...(me ? [me] : [])])];
+        chips.innerHTML = "";
+        cands.forEach((n) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "memberChip" + (members.includes(n) ? " on" : "");
+          b.innerHTML = (members.includes(n) ? icon(ICONS.check, 14, 3) : "") + `<span>${esc(n)}</span>`;
+          b.addEventListener("click", () => {
+            members = members.includes(n) ? members.filter((x) => x !== n) : [...members, n];
+            draw();
+          });
+          chips.appendChild(b);
+        });
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "memberChip add";
+        add.textContent = "＋ 苗字を追加";
+        add.addEventListener("click", () => {
+          const v = (prompt("担当者の苗字（同じ苗字の人がいる時は「佐藤（大）」のように）") || "").trim();
+          if (v && !members.includes(v)) members.push(v);
+          draw();
+        });
+        chips.appendChild(add);
+      };
+      draw();
+      const hint = document.createElement("div");
+      hint.className = "mutedText";
+      hint.textContent = "同じ現場を二人以上で担当する時は、全員が同じ工事番号を入れてください。上司の画面で一つの現場にまとまります。";
+      body.appendChild(hint);
+      body.appendChild(
+        sheetButton(site ? "変更する" : "登録する", "btnPrimary btnLarge", () => {
+          const name = nameIn.value.trim();
+          if (!name) {
+            nameIn.focus();
+            return;
+          }
+          addMemberHistory(members);
+          close();
+          resolve({ name, koujiNo: normKoujiNo(noIn.value), members });
+        })
+      );
+      body.appendChild(sheetButton("キャンセル", "btnSecondary", () => (close(), resolve(null))));
+      if (!site) setTimeout(() => nameIn.focus(), 50);
+    });
+  });
 }
 
 // いま表示している画面を、現場が変わった内容で描き直す
@@ -686,7 +786,8 @@ async function renderSiteManage() {
     card.innerHTML =
       `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
       (site.id === currentSiteId ? '<span class="badge badgeOk">今の現場</span>' : site.archived ? '<span class="badge badgeMuted">完了</span>' : "") +
-      `</div><div class="siteMeta">登録 ${fmtDate(toDateKey(new Date(site.createdAt)))} ・ 写真 ${photos.length}枚</div>` +
+      `</div><div class="siteMeta">${site.koujiNo ? `工事番号 ${esc(site.koujiNo)} ・ ` : '<span class="warnInline">工事番号なし</span> ・ '}担当 ${esc((site.members || []).join("・") || "未登録")}</div>` +
+      `<div class="siteMeta">登録 ${fmtDate(toDateKey(new Date(site.createdAt)))} ・ 写真 ${photos.length}枚</div>` +
       `<div class="manageBtns"></div>`;
     const btns = card.querySelector(".manageBtns");
     const add = (label, cls, fn) => {
@@ -697,10 +798,10 @@ async function renderSiteManage() {
       btns.appendChild(b);
     };
     if (!site.archived && site.id !== currentSiteId) add("今の現場にする", "btnOutline", () => setCurrentSite(site.id));
-    add("名前を変更", "btnSecondary", async () => {
-      const name = await askText("現場名を変更", site.name, "変更する");
-      if (!name) return;
-      site.name = name;
+    add("現場の情報を変更", "btnSecondary", async () => {
+      const info = await editSiteSheet(site);
+      if (!info) return;
+      Object.assign(site, info);
       await dbPut("sites", site);
       await refreshSites();
       renderSiteManage();
@@ -1692,7 +1793,7 @@ async function sendToBox() {
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
-          schema: 4, // 2: checks（期間中に付けたチェック）、3: 番号（site_id・item_id・チェックid・メモid）と疑問の状態、4: progress（6工程の累計）・写真id・解決日時
+          schema: 5, // 2: checks、3: 番号と疑問の状態、4: progress（6工程の累計）・写真id・解決日時、5: kouji_no（工事番号）・members（担当者の苗字）
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -1700,6 +1801,8 @@ async function sendToBox() {
           sender_id: deviceId(),
           site: site.name,
           site_id: site.id,
+          kouji_no: site.koujiNo || "",
+          members: site.members || [],
           period: { start, end },
           processes,
           memo: memo.value.trim(),

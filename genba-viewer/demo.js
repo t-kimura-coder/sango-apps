@@ -16,7 +16,11 @@ const DEMO = (() => {
     { id: "demo-p4", name: "鈴木 翔太", sites: [["demo-s6", "田中様邸", 3.4]], lastDays: 9 },
     { id: "demo-p5", name: "伊藤 誠", sites: [["demo-s7", "伊藤様邸", 4.5]], lastDays: 1 },
     { id: "demo-p6", name: "渡辺 拓也", sites: [["demo-s8", "小林様邸", 2.0]], lastDays: 4 },
+    { id: "demo-p7", name: "新人 太郎", sites: [["demo-s9", "松井様邸", 0.8]], lastDays: 1 },
   ];
+  // 工事番号（松井様邸は二人の担当なので同じ番号）と、現場に登録された担当者
+  const KOUJI = { 佐藤様邸: "2026-0101", 鈴木様邸: "2026-0102", 高橋様邸: "2026-0103", 中村様邸: "2026-0104", 松井様邸: "2026-0105", 田中様邸: "2026-0106", 伊藤様邸: "2026-0107", 小林様邸: "2026-0108" };
+  const MEMBERS = { 松井様邸: ["佐藤", "新人"] };
   const NOTES = {
     "demo-s1": [
       ["question", "筋かいの設置位置について確認させてください\n図面と現場の納まりで、2階東側の筋かいが窓と干渉しそうです。どちらを優先すればよいでしょうか？", "上棟", "筋交い・ホールダウン設置", 0.2],
@@ -66,7 +70,8 @@ const DEMO = (() => {
           const byItem = {};
           notes.forEach((nt) => (byItem[nt._item] = byItem[nt._item] || []).push(nt));
           const checks = Object.entries(byItem).map(([item, ns]) => ({ item_id: `${sid}-item`, item, process: `（${ns[0]._grp}）`, checked: [], notes: ns }));
-          checks.push({ item_id: `${sid}-c`, item: "チェック", process: cur, checked: Array.from({ length: 4 + w }, (_, i) => ({ text: `確認${i}`, at: iso(sent + 1) })), notes: [] });
+          const proc = { 基礎: "地盤・基礎工事", 上棟: "大工工事（建方・上棟）", 外装: "外壁仕上げ", 内装: "仕上げ：クロス", 設備: "電気・設備配管工事", 引渡し: "引渡し" }[cur];
+          checks.push({ item_id: `${sname}-c`, item: "チェック", process: proc, checked: Array.from({ length: 4 + w }, (_, i) => ({ id: `${sname}-${cur}-${(i + si * 3 + p.id.length) % 9}`, section: "チェック", text: `確認${i}`, at: iso(sent + 1) })), notes: [] });
           reports.push({
             kind: "genba-photo-report",
             schema: 4,
@@ -75,6 +80,8 @@ const DEMO = (() => {
             sender_id: p.id,
             site: sname,
             site_id: sid,
+            kouji_no: KOUJI[sname] || "",
+            members: MEMBERS[sname] || [p.name.split(" ")[0]],
             period: { start: key(sent + 6), end: key(sent) },
             processes: [{ no: 1, name: `（${cur}）` }],
             memo: w === 0 ? "今週は予定通り進みました。来週は次の工程の段取りに入ります。" : "",

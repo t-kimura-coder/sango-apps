@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -113,9 +113,22 @@ const NOTE_TYPES = {
 };
 const TYPE_BY_LABEL = { 疑問: "question", 気づき: "notice", 職人さんの要望: "request" };
 
+// 同じ現場を二人以上で担当していると、現場ナビ側では別々の現場として届く。工事番号があればそれでまとめる
 function siteKeyOf(r) {
+  const no = String(r.kouji_no || "").normalize("NFKC").replace(/\s/g, "");
+  if (no) return "kouji:" + no;
   return r.site_id || "name:" + r.site;
 }
+
+// 17分類 → 6工程（現場ナビの GROUPS と同じ）。現場全体の進み具合を、担当者のチェックを合わせて数えるのに使う
+const PROC_GROUP = {
+  "解体・仮設準備": "基礎", "地盤・基礎工事": "基礎",
+  "足場工事": "上棟", "大工工事（建方・上棟）": "上棟", "大工工事（屋根下地）": "上棟",
+  "大工工事（外壁下地・断熱）": "外装", "屋根仕上げ工事（板金）": "外装", "外壁仕上げ": "外装",
+  "大工工事（内部下地）": "内装", "大工工事（造作・建具）": "内装", "仕上げ：塗装": "内装", "仕上げ：クロス": "内装", "仕上げ：床・タイル": "内装",
+  "電気・設備配管工事": "設備",
+  "美装・検査": "引渡し", "外構": "引渡し", "引渡し": "引渡し",
+};
 function personKeyOf(r) {
   return r.sender_id || "name:" + (r.sender || "（名前なし）");
 }
@@ -141,10 +154,12 @@ function buildData(reports, replies) {
     const sk = siteKeyOf(r);
     const pk = personKeyOf(r);
     let site = data.sites.get(sk);
-    if (!site) data.sites.set(sk, (site = { key: sk, name: r.site, personKey: pk, personName: r.sender || "", reports: [] }));
+    if (!site) data.sites.set(sk, (site = { key: sk, name: r.site, koujiNo: r.kouji_no || "", personKey: pk, personName: r.sender || "", persons: new Map(), members: new Set(), reports: [] }));
     site.name = r.site;
-    site.personKey = pk;
+    site.personKey = pk; // いちばん新しい報告の人（パンくず用）
     site.personName = r.sender || site.personName;
+    site.persons.set(pk, r.sender || "（名前なし）");
+    (r.members || []).forEach((m) => site.members.add(m));
     site.reports.push(r);
     let p = data.people.get(pk);
     if (!p) data.people.set(pk, (p = { key: pk, name: r.sender || "（名前なし）", sites: new Set(), reports: [] }));
@@ -170,6 +185,7 @@ function buildData(reports, replies) {
           resolvedAt: n.resolved_at || "",
           resolvedBy: n.resolved_by || "",
           siteKey: sk,
+          siteId: r.site_id || "", // 監督の端末での現場の番号（返信に入れる）
           siteName: r.site,
           personKey: pk,
           personName: r.sender || "",
@@ -464,7 +480,8 @@ async function sendReply(n, text) {
     note_text: n.text,
     item_id: n.itemId,
     item: n.item,
-    site_id: n.siteKey.startsWith("name:") ? "" : n.siteKey,
+    site_id: n.siteId,
+    kouji_no: n.siteKey.startsWith("kouji:") ? n.siteKey.slice(6) : "",
     site: n.siteName,
     to_id: n.personKey.startsWith("name:") ? "" : n.personKey,
     to: n.personName,
@@ -837,6 +854,40 @@ function renderPerson(key) {
   if (el) el.closest(".personBlock").scrollIntoView({ block: "start" });
 }
 
+// 現場全体の進み具合。一人なら最新の報告の数字、二人以上なら全員のチェックを合わせて数える
+function siteProgress(s) {
+  const latest = (s.reports.find((r) => r.progress) || {}).progress || null;
+  if (!latest || s.persons.size <= 1) return latest;
+  const done = {};
+  s.reports.forEach((r) =>
+    (r.checks || []).forEach((c) => {
+      const g = PROC_GROUP[c.process];
+      if (!g) return;
+      (c.checked || []).forEach((k) => {
+        if (k.section && k.section !== "チェック") return;
+        (done[g] = done[g] || new Set()).add(k.id || `${c.item_id}|${k.text}`);
+      });
+    })
+  );
+  // 写真の数は人ごとの最新の数字のうち多い方
+  const per = personProgress(s);
+  return latest.map((g) => ({
+    group: g.group,
+    checks_total: g.checks_total,
+    checks_done: Math.min(g.checks_total, Math.max(done[g.group] ? done[g.group].size : 0, ...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).checks_done || 0))),
+    photos_total: g.photos_total,
+    photos_done: Math.max(...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).photos_done || 0)),
+  }));
+}
+function personProgress(s) {
+  return [...s.persons.entries()]
+    .map(([key, name]) => {
+      const r = s.reports.find((x) => personKeyOf(x) === key && x.progress);
+      return r ? { key, name, prog: r.progress } : null;
+    })
+    .filter(Boolean);
+}
+
 const GROUP_ART = { 基礎: "g1", 上棟: "g2", 外装: "g3", 内装: "g4", 設備: "g5", 引渡し: "g6" };
 function renderSite(key) {
   const main = $("main");
@@ -845,7 +896,8 @@ function renderSite(key) {
   const p = data.people.get(s.personKey);
   const last = s.reports[0];
   const open = [...data.notes.values()].filter((n) => n.siteKey === key && noteStatus(n) === "open");
-  const prog = (s.reports.find((r) => r.progress) || {}).progress || null;
+  const prog = siteProgress(s);
+  const personProg = personProgress(s);
   const curGroup = prog ? (prog.find((g) => g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
@@ -853,13 +905,16 @@ function renderSite(key) {
     `<h1 class="heroTitle">${esc(s.name)}の報告</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
   html +=
-    `<div class="card siteSummary"><div class="ssCell">${avatar(s.personName, 56)}<div><div class="ssLabel">担当監督</div><div class="ssValue">${esc(s.personName)}</div>` +
-    `<div class="ssSub"><span class="tag">担当現場 ${p ? p.sites.size : 1}件</span></div></div></div>` +
+    `<div class="card siteSummary"><div class="ssCell">${avatar(s.personName, 56)}<div><div class="ssLabel">担当監督${s.persons.size > 1 ? `（${s.persons.size}人）` : ""}</div>` +
+    `<div class="ssValue">${esc([...s.persons.values()].join("・"))}</div>` +
+    `<div class="ssSub">${s.koujiNo ? `<span class="tag">工事番号 ${esc(s.koujiNo)}</span> ` : '<span class="tag warnTag">工事番号なし</span> '}` +
+    (s.members.size ? `<span class="tag">登録された担当 ${esc([...s.members].join("・"))}</span>` : "") +
+    `</div></div></div>` +
     `<div class="ssCell">${icon("calendar", 28)}<div><div class="ssLabel">最新の報告期間</div><div class="ssValue">${last ? `${fmtMD(last.period.start)} 〜 ${fmtMD(last.period.end)}` : "－"}</div>` +
     `<div class="ssSub">${last ? `${agoLabel(last.sent_at)}に届きました` : ""}</div></div></div>` +
     `<button class="ssCell ssAlert${open.length ? "" : " zero"}" ${open.length ? `data-note="${esc(open[0].id)}"` : ""}>${icon("chat", 30)}<div><div class="ssLabel">未回答の疑問・要望</div><div class="ssValue big"><b>${open.length}</b>件</div></div>${open.length ? icon("chevron", 18) : ""}</button></div>`;
 
-  html += `<div class="secHead"><div><h2>工程の進捗</h2><div class="sub">6つの工程のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。</div></div></div>`;
+  html += `<div class="secHead"><div><h2>工程の進捗</h2><div class="sub">${s.persons.size > 1 ? "担当者のうち誰かが確認したチェックを、現場全体の進み具合として数えています。" : "6つの工程のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。"}</div></div></div>`;
   html += prog
     ? `<div class="progRow">${prog
         .map((g) => {
@@ -875,6 +930,22 @@ function renderSite(key) {
         })
         .join("")}</div>`
     : `<div class="emptyText pad card">進み具合は、現場ナビを新しい版にしてから届いた報告から表示されます。</div>`;
+  if (personProg.length > 1) {
+    html +=
+      `<div class="card personProg"><div class="ppHead">担当者ごとの進み具合（育成の目安：その人が付けたチェック）</div><table><thead><tr><th></th>${(prog || personProg[0].prog)
+        .map((g) => `<th>${esc(g.group)}</th>`)
+        .join("")}</tr></thead><tbody>${personProg
+        .map(
+          (pp) =>
+            `<tr><th>${avatar(pp.name, 28)}${esc(pp.name)}</th>${pp.prog
+              .map((g) => {
+                const pc = g.checks_total ? Math.round((g.checks_done / g.checks_total) * 100) : 0;
+                return `<td><div class="pgBar"><span style="width:${pc}%"></span></div><small>${pc}%</small></td>`;
+              })
+              .join("")}</tr>`
+        )
+        .join("")}</tbody></table></div>`;
+  }
 
   html += `<div class="secHead"><div><h2>週ごとの報告</h2><div class="sub">現場からの報告を新しい順に表示しています。</div></div></div><div class="timeline">`;
   html += s.reports
@@ -888,6 +959,7 @@ function renderSite(key) {
       return (
         `<div class="tlItem"><div class="tlDot"></div><div class="card tlCard"><div class="tlDate"><b>${fmtMD(r.period.start)} 〜<br>${fmtMD(r.period.end)}</b>` +
         (i === 0 && daysAgo(r.sent_at) <= 6 ? `<span class="tag wood">今週</span>` : "") +
+        (s.persons.size > 1 ? `<span class="tag">${esc(r.sender || "")}</span>` : "") +
         `<span class="mutedText">${agoLabel(r.sent_at)}</span></div>` +
         `<div class="tlPhotos"><div class="thumbs">${thumbs
           .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
