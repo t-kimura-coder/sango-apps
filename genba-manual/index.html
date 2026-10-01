@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=40">
+<link rel="stylesheet" href="style.css?v=42">
 </head>
 <body>
 
@@ -164,11 +164,17 @@
 
 <!-- 報告：今回の期間の工程一覧 -->
 <section id="reportView" class="view" hidden>
-  <header class="topbar">
-    <h1 class="topbarTitle">報告</h1>
-    <button class="iconBtn settingsBtn" aria-label="設定"></button>
-  </header>
-  <div class="viewBody">
+  <div class="pageHero reportHero">
+    <span class="reportHeroArt" aria-hidden="true">
+      <img src="art/report-wood.webp?v=1" class="rhWood" alt="">
+      <img src="art/report-photos.webp?v=1" class="rhPhotos" alt="">
+      <img src="art/report-icon.webp?v=1" class="rhIcon" alt="">
+    </span>
+    <button class="iconBtn settingsBtn pageHeroBtn" aria-label="設定"></button>
+    <h1 class="pageHeroTitle">報告</h1>
+    <div class="pageHeroSub">工程ごとに報告写真を選んで、<br>週に1回 Box へ送ります。</div>
+  </div>
+  <div class="viewBody manualBody">
     <button class="siteBar curSiteBar"></button>
     <div id="reportBody"></div>
   </div>
@@ -437,6 +443,6 @@
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=39"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>

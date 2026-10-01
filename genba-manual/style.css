@@ -907,3 +907,20 @@ svg { flex: none; }
 .dashStep.pre .dot { border-style: dashed; }
 .preLabel { padding: 1px 8px; border-radius: 6px; background: var(--color-surface-sub); color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 700; }
 .warnInline[data-editsite] { text-decoration: underline; }
+
+/* 現場の画像・建物の種類 */
+.opt { font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-muted); }
+.coverRow { display: flex; align-items: center; gap: var(--space-md); }
+.coverPrev { flex: none; width: 120px; height: 84px; border-radius: 12px; overflow: hidden; background: var(--color-sky); display: flex; align-items: center; justify-content: center; }
+.coverPrev img { width: 100%; height: 100%; object-fit: cover; }
+.coverPrev.mock img, .dsThumb .mockArt { object-fit: contain; width: 88%; height: 88%; }
+.coverBtns { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.coverBtns .btn { min-height: 40px; padding: 0 14px; font-size: var(--fs-sm); }
+.dashIcon img { width: 30px; height: 30px; object-fit: contain; }
+/* 報告タブの見出し */
+.reportHero { min-height: calc(170px + env(safe-area-inset-top)); }
+.reportHeroArt { position: absolute; z-index: 0; top: calc(env(safe-area-inset-top) + 30px); right: -8%; width: 54%; max-width: 300px; height: 140px; pointer-events: none; }
+.rhWood { position: absolute; right: 0; top: 18px; width: 100%; opacity: 0.85; }
+.rhPhotos { position: absolute; right: 8%; top: 4px; width: 46%; }
+.rhIcon { position: absolute; right: 44%; top: 56px; width: 25%; }
+@media (prefers-color-scheme: dark) { .rhWood { display: none; } }

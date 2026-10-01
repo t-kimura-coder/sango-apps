@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "現場に「完成イメージ」（完成予想CG・パースなど）の画像と、建物の種類を登録できるようにしました。ホームの現場の写真に出ます。画像はこのiPhoneの中だけに保存し、報告では送りません" },
   { date: "2026-10-02", type: "feature", text: "ホームの「やること」に、2週間以上報告していない現場が出るようにしました" },
   { date: "2026-10-02", type: "feature", text: "現場に「記録を始めた工程」を登録できるようにしました。途中から担当する現場やアプリを入れる前から進んでいる現場は、そこより前の工程を「導入前」として扱い、進み具合や撮り忘れに数えません（「現場の情報を変更」から）" },
   { date: "2026-10-02", type: "feature", text: "ホームを作り直しました。担当現場が全部並び、それぞれ今どの工程かが分かります。その下に「やること」（上司からの返信・報告日・撮り忘れの品質写真）と「次に見る項目」が出ます。6つの工程は下の「工程」タブから開けます" },
@@ -643,10 +644,12 @@ function openSiteSwitcher() {
 }
 
 async function addSite() {
-  const info = await editSiteSheet(null);
-  if (!info) return;
+  const res = await editSiteSheet(null);
+  if (!res) return;
+  const { coverFile, ...info } = res;
   const site = { id: newId(), ...info, createdAt: new Date().toISOString(), archived: false, processes: [], lastReportEnd: null };
   await dbPut("sites", site);
+  await saveCover(site.id, coverFile);
   toast(`「${info.name}」を登録しました`);
   await setCurrentSite(site.id);
 }
@@ -675,11 +678,41 @@ function normKoujiNo(s) {
   return String(s || "").normalize("NFKC").replace(/\s/g, "");
 }
 
+/* ---------- 現場の顔（完成イメージ・建物の種類） ---------- */
+// 完成イメージはお客様の設計データなので、この端末の中（meta: "cover:<現場ID>"）だけに置き、報告では送らない。
+// 画像が無い現場は、建物の種類に合わせた絵を出す（種類は現場名から自動で選び、登録シートで変えられる）
+const SITE_KINDS = [
+  { id: "house", label: "新築住宅", art: "art/g3.webp?v=1" },
+  { id: "reform", label: "リフォーム", art: "art/site-board.webp?v=1" },
+  { id: "shop", label: "店舗・事務所", art: "art/site-board.webp?v=1" },
+];
+function guessSiteKind(name) {
+  const s = String(name || "");
+  if (/リフォーム|改修|改装|修繕|増築|リノベ/.test(s)) return "reform";
+  if (/店|事務所|オフィス|ビル|医院|クリニック|工場|倉庫|施設|ホテル|カフェ/.test(s)) return "shop";
+  return "house";
+}
+function siteKindOf(site) {
+  return SITE_KINDS.find((k) => k.id === (site.kind || guessSiteKind(site.name))) || SITE_KINDS[0];
+}
+async function getCover(siteId) {
+  return dbGet("meta", "cover:" + siteId);
+}
+async function saveCover(siteId, file) {
+  if (file === undefined) return; // 変更なし
+  if (file === null) return dbDeleteMany("meta", ["cover:" + siteId]);
+  const blob = await downscaleImage(file, 1600, 0.82);
+  const thumb = await downscaleImage(file, 480, 0.75);
+  await dbPut("meta", { key: "cover:" + siteId, blob, thumb, updatedAt: new Date().toISOString() });
+}
+
 async function editSiteInfo(site) {
-  const info = await editSiteSheet(site);
-  if (!info) return;
+  const res = await editSiteSheet(site);
+  if (!res) return;
+  const { coverFile, ...info } = res;
   Object.assign(site, info);
   await dbPut("sites", site);
+  await saveCover(site.id, coverFile);
   await refreshSites();
   toast("現場の情報を変更しました");
   rerenderCurrentView();
@@ -704,6 +737,78 @@ function editSiteSheet(site) {
         return i;
       };
       const nameIn = field("現場名", site && site.name, "例：山田様邸 新築");
+      // 現場の画像（完成予想CG・パースなど。任意）
+      let coverFile; // undefined=変えない / null=消す / File=新しく入れる
+      let kind = site ? site.kind || "" : ""; // ""=現場名から自動
+      const cl = document.createElement("div");
+      cl.className = "fieldLabel strong";
+      cl.innerHTML = '現場の画像<span class="opt">任意</span>';
+      body.appendChild(cl);
+      const coverRow = document.createElement("div");
+      coverRow.className = "coverRow";
+      body.appendChild(coverRow);
+      const coverIn = document.createElement("input");
+      coverIn.type = "file";
+      coverIn.accept = "image/*";
+      coverIn.hidden = true;
+      body.appendChild(coverIn);
+      let coverUrl = "";
+      const drawCover = async () => {
+        if (coverUrl) URL.revokeObjectURL(coverUrl);
+        coverUrl = "";
+        let src = "";
+        if (coverFile) src = coverUrl = URL.createObjectURL(coverFile);
+        else if (coverFile === undefined && site) {
+          const c = await getCover(site.id);
+          if (c) src = coverUrl = URL.createObjectURL(c.thumb);
+        }
+        const k = SITE_KINDS.find((x) => x.id === (kind || guessSiteKind(nameIn.value))) || SITE_KINDS[0];
+        coverRow.innerHTML =
+          `<span class="coverPrev${src ? "" : " mock"}"><img src="${src || k.art}" alt=""></span>` +
+          `<span class="coverBtns"><button type="button" class="btn btnOutline" data-c="pick">${src ? "画像を変える" : "写真から選ぶ"}</button>` +
+          (src ? `<button type="button" class="linkBtn" data-c="del">画像を外す</button>` : `<span class="mutedText">完成予想CG・パースなど。無ければ下の種類の絵が出ます</span>`) +
+          `</span>`;
+        // iPhone はファイル選択をタップの中で同期的に開く必要がある
+        coverRow.querySelector('[data-c="pick"]').addEventListener("click", () => coverIn.click());
+        const del = coverRow.querySelector('[data-c="del"]');
+        if (del) del.addEventListener("click", () => ((coverFile = null), drawCover()));
+      };
+      coverIn.addEventListener("change", () => {
+        if (coverIn.files[0]) coverFile = coverIn.files[0];
+        coverIn.value = "";
+        drawCover();
+      });
+      const kl = document.createElement("div");
+      kl.className = "fieldLabel strong";
+      kl.innerHTML = '建物の種類<span class="opt">画像が無い時の絵</span>';
+      body.appendChild(kl);
+      const kinds = document.createElement("div");
+      kinds.className = "memberChips";
+      body.appendChild(kinds);
+      const drawKinds = () => {
+        const eff = kind || guessSiteKind(nameIn.value);
+        kinds.innerHTML = "";
+        SITE_KINDS.forEach((k) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "memberChip" + (k.id === eff ? " on" : "");
+          b.textContent = k.label + (k.id === eff && !kind ? "（自動）" : "");
+          b.addEventListener("click", () => {
+            kind = k.id;
+            drawKinds();
+            drawCover();
+          });
+          kinds.appendChild(b);
+        });
+      };
+      nameIn.addEventListener("input", () => {
+        if (!kind) {
+          drawKinds();
+          drawCover();
+        }
+      });
+      drawCover();
+      drawKinds();
       const noIn = field("工事番号", site && site.koujiNo, "例：2026-0143", "text");
       const noHint = document.createElement("div");
       noHint.className = "mutedText";
@@ -811,7 +916,8 @@ function editSiteSheet(site) {
           }
           addMemberHistory(members);
           close();
-          resolve({ name, koujiNo: normKoujiNo(noIn.value), members, startGroup });
+          if (coverUrl) URL.revokeObjectURL(coverUrl);
+          resolve({ name, koujiNo: normKoujiNo(noIn.value), members, startGroup, kind, coverFile });
         })
       );
       body.appendChild(sheetButton("キャンセル", "btnSecondary", () => (close(), resolve(null))));
@@ -873,10 +979,12 @@ async function renderSiteManage() {
     };
     if (!site.archived && site.id !== currentSiteId) add("今の現場にする", "btnOutline", () => setCurrentSite(site.id));
     add("現場の情報を変更", "btnSecondary", async () => {
-      const info = await editSiteSheet(site);
-      if (!info) return;
+      const res = await editSiteSheet(site);
+      if (!res) return;
+      const { coverFile, ...info } = res;
       Object.assign(site, info);
       await dbPut("sites", site);
+      await saveCover(site.id, coverFile);
       await refreshSites();
       renderSiteManage();
     });
@@ -3149,14 +3257,15 @@ async function siteSummary(site) {
   const unreportedDays = daysBetween(periodStart(site, cands), todayKey()) + 1;
   const overdue = !reportDue && unreportedDays >= 15;
   const unread = Object.values(recs).reduce((n, r) => n + (r.notes || []).reduce((m, x) => m + (x.replies || []).filter((y) => !y.readAt).length, 0), 0);
-  const thumb = photos.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0] || photos.sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0];
-  return { site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, overdue, unreportedDays, unread, thumb, recs };
+  const cover = await getCover(site.id);
+  return {
+    cover, site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, overdue, unreportedDays, unread, recs };
 }
 
 function siteThumbHtml(sm) {
-  return sm.thumb
-    ? `<img src="${blobUrl("dash", sm.thumb.thumb)}" alt="">`
-    : groupArt(GROUPS[sm.cur], 56);
+  return sm.cover
+    ? `<img src="${blobUrl("dash", sm.cover.thumb)}" alt="">`
+    : `<img class="mockArt" src="${siteKindOf(sm.site).art}" alt="">`;
 }
 
 function siteMetaText(site) {
@@ -3246,7 +3355,7 @@ async function renderDash() {
   const due = sums.filter((x) => x.reportDue);
   due.forEach((x) =>
     todo.push({
-      icon: ICONS.report,
+      img: "art/report-icon.webp?v=1",
       cls: "wood",
       html: `今日は報告日：<b class="em">未送信</b>${sites.length > 1 ? `<small>${esc(x.site.name)}</small>` : ""}`,
       go: async () => {
@@ -3259,7 +3368,7 @@ async function renderDash() {
     .filter((x) => x.overdue)
     .forEach((x) =>
       todo.push({
-        icon: ICONS.report,
+        img: "art/report-icon.webp?v=1",
         cls: "wood",
         html: `報告が <b class="em">${Math.floor(x.unreportedDays / 7)}週間</b> ありません<small>${esc(x.site.name)}・前回から${x.unreportedDays}日</small>`,
         go: async () => {
@@ -3287,7 +3396,7 @@ async function renderDash() {
   todo.forEach((x) => {
     const b = document.createElement("button");
     b.className = "dashRow" + (x.pick ? " sub" : "");
-    b.innerHTML = `<span class="dashIcon ${x.cls}">${icon(x.icon, 22)}</span><span class="dashRowText">${x.html}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.innerHTML = `<span class="dashIcon ${x.cls}">${x.img ? `<img src="${x.img}" alt="">` : icon(x.icon, 22)}</span><span class="dashRowText">${x.html}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
     // 返信の取り込みはファイル選択を開くので、タップの中で同期的に呼ぶ（iPhone）
     b.addEventListener("click", () => (x.pick ? $("replyInput").click() : x.go()));
     todoBox.appendChild(b);
@@ -3444,6 +3553,11 @@ async function exportBackup() {
     if (opts.sites) {
       head.sites = await dbGetAll("sites");
       head.reports = await dbGetAll("reports");
+      head.covers = [];
+      for (const st of head.sites) {
+        const c = await getCover(st.id);
+        if (c) head.covers.push({ siteId: st.id, blob: await blobToDataUrl(c.blob), thumb: await blobToDataUrl(c.thumb), updatedAt: c.updatedAt });
+      }
       head.settings = { userName: getSetting(USER_NAME_KEY), boxEmail: getSetting(BOX_EMAIL_KEY), manualSite: getSetting(CURRENT_SITE_KEY) };
     }
     if (opts.checks) head.checks = await dbGetAll("checks");
@@ -3541,6 +3655,10 @@ async function onRestorePicked() {
     };
     const added = {};
     added.sites = await add("sites", data.sites, "id");
+    for (const c of data.covers || []) {
+      if (await getCover(c.siteId)) continue; // 今の端末の画像を優先
+      await dbPut("meta", { key: "cover:" + c.siteId, blob: await (await fetch(c.blob)).blob(), thumb: await (await fetch(c.thumb)).blob(), updatedAt: c.updatedAt });
+    }
     added.reports = await add("reports", data.reports, "id");
     if (data.checks && data.checks.length) {
       const current = Object.fromEntries((await dbGetAll("checks")).map((r) => [r.key, r]));
