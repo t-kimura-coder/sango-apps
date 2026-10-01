@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,10 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "現場をアプリ全体で1つにまとめました。ホームの「今の現場」や各画面の上の欄から切り替え・追加ができ、「現場の管理」で名前の変更・完了・削除ができます" },
+  { date: "2026-10-01", type: "feature", text: "写真タブを今の現場のアルバムにしました。報告写真・記録写真が全部見え、写真要の記録がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます" },
+  { date: "2026-10-01", type: "feature", text: "報告タブを工程ごとのページにしました。撮影メモと注意文を見ながら報告写真を撮り・取り込み、送る写真を選べます。工程マニュアルの「この工程の報告写真」からも開けます" },
+  { date: "2026-10-01", type: "feature", text: "記録写真を、写真ライブラリからも選べるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて使う人向けに、画面の場所を照らして案内する「使い方の案内」を付けました（設定・使い方からいつでも見られます）" },
   { date: "2026-10-01", type: "feature", text: "設定にバックアップを追加しました。登録情報・チェックの記録・写真から選んで書き出し、機種変更のときに戻せます" },
   { date: "2026-10-01", type: "feature", text: "Boxへ送る報告に、期間中に付けたチェック（誰が・いつ）を含めるようにしました" },
@@ -258,9 +262,9 @@ async function getSitePhotos(siteId) {
 function isRecordPhoto(p) {
   return p.kind === "record";
 }
-// 今回の報告に入る写真（報告写真のうち、まだ報告済みにしていないもの）
+// 今回の報告に入る写真（報告写真と「報告に使う」を付けた記録写真のうち、まだ報告済みにしていないもの）
 function unreported(photos) {
-  return photos.filter((p) => !p.reportId && !isRecordPhoto(p));
+  return photos.filter((p) => !p.reportId && (!isRecordPhoto(p) || p.forReport));
 }
 
 // 今回の報告期間の開始日 = 前回報告の終了日の翌日
@@ -410,11 +414,12 @@ const VIEW_TABS = {
   dashView: "home",
   manualView: "manual",
   groupView: "manual",
-  homeView: "photos",
-  siteView: "photos",
-  shotView: "photos",
+  albumView: "photos",
+  shotView: "report",
   reportView: "report",
-  summaryView: "report",
+  reportProcView: "report",
+  reportPastView: "report",
+  siteManageView: "",
   settingsView: "",
   announceView: "",
   searchView: "",
@@ -526,53 +531,75 @@ function openLightbox(blob) {
   openPhotoViewer(blob, []);
 }
 
-/* ---------- ① ホーム ---------- */
+/* ---------- 今の現場（アプリ全体で1つ） ---------- */
+// どの画面でも同じ現場を見て・撮る。選んだ現場は覚えておき、次に開いた時もその現場から始まる
 
-let showArchived = false;
+const CURRENT_SITE_KEY = "genba-photo-manual-site"; // 旧「チェックする現場」の保存先をそのまま引き継ぐ
+let currentSiteId = null;
+let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、現場の一覧は先に読んでおく
 
-async function renderHome() {
-  const sites = await getSites();
-  const active = sites.filter((s) => !s.archived);
-  const archived = sites.filter((s) => s.archived);
-  const list = $("siteList");
-  list.innerHTML = "";
-  const weekday = new Date().getDay();
-  const isReportDay = weekday === 5 || weekday === 6;
-
-  for (const site of active) {
-    const current = unreported(await getSitePhotos(site.id));
-    const start = periodStart(site, current);
-    const { text, weeks } = periodLabel(start);
-    const due = isReportDay && current.length > 0;
-    const card = document.createElement("button");
-    card.className = "siteCard" + (due ? " isDue" : "");
-    const badge = due
-      ? '<span class="badge badgeWarning">報告日</span>'
-      : weeks >= 2
-      ? `<span class="badge badgeMuted">${weeks}週分</span>`
-      : "";
-    const procNames = site.processes.map((id) => processOf(id).name).join(" / ");
-    card.innerHTML =
-      `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>${badge}</div>` +
-      `<div class="siteMeta">今回 ${text} ・ 写真 ${current.length}枚</div>` +
-      (procNames ? `<div class="siteMeta">工程：${esc(procNames)}</div>` : "");
-    card.addEventListener("click", () => openSite(site.id));
-    list.appendChild(card);
+async function refreshSites() {
+  activeSitesCache = (await getSites()).filter((s) => !s.archived);
+  const saved = getSetting(CURRENT_SITE_KEY);
+  if (!activeSitesCache.some((s) => s.id === currentSiteId)) {
+    currentSiteId = activeSitesCache.some((s) => s.id === saved) ? saved : activeSitesCache[0] ? activeSitesCache[0].id : null;
   }
-  $("siteEmpty").hidden = active.length > 0;
+  renderSiteBars();
+  return activeSitesCache.find((s) => s.id === currentSiteId) || null;
+}
 
-  const toggle = $("toggleArchivedBtn");
-  toggle.hidden = archived.length === 0;
-  toggle.textContent = showArchived ? "完了した現場を隠す" : `完了した現場（${archived.length}）を表示`;
-  const alist = $("archivedList");
-  alist.hidden = !showArchived || archived.length === 0;
-  alist.innerHTML = "";
-  archived.forEach((site) => {
-    const card = document.createElement("button");
-    card.className = "siteCard";
-    card.innerHTML = `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span><span class="badge badgeMuted">完了</span></div>`;
-    card.addEventListener("click", () => openSite(site.id));
-    alist.appendChild(card);
+function currentSite() {
+  return activeSitesCache.find((s) => s.id === currentSiteId) || null;
+}
+
+async function setCurrentSite(id) {
+  currentSiteId = id;
+  setSetting(CURRENT_SITE_KEY, id || "");
+  await refreshSites();
+  if (typeof loadSiteChecks === "function") await loadSiteChecks();
+  rerenderCurrentView();
+}
+
+function renderSiteBars() {
+  const site = currentSite();
+  document.querySelectorAll(".curSiteBar").forEach((bar) => {
+    bar.classList.toggle("noSite", !site);
+    bar.innerHTML =
+      `${icon(ICONS.building, 18)}<span>今の現場</span><b>${site ? esc(site.name) : "現場が未登録"}</b>` +
+      `<span class="siteSwitch">切替${icon(ICONS.chevron, 14)}</span>`;
+  });
+}
+
+function openSiteSwitcher() {
+  openSheet("今の現場を切り替える", (body, close) => {
+    activeSitesCache.forEach((site) => {
+      const b = document.createElement("button");
+      b.className = "pickItem" + (site.id === currentSiteId ? " picked" : "");
+      b.innerHTML = `<span>${esc(site.name)}</span>${site.id === currentSiteId ? icon(ICONS.check, 20) : ""}`;
+      b.addEventListener("click", () => {
+        close();
+        setCurrentSite(site.id);
+      });
+      body.appendChild(b);
+    });
+    if (!activeSitesCache.length) {
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.textContent = "まだ現場が登録されていません。";
+      body.appendChild(hint);
+    }
+    body.appendChild(
+      sheetButton("＋ 現場を追加", "btnPrimary", () => {
+        close();
+        addSite();
+      })
+    );
+    body.appendChild(
+      sheetButton("現場の管理（名前の変更・完了・削除）", "btnSecondary", () => {
+        close();
+        openSiteManage();
+      })
+    );
   });
 }
 
@@ -581,72 +608,144 @@ async function addSite() {
   if (!name) return;
   const site = { id: newId(), name, createdAt: new Date().toISOString(), archived: false, processes: [], lastReportEnd: null };
   await dbPut("sites", site);
-  openSite(site.id);
+  toast(`「${name}」を登録しました`);
+  await setCurrentSite(site.id);
 }
 
-/* ---------- ② 現場画面 ---------- */
-
-let currentSiteId = null;
-
-async function openSite(siteId) {
-  currentSiteId = siteId;
-  shotFrom = "site";
-  await renderSite();
-  showView("siteView");
+// いま表示している画面を、現場が変わった内容で描き直す
+function rerenderCurrentView() {
+  const fns = {
+    dashView: renderDash,
+    albumView: renderAlbum,
+    reportView: renderReport,
+    reportProcView: renderReportProc,
+    siteManageView: renderSiteManage,
+    groupView: () => openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id),
+  };
+  if (fns[currentView]) fns[currentView]();
 }
 
-async function renderSite() {
-  const site = await dbGet("sites", currentSiteId);
-  if (!site) return goHome();
-  const photos = await getSitePhotos(site.id);
-  const current = unreported(photos);
-  $("siteTitle").textContent = site.name;
-  $("sitePeriod").textContent = periodLabel(periodStart(site, current)).text;
+/* ---------- 現場の管理 ---------- */
 
-  const cards = $("processCards");
-  cards.innerHTML = "";
-  if (site.processes.length === 0) {
-    cards.innerHTML = '<div class="hint">今回実施した工程を「工程を追加」から選んでください。</div>';
-  }
-  site.processes.forEach((pid) => {
-    const p = processOf(pid);
-    const count = current.filter((ph) => ph.processId === pid).length;
+function openSiteManage() {
+  renderSiteManage();
+  openSubView("siteManageView");
+}
+
+async function renderSiteManage() {
+  const sites = await getSites();
+  const list = $("manageList");
+  list.innerHTML = "";
+  if (!sites.length) list.innerHTML = '<div class="emptyState"><div class="emptyText">まだ現場が登録されていません。</div></div>';
+  for (const site of sites) {
+    const photos = await getSitePhotos(site.id);
     const card = document.createElement("div");
-    card.className = "processCard";
+    card.className = "siteCard manageCard";
     card.innerHTML =
-      `<div class="processHead"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
-      `<span class="processCount">${count}枚</span>` +
-      `<button class="iconBtn removeProcessBtn" aria-label="この工程を外す">${icon(ICONS.x, 18)}</button></div>` +
-      guideHtml(p, { report: true, record: true, recordHint: true }) +
-      `<div class="processActions">` +
-      `<button class="btn btnPrimary shootBtn">${icon(ICONS.camera)}撮影</button>` +
-      `<button class="btn btnSecondary libraryBtn" aria-label="写真ライブラリから取り込む">${icon(ICONS.photo)}</button>` +
-      `</div>`;
-    card.querySelector(".shootBtn").addEventListener("click", () => startCamera(pid));
-    card.querySelector(".libraryBtn").addEventListener("click", () => startLibrary(pid));
-    card.querySelector(".removeProcessBtn").addEventListener("click", () => removeProcess(pid, count));
-    cards.appendChild(card);
-  });
-
-  $("summaryBtn").textContent = `報告用の写真を選ぶ（${current.length}枚）`;
-
-  const reports = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1));
-  const past = $("pastReports");
-  past.innerHTML = reports.length ? '<div class="sectionLabel">過去の報告</div>' : "";
-  reports.forEach((r) => {
-    const n = photos.filter((ph) => ph.reportId === r.id).length;
-    const row = document.createElement("button");
-    row.className = "pastReportRow";
-    row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${n ? n + "枚" : "写真削除済み"}</span>`;
-    row.addEventListener("click", () => openSummary(r.id));
-    past.appendChild(row);
-  });
+      `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
+      (site.id === currentSiteId ? '<span class="badge badgeOk">今の現場</span>' : site.archived ? '<span class="badge badgeMuted">完了</span>' : "") +
+      `</div><div class="siteMeta">登録 ${fmtDate(site.createdAt.slice(0, 10))} ・ 写真 ${photos.length}枚</div>` +
+      `<div class="manageBtns"></div>`;
+    const btns = card.querySelector(".manageBtns");
+    const add = (label, cls, fn) => {
+      const b = document.createElement("button");
+      b.className = `btn ${cls}`;
+      b.textContent = label;
+      b.addEventListener("click", fn);
+      btns.appendChild(b);
+    };
+    if (!site.archived && site.id !== currentSiteId) add("今の現場にする", "btnOutline", () => setCurrentSite(site.id));
+    add("名前を変更", "btnSecondary", async () => {
+      const name = await askText("現場名を変更", site.name, "変更する");
+      if (!name) return;
+      site.name = name;
+      await dbPut("sites", site);
+      await refreshSites();
+      renderSiteManage();
+    });
+    add(site.archived ? "進行中に戻す" : "完了にする", "btnSecondary", async () => {
+      site.archived = !site.archived;
+      await dbPut("sites", site);
+      toast(site.archived ? "完了した現場にしました" : "進行中に戻しました");
+      await refreshSites();
+      renderSiteManage();
+    });
+    add("削除", "btnDanger", async () => {
+      if (!confirm(`「${site.name}」と写真${photos.length}枚・チェックの記録をすべて削除します。元に戻せません。よろしいですか？`)) return;
+      const reports = await dbGetAll("reports", "siteId", site.id);
+      const checks = await dbGetAll("checks", "siteId", site.id);
+      await dbDeleteMany("photos", photos.map((p) => p.id));
+      await dbDeleteMany("reports", reports.map((r) => r.id));
+      await dbDeleteMany("checks", checks.map((r) => r.key));
+      await dbDeleteMany("sites", [site.id]);
+      toast("現場を削除しました");
+      await refreshSites();
+      renderSiteManage();
+    });
+    list.appendChild(card);
+  }
 }
 
-async function openProcessPicker() {
-  const site = await dbGet("sites", currentSiteId);
-  const picked = new Set(site.processes);
-  openSheet("今回の工程を選ぶ（複数可）", (body, close) => {
+/* ---------- 写真のマス目（アルバム・報告で共通） ---------- */
+
+// opts: { bucket, selected:Set, onTap(ph, cell), actions(ph) → ビューアのボタン, showKind }
+function photoCell(ph, opts) {
+  const cell = document.createElement("button");
+  cell.className = "photoCell" + (opts.selected && opts.selected.has(ph.id) ? " selected" : "");
+  const kind = isRecordPhoto(ph) ? '<span class="cellKind record">記録</span>' : '<span class="cellKind report">報告</span>';
+  cell.innerHTML =
+    `<img src="${blobUrl(opts.bucket, ph.thumb)}" alt="">` +
+    `<span class="check">${icon(ICONS.check, 18, 3)}</span>` +
+    (opts.showKind ? kind : "") +
+    (ph.reportId ? '<span class="cellDone">報告済</span>' : ph.forReport && isRecordPhoto(ph) ? '<span class="cellDone use">報告に使う</span>' : "") +
+    `<span class="photoTag">${esc(processOf(ph.processId).short)}</span>` +
+    `<span class="photoDate">${fmtDate(ph.dateKey)}</span>`;
+  // 長押しで拡大（工程の変更・削除など）、通常タップは選択
+  let pressTimer = null;
+  let longPressed = false;
+  cell.addEventListener("touchstart", () => {
+    longPressed = false;
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      openPhotoViewer(ph.blob, opts.actions ? opts.actions(ph) : []);
+    }, 450);
+  }, { passive: true });
+  const cancel = () => clearTimeout(pressTimer);
+  cell.addEventListener("touchend", cancel);
+  cell.addEventListener("touchmove", cancel, { passive: true });
+  cell.addEventListener("contextmenu", (e) => e.preventDefault());
+  cell.addEventListener("click", () => {
+    if (longPressed) return;
+    opts.onTap(ph, cell);
+  });
+  return cell;
+}
+
+// 写真1枚へのよくある操作（拡大画面のボタン）。after は操作後に描き直す処理
+function photoActions(ph, after) {
+  return [
+    {
+      label: "工程を変更",
+      cls: "btnPrimary",
+      onClick: () => pickProcessSheet("この写真の工程を変更", (pid) => retagPhotos([ph.id], pid, after)),
+    },
+    {
+      label: "削除",
+      cls: "btnDanger",
+      onClick: async () => {
+        if (!confirm("この写真を削除しますか？")) return false;
+        await dbDeleteMany("photos", [ph.id]);
+        if (typeof loadSiteChecks === "function") await loadSiteChecks();
+        await after();
+        toast("写真を削除しました");
+      },
+    },
+  ];
+}
+
+// 写真の工程を付け替える（違う工程で撮ってしまった時用）
+function pickProcessSheet(title, onPick) {
+  openSheet(title, (body, close) => {
     PROCESSES.forEach((p) => {
       const g = groupOfProcess(p.id);
       if (g.cats[0] === p.id) {
@@ -656,91 +755,256 @@ async function openProcessPicker() {
         body.appendChild(label);
       }
       const b = document.createElement("button");
-      b.className = "pickItem" + (picked.has(p.id) ? " picked" : "");
-      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span><span class="pickMark">${picked.has(p.id) ? icon(ICONS.check, 20) : ""}</span>`;
+      b.className = "pickItem";
+      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span>`;
       b.addEventListener("click", () => {
-        if (picked.has(p.id)) picked.delete(p.id);
-        else picked.add(p.id);
-        b.classList.toggle("picked", picked.has(p.id));
-        b.querySelector(".pickMark").innerHTML = picked.has(p.id) ? icon(ICONS.check, 20) : "";
+        close();
+        onPick(p.id);
       });
       body.appendChild(b);
     });
-    body.appendChild(
-      sheetButton("決定", "btnPrimary btnLarge", async () => {
-        site.processes = PROCESSES.filter((p) => picked.has(p.id)).map((p) => p.id);
-        await dbPut("sites", site);
-        close();
-        renderSite();
-      })
-    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
 
-async function removeProcess(pid, count) {
-  const p = processOf(pid);
-  const msg = count
-    ? `「${p.name}」を今回の工程から外しますか？\n撮影済みの${count}枚は消えず、報告まとめには残ります。`
-    : `「${p.name}」を今回の工程から外しますか？`;
-  if (!confirm(msg)) return;
-  const site = await dbGet("sites", currentSiteId);
-  site.processes = site.processes.filter((id) => id !== pid);
-  await dbPut("sites", site);
-  renderSite();
+async function retagPhotos(ids, pid, after) {
+  const photos = (await Promise.all(ids.map((id) => dbGet("photos", id)))).filter(Boolean);
+  photos.forEach((p) => (p.processId = pid));
+  await dbPutMany("photos", photos);
+  await after();
+  toast(`${photos.length}枚を「${processOf(pid).name}」に変更しました`);
 }
 
-async function openSiteMenu() {
-  const site = await dbGet("sites", currentSiteId);
-  openSheet(site.name, (body, close) => {
-    body.appendChild(
-      sheetButton("現場名を変更", "btnSecondary", async () => {
-        close();
-        const name = await askText("現場名を変更", site.name, "変更する");
-        if (!name) return;
-        site.name = name;
-        await dbPut("sites", site);
-        renderSite();
-      })
-    );
-    body.appendChild(
-      sheetButton(site.archived ? "進行中に戻す" : "完了した現場にする", "btnSecondary", async () => {
-        site.archived = !site.archived;
-        await dbPut("sites", site);
-        close();
-        toast(site.archived ? "完了した現場に移しました" : "進行中に戻しました");
-        renderSite();
-      })
-    );
-    body.appendChild(
-      sheetButton("現場を削除（写真もすべて削除）", "btnDanger", async () => {
-        const photos = await getSitePhotos(site.id);
-        if (!confirm(`「${site.name}」と写真${photos.length}枚をすべて削除します。元に戻せません。よろしいですか？`)) return;
-        const reports = await dbGetAll("reports", "siteId", site.id);
-        await dbDeleteMany("photos", photos.map((p) => p.id));
-        await dbDeleteMany("reports", reports.map((r) => r.id));
-        await dbDeleteMany("sites", [site.id]);
-        close();
-        goHome();
-      })
-    );
-    body.appendChild(sheetButton("閉じる", "btnSecondary", close));
+function safeFileName(s) {
+  return s.replace(/[\\/:*?"<>|\s]/g, "");
+}
+
+// 写真を工程順・撮影順に並べ、書き出し用のファイル名を付ける
+function photoFiles(site, photos) {
+  const sorted = [...photos].sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
+  const counters = {};
+  return sorted.map((p) => {
+    const short = processOf(p.processId).short;
+    counters[short] = (counters[short] || 0) + 1;
+    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}.jpg`);
+    return { photo: p, file: new File([p.blob], name, { type: "image/jpeg" }) };
   });
 }
 
-/* ---------- ③ 撮影 ---------- */
+async function sharePhotos(site, photos) {
+  if (!photos.length) {
+    toast("保存する写真を選んでください");
+    return;
+  }
+  const files = photoFiles(site, photos).map((e) => e.file);
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try {
+      await navigator.share({ files });
+    } catch (e) {
+      /* キャンセル */
+    }
+    return;
+  }
+  // 共有シートが使えない環境（PCのブラウザ等）はダウンロードで代用
+  files.forEach((f) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(f);
+    a.download = f.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+
+/* ---------- 写真タブ：今の現場のアルバム ---------- */
+
+const albumState = { kind: "all", group: "all", sort: "new" };
+const albumSel = new Set();
+let albumPhotos = [];
+
+function goAlbum() {
+  albumSel.clear();
+  renderAlbum();
+  showView("albumView");
+}
+
+// 写真要のチェックのうち、記録写真が撮れている数（該当なしにした工程は数えない）
+async function recordCoverage(siteId) {
+  if (!manualMeta) return null;
+  const recs = Object.fromEntries((await dbGetAll("checks", "siteId", siteId)).map((r) => [r.itemId, r]));
+  const photos = (await getSitePhotos(siteId)).filter(isRecordPhoto);
+  let total = 0;
+  let done = 0;
+  manualMeta.items.forEach((it) => {
+    if (recs[it.id] && recs[it.id].na) return;
+    ((it.text && it.text.checks) || []).forEach((c) => {
+      if (c.photo !== "要") return;
+      total++;
+      if (photos.some((p) => p.itemId === it.id && p.checkKey === "checks|" + c.text)) done++;
+    });
+  });
+  return { total, done };
+}
+
+async function renderAlbum() {
+  releaseUrls("album");
+  const site = await refreshSites();
+  const grid = $("albumGrid");
+  grid.innerHTML = "";
+  const empty = $("albumEmpty");
+  if (!site) {
+    $("albumStats").innerHTML = "";
+    $("albumKinds").innerHTML = "";
+    $("albumChips").innerHTML = "";
+    $("albumHeading").textContent = "";
+    $("albumCount").textContent = "";
+    empty.hidden = false;
+    empty.innerHTML = '<div class="emptyTitle">担当現場を登録しましょう</div><div class="emptyText">上の「今の現場」から現場を登録すると、写真がここにまとまります。</div>';
+    $("albumBar").hidden = true;
+    return;
+  }
+  const all = await getSitePhotos(site.id);
+  const cov = await recordCoverage(site.id);
+  const nReport = all.filter((p) => !isRecordPhoto(p)).length;
+  const nRecord = all.length - nReport;
+  $("albumStats").innerHTML =
+    `<div class="statBox"><span class="kindLabel report">報告</span><b>${nReport}</b>枚</div>` +
+    `<div class="statBox"><span class="kindLabel record">記録</span><b>${nRecord}</b>枚</div>` +
+    (cov
+      ? `<div class="statBox wide"><span>写真要の記録</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span></div>`
+      : "");
+
+  const kinds = $("albumKinds");
+  kinds.innerHTML = "";
+  [["all", "すべて"], ["report", "報告写真"], ["record", "記録写真"]].forEach(([k, label]) => {
+    const b = document.createElement("button");
+    b.className = "segBtn" + (albumState.kind === k ? " active" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      albumState.kind = k;
+      renderAlbum();
+    });
+    kinds.appendChild(b);
+  });
+
+  const byKind = all.filter((p) => albumState.kind === "all" || (albumState.kind === "record" ? isRecordPhoto(p) : !isRecordPhoto(p)));
+  const groupsWith = GROUPS.filter((g) => byKind.some((p) => g.cats.includes(p.processId)));
+  if (albumState.group !== "all" && !groupsWith.some((g) => g.id === albumState.group)) albumState.group = "all";
+  const chips = $("albumChips");
+  chips.innerHTML = "";
+  [{ id: "all", name: "すべて" }, ...groupsWith].forEach((g) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (albumState.group === g.id ? " active" : "");
+    b.textContent = g.name;
+    b.addEventListener("click", () => {
+      albumState.group = g.id;
+      renderAlbum();
+    });
+    chips.appendChild(b);
+  });
+  chips.hidden = !groupsWith.length;
+
+  albumPhotos = byKind.filter((p) => albumState.group === "all" || groupOf(albumState.group).cats.includes(p.processId));
+  const sorters = {
+    new: (a, b) => (a.takenAt < b.takenAt ? 1 : -1),
+    old: (a, b) => (a.takenAt < b.takenAt ? -1 : 1),
+    proc: (a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? 1 : -1),
+  };
+  albumPhotos.sort(sorters[albumState.sort]);
+  $("albumSort").value = albumState.sort;
+  const gName = albumState.group === "all" ? "" : groupOf(albumState.group).name;
+  const kName = { all: "写真", report: "報告写真", record: "記録写真" }[albumState.kind];
+  $("albumHeading").textContent = `${gName ? gName + "の" : ""}${kName}`;
+  $("albumCount").textContent = `${albumPhotos.length}枚あります。`;
+  albumPhotos.forEach((ph) =>
+    grid.appendChild(
+      photoCell(ph, {
+        bucket: "album",
+        selected: albumSel,
+        showKind: true,
+        actions: (p) => photoActions(p, renderAlbum),
+        onTap: (p, cell) => {
+          if (albumSel.has(p.id)) albumSel.delete(p.id);
+          else albumSel.add(p.id);
+          cell.classList.toggle("selected", albumSel.has(p.id));
+          updateAlbumBar();
+        },
+      })
+    )
+  );
+  empty.hidden = albumPhotos.length > 0;
+  if (!albumPhotos.length) {
+    empty.innerHTML = all.length
+      ? '<div class="emptyText">この条件の写真はありません。</div>'
+      : '<div class="emptyTitle">まだ写真がありません</div><div class="emptyText">記録写真は工程マニュアルの「写真要」のチェック横、報告写真は報告タブの工程ページから撮れます。</div>';
+  }
+  [...albumSel].forEach((id) => {
+    if (!all.some((p) => p.id === id)) albumSel.delete(id);
+  });
+  updateAlbumBar();
+}
+
+function updateAlbumBar() {
+  $("albumBar").hidden = albumSel.size === 0;
+  $("albumSelCount").textContent = albumSel.size;
+}
+
+async function albumSelected() {
+  return (await Promise.all([...albumSel].map((id) => dbGet("photos", id)))).filter(Boolean);
+}
+
+// 選んだ写真を「送る写真」にする（記録写真も報告に使えるようにする）
+async function albumUseForReport() {
+  const photos = await albumSelected();
+  const usable = photos.filter((p) => !p.reportId);
+  usable.forEach((p) => {
+    if (isRecordPhoto(p)) p.forReport = true;
+    p.sendPick = true;
+  });
+  await dbPutMany("photos", usable);
+  const skipped = photos.length - usable.length;
+  albumSel.clear();
+  await renderAlbum();
+  toast(`${usable.length}枚を報告の「送る写真」にしました` + (skipped ? `（報告済みの${skipped}枚は除きました）` : ""));
+}
+
+function albumRetag() {
+  const ids = [...albumSel];
+  pickProcessSheet(`選んだ${ids.length}枚の工程を変更`, async (pid) => {
+    albumSel.clear();
+    await retagPhotos(ids, pid, renderAlbum);
+  });
+}
+
+async function albumDelete() {
+  if (!confirm(`選んだ写真${albumSel.size}枚を削除します。元に戻せません。よろしいですか？`)) return;
+  const n = albumSel.size;
+  await dbDeleteMany("photos", [...albumSel]);
+  albumSel.clear();
+  if (typeof loadSiteChecks === "function") await loadSiteChecks();
+  await renderAlbum();
+  toast(`${n}枚を削除しました`);
+}
+
+/* ---------- 撮影 ---------- */
 
 let shootProcessId = null;
 let lastShotId = null;
 let libraryProcessId = null;
+let shotFrom = "report"; // 撮影を始めた画面（"manual" なら工程マニュアル、"report" なら報告の工程ページに戻る）
 
 // 記録写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
 let recordTarget = null;
 
 function startRecordCamera(it, key) {
-  recordTarget = { siteId: manualSiteId, itemId: it.id, checkKey: key };
-  currentSiteId = manualSiteId;
+  recordTarget = { siteId: currentSiteId, itemId: it.id, checkKey: key };
   shootProcessId = it.cat;
   $("cameraInput").click();
+}
+
+function startRecordLibrary(it, key) {
+  recordTarget = { siteId: currentSiteId, itemId: it.id, checkKey: key };
+  shootProcessId = it.cat;
+  $("recordLibraryInput").click();
 }
 
 function startCamera(pid) {
@@ -761,7 +1025,7 @@ async function onCameraPicked() {
   if (!file || !shootProcessId || !currentSiteId) return;
   setProcessing(true);
   if (recordTarget) {
-    await saveRecordPhoto(file);
+    await saveRecordPhoto(file, new Date());
     setProcessing(false);
     return;
   }
@@ -779,13 +1043,24 @@ async function onCameraPicked() {
   }
 }
 
+async function onRecordLibraryPicked() {
+  const input = $("recordLibraryInput");
+  const file = input.files[0];
+  input.value = "";
+  if (!file || !recordTarget) return;
+  setProcessing(true, "写真を取り込み中...");
+  const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
+  await saveRecordPhoto(file, taken);
+  setProcessing(false);
+}
+
 async function renderShot(rec) {
   releaseUrls("shot");
   const p = processOf(shootProcessId);
   $("shotTitle").textContent = p.name;
   $("shotGuide").innerHTML = guideHtml(p, { report: true, record: false });
   const current = unreported(await getSitePhotos(currentSiteId))
-    .filter((ph) => ph.processId === shootProcessId)
+    .filter((ph) => ph.processId === shootProcessId && !isRecordPhoto(ph))
     .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
   if (rec) {
     $("shotPreview").src = blobUrl("shot", rec.blob);
@@ -827,8 +1102,9 @@ async function undoLastShot() {
   await renderShot(null);
 }
 
-async function pickOtherProcess() {
-  const site = await dbGet("sites", currentSiteId);
+function pickOtherProcess() {
+  const site = currentSite();
+  if (!site) return;
   openSheet("どの工程を撮りますか", (body, close) => {
     site.processes.forEach((pid) => {
       const p = processOf(pid);
@@ -841,28 +1117,18 @@ async function pickOtherProcess() {
       });
       body.appendChild(b);
     });
-    body.appendChild(
-      sheetButton("工程を追加する", "btnDashed", () => {
-        close();
-        leaveShot();
-        openProcessPicker();
-      })
-    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
-
-let shotFrom = "site"; // 撮影を始めた画面（"manual" なら終わったら工程マニュアルに戻る）
 
 function leaveShot() {
   releaseUrls("shot");
   lastShotId = null;
   if (shotFrom === "manual" && manualMeta) {
-    shotFrom = "site";
     openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id);
     return;
   }
-  renderSite();
-  showView("siteView");
+  openReportProc(shootProcessId);
 }
 
 async function onLibraryPicked() {
@@ -887,173 +1153,239 @@ async function onLibraryPicked() {
   }
   setProcessing(false);
   toast(`${ok}枚を取り込みました` + (failed ? `（${failed}枚は読み込めませんでした）` : ""));
-  renderSite();
+  if (currentView === "reportProcView") renderReportProc();
 }
 
-/* ---------- 報告：写真を選ぶ ---------- */
+/* ---------- 報告タブ：今回の期間の工程一覧 ---------- */
+// 報告に使う写真（報告候補）＝報告写真 ＋ 写真タブで「報告に使う」を付けた記録写真。そのうち sendPick の付いたものを送る
 
-let summaryReportId = null; // null = 今回（未報告）の分
-let summaryPhotos = [];
-let summaryFilter = "all";
-let summaryFrom = "siteView";
-const selectedIds = new Set();
+let reportProcId = null;
+let reportPastId = null;
 
-async function openSummary(reportId, from) {
-  summaryReportId = reportId;
-  summaryFilter = "all";
-  if (from) summaryFrom = from;
-  selectedIds.clear();
-  await renderSummary();
-  showView("summaryView");
+function sendPicks(photos) {
+  return unreported(photos).filter((p) => p.sendPick);
 }
 
-async function renderSummary() {
-  const site = await dbGet("sites", currentSiteId);
-  const all = await getSitePhotos(currentSiteId);
-  let label;
-  if (summaryReportId) {
-    const r = await dbGet("reports", summaryReportId);
-    summaryPhotos = all.filter((p) => p.reportId === summaryReportId);
-    label = `${fmtDate(r.start)}〜${fmtDate(r.end)}`;
-  } else {
-    summaryPhotos = unreported(all);
-    label = periodLabel(periodStart(site, summaryPhotos)).text;
+function goReport() {
+  renderReport();
+  showView("reportView");
+}
+
+async function renderReport() {
+  releaseUrls("report");
+  const site = await refreshSites();
+  const body = $("reportBody");
+  body.innerHTML = "";
+  if (!site) {
+    body.innerHTML = '<div class="emptyState"><div class="emptyTitle">担当現場を登録しましょう</div><div class="emptyText">上の「今の現場」から現場を登録すると、工程ごとに報告写真を撮れます。</div></div>';
+    $("reportBar").hidden = true;
+    return;
   }
-  $("summaryTitle").textContent = site.name;
-  $("summaryPeriod").textContent = label;
-  $("summaryHeading").textContent = summaryReportId ? "過去の報告の写真" : "今回の写真";
+  const all = await getSitePhotos(site.id);
+  const cands = unreported(all);
+  const picks = cands.filter((p) => p.sendPick);
+  const { text, weeks } = periodLabel(periodStart(site, cands));
+  const weekday = new Date().getDay();
+  const due = (weekday === 5 || weekday === 6) && cands.length > 0;
+  let html =
+    `<div class="periodBar"><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
+    (due ? '<span class="badge badgeWarning">報告日</span>' : weeks >= 2 ? `<span class="badge badgeMuted">${weeks}週分</span>` : "") +
+    `</div><div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
+  body.innerHTML = html;
+  const list = document.createElement("div");
+  list.className = "processCards";
+  const pids = [...new Set([...site.processes, ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
+  if (!pids.length) list.innerHTML = '<div class="hint">今回実施した工程を「工程を追加」から選ぶか、工程マニュアルの「この工程の報告写真」から始めてください。</div>';
+  pids.forEach((pid) => {
+    const p = processOf(pid);
+    const inProc = cands.filter((ph) => ph.processId === pid);
+    const sel = inProc.filter((ph) => ph.sendPick).length;
+    const card = document.createElement("div");
+    card.className = "processCard reportProcCard";
+    card.innerHTML =
+      `<button class="reportProcOpen"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
+      `<span class="processCount">写真${inProc.length}枚・送る${sel}枚</span><span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
+      `<div class="reportThumbs"></div>` +
+      `<button class="iconBtn removeProcessBtn" aria-label="今回の工程から外す">${icon(ICONS.x, 18)}</button>`;
+    const thumbs = card.querySelector(".reportThumbs");
+    inProc
+      .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))
+      .slice(0, 5)
+      .forEach((ph) => {
+        const im = document.createElement("img");
+        im.src = blobUrl("report", ph.thumb);
+        if (ph.sendPick) im.className = "picked";
+        thumbs.appendChild(im);
+      });
+    card.querySelector(".reportProcOpen").addEventListener("click", () => openReportProc(pid));
+    thumbs.addEventListener("click", () => openReportProc(pid));
+    card.querySelector(".removeProcessBtn").addEventListener("click", () => removeProcess(pid, inProc.length));
+    list.appendChild(card);
+  });
+  body.appendChild(list);
+  body.appendChild(sheetButton("＋ 工程を追加", "btnDashed", openProcessPicker));
 
-  const procIds = [...new Set(summaryPhotos.map((p) => p.processId))].sort((a, b) => processOf(a).no - processOf(b).no);
-  if (summaryFilter !== "all" && !procIds.includes(summaryFilter)) summaryFilter = "all";
-  const chips = $("summaryChips");
-  chips.innerHTML = "";
-  [["all", "すべて"], ...procIds.map((id) => [id, processOf(id).short])].forEach(([id, name]) => {
-    const b = document.createElement("button");
-    b.className = "chip" + (summaryFilter === id ? " active" : "");
-    b.textContent = name;
-    b.addEventListener("click", () => {
-      summaryFilter = id;
-      renderSummaryGrid();
-      chips.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c === b));
+  const reports = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1));
+  if (reports.length) {
+    const past = document.createElement("div");
+    past.className = "pastReports";
+    past.innerHTML = '<div class="sectionLabel">過去の報告</div>';
+    reports.forEach((r) => {
+      const n = all.filter((ph) => ph.reportId === r.id).length;
+      const row = document.createElement("button");
+      row.className = "pastReportRow";
+      row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${n ? n + "枚" : "写真削除済み"}</span>`;
+      row.addEventListener("click", () => openReportPast(r.id));
+      past.appendChild(row);
     });
-    chips.appendChild(b);
-  });
-  chips.hidden = procIds.length === 0;
-  renderSummaryGrid();
-  $("summaryEmpty").hidden = summaryPhotos.length > 0;
-  $("markReportedBtn").hidden = !!summaryReportId;
-  $("deleteReportPhotosBtn").hidden = !summaryReportId || summaryPhotos.length === 0;
-  updateSelectionUi();
+    body.appendChild(past);
+  }
+  $("reportBar").hidden = false;
+  $("sendCount").textContent = picks.length;
 }
 
-function renderSummaryGrid() {
-  releaseUrls("summary");
-  const list = summaryPhotos
-    .filter((p) => summaryFilter === "all" || p.processId === summaryFilter)
-    .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
-  const grid = $("summaryGrid");
+function openProcessPicker() {
+  const site = currentSite();
+  if (!site) return;
+  const picked = new Set(site.processes);
+  openSheet("今回の工程を選ぶ（複数可）", (body, close) => {
+    PROCESSES.forEach((p) => {
+      const g = groupOfProcess(p.id);
+      if (g.cats[0] === p.id) {
+        const label = document.createElement("div");
+        label.className = "pickGroupLabel";
+        label.textContent = g.name;
+        body.appendChild(label);
+      }
+      const b = document.createElement("button");
+      b.className = "pickItem" + (picked.has(p.id) ? " picked" : "");
+      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span><span class="pickMark">${picked.has(p.id) ? icon(ICONS.check, 20) : ""}</span>`;
+      b.addEventListener("click", () => {
+        if (picked.has(p.id)) picked.delete(p.id);
+        else picked.add(p.id);
+        b.classList.toggle("picked", picked.has(p.id));
+        b.querySelector(".pickMark").innerHTML = picked.has(p.id) ? icon(ICONS.check, 20) : "";
+      });
+      body.appendChild(b);
+    });
+    body.appendChild(
+      sheetButton("決定", "btnPrimary btnLarge", async () => {
+        site.processes = PROCESSES.filter((p) => picked.has(p.id)).map((p) => p.id);
+        await dbPut("sites", site);
+        close();
+        renderReport();
+      })
+    );
+  });
+}
+
+async function removeProcess(pid, count) {
+  const p = processOf(pid);
+  const msg = count
+    ? `「${p.name}」を今回の工程から外しますか？\n撮影済みの${count}枚は消えず、写真が残っている間は一覧に表示されます。`
+    : `「${p.name}」を今回の工程から外しますか？`;
+  if (!confirm(msg)) return;
+  const site = currentSite();
+  site.processes = site.processes.filter((id) => id !== pid);
+  await dbPut("sites", site);
+  renderReport();
+}
+
+/* ---------- 報告：工程のページ ---------- */
+
+// 工程マニュアルの「この工程の報告写真」や、報告タブの工程から開く
+async function openReportProc(pid) {
+  const site = await refreshSites();
+  if (!site) {
+    toast("先に「今の現場」を登録してください");
+    openSiteSwitcher();
+    return;
+  }
+  reportProcId = pid;
+  if (!site.processes.includes(pid)) {
+    site.processes = PROCESSES.filter((p) => p.id === pid || site.processes.includes(p.id)).map((p) => p.id);
+    await dbPut("sites", site);
+  }
+  await renderReportProc();
+  showView("reportProcView");
+}
+
+async function renderReportProc() {
+  releaseUrls("reportProc");
+  const site = currentSite();
+  if (!site || !reportProcId) return;
+  const p = processOf(reportProcId);
+  $("reportProcTitle").textContent = p.name;
+  $("reportProcGuide").innerHTML = guideHtml(p, { report: true, record: false });
+  const all = await getSitePhotos(site.id);
+  const cands = unreported(all);
+  const list = cands.filter((ph) => ph.processId === reportProcId).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
+  $("reportProcPeriod").textContent = periodLabel(periodStart(site, cands)).text;
+  const sel = list.filter((ph) => ph.sendPick).length;
+  $("reportProcCount").textContent = `${list.length}枚（送る写真 ${sel}枚）`;
+  const grid = $("reportProcGrid");
   grid.innerHTML = "";
-  list.forEach((ph) => grid.appendChild(photoCell(ph)));
-  $("summaryCount").textContent =
-    summaryFilter === "all" ? `写真が ${list.length} 枚あります。` : `${processOf(summaryFilter).name}の写真が ${list.length} 枚あります。`;
-}
-
-function photoCell(ph) {
-  const cell = document.createElement("button");
-  cell.className = "photoCell" + (selectedIds.has(ph.id) ? " selected" : "");
-  cell.innerHTML =
-    `<img src="${blobUrl("summary", ph.thumb)}" alt="">` +
-    `<span class="check">${icon(ICONS.check, 18, 3)}</span>` +
-    `<span class="photoTag">${esc(processOf(ph.processId).short)}</span>` +
-    `<span class="photoDate">${fmtDate(ph.dateKey)}</span>`;
-  // 長押しで拡大、通常タップで選択切替
-  let pressTimer = null;
-  let longPressed = false;
-  cell.addEventListener("touchstart", () => {
-    longPressed = false;
-    pressTimer = setTimeout(() => {
-      longPressed = true;
-      openPhotoViewer(ph.blob, [
-        {
-          label: "工程を変更",
-          cls: "btnPrimary",
-          onClick: () => pickProcessSheet("この写真の工程を変更", (pid) => retagPhotos([ph.id], pid)),
+  const picked = new Set(list.filter((ph) => ph.sendPick).map((ph) => ph.id));
+  list.forEach((ph) =>
+    grid.appendChild(
+      photoCell(ph, {
+        bucket: "reportProc",
+        selected: picked,
+        showKind: true,
+        actions: (x) => photoActions(x, renderReportProc),
+        onTap: async (x, cell) => {
+          x.sendPick = !x.sendPick;
+          await dbPut("photos", x);
+          cell.classList.toggle("selected", x.sendPick);
+          const n = (await getSitePhotos(site.id)).filter((q) => !q.reportId && q.processId === reportProcId && q.sendPick).length;
+          $("reportProcCount").textContent = `${list.length}枚（送る写真 ${n}枚）`;
         },
-        {
-          label: "削除",
-          cls: "btnDanger",
-          onClick: async () => {
-            if (!confirm("この写真を削除しますか？")) return false;
-            await dbDeleteMany("photos", [ph.id]);
-            selectedIds.delete(ph.id);
-            await renderSummary();
-            toast("写真を削除しました");
-          },
-        },
-      ]);
-    }, 450);
-  }, { passive: true });
-  const cancel = () => clearTimeout(pressTimer);
-  cell.addEventListener("touchend", cancel);
-  cell.addEventListener("touchmove", cancel, { passive: true });
-  cell.addEventListener("contextmenu", (e) => e.preventDefault());
-  cell.addEventListener("click", () => {
-    if (longPressed) return;
-    if (selectedIds.has(ph.id)) selectedIds.delete(ph.id);
-    else selectedIds.add(ph.id);
-    cell.classList.toggle("selected", selectedIds.has(ph.id));
-    updateSelectionUi();
-  });
-  return cell;
+      })
+    )
+  );
+  $("reportProcEmpty").hidden = list.length > 0;
 }
 
-function updateSelectionUi() {
-  $("selectedCount").textContent = selectedIds.size;
+/* ---------- 報告：過去の報告 ---------- */
+
+async function openReportPast(id) {
+  reportPastId = id;
+  await renderReportPast();
+  showView("reportPastView");
 }
 
-function safeFileName(s) {
-  return s.replace(/[\\/:*?"<>|\s]/g, "");
+async function renderReportPast() {
+  releaseUrls("reportPast");
+  const site = currentSite();
+  const r = await dbGet("reports", reportPastId);
+  if (!site || !r) return goReport();
+  $("reportPastTitle").textContent = `${fmtDate(r.start)}〜${fmtDate(r.end)}の報告`;
+  const list = (await getSitePhotos(site.id)).filter((p) => p.reportId === r.id).sort((a, b) => processOf(a.processId).no - processOf(b.processId).no);
+  const grid = $("reportPastGrid");
+  grid.innerHTML = "";
+  list.forEach((ph) =>
+    grid.appendChild(
+      photoCell(ph, {
+        bucket: "reportPast",
+        showKind: true,
+        actions: (x) => photoActions(x, renderReportPast),
+        onTap: (x) => openPhotoViewer(x.blob, photoActions(x, renderReportPast)),
+      })
+    )
+  );
+  $("reportPastEmpty").hidden = list.length > 0;
+  $("pastShareBtn").hidden = !list.length;
+  $("deleteReportPhotosBtn").hidden = !list.length;
 }
 
-// 選んだ写真を工程順・撮影順に並べ、送信用のファイル名を付ける
-async function chosenPhotoFiles() {
-  const site = await dbGet("sites", currentSiteId);
-  const chosen = summaryPhotos
-    .filter((p) => selectedIds.has(p.id))
-    .sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
-  const counters = {};
-  const entries = chosen.map((p) => {
-    const short = processOf(p.processId).short;
-    counters[short] = (counters[short] || 0) + 1;
-    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}.jpg`);
-    return { photo: p, file: new File([p.blob], name, { type: "image/jpeg" }) };
-  });
-  return { site, entries };
-}
-
-async function shareSelected() {
-  if (!selectedIds.size) {
-    toast("保存する写真をタップして選んでください");
-    return;
-  }
-  const { entries } = await chosenPhotoFiles();
-  const files = entries.map((e) => e.file);
-  if (navigator.canShare && navigator.canShare({ files })) {
-    try {
-      await navigator.share({ files });
-    } catch (e) {
-      /* キャンセル */
-    }
-    return;
-  }
-  // 共有シートが使えない環境（PCのブラウザ等）はダウンロードで代用
-  files.forEach((f) => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(f);
-    a.download = f.name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
+async function deleteReportPhotos() {
+  const site = currentSite();
+  const list = (await getSitePhotos(site.id)).filter((p) => p.reportId === reportPastId);
+  if (!list.length) return;
+  if (!confirm(`この報告の写真${list.length}枚を削除します。必要な写真は先に「保存」で書き出してください。削除しますか？`)) return;
+  await dbDeleteMany("photos", list.map((p) => p.id));
+  toast("写真を削除しました");
+  goReport();
 }
 
 /* ---------- Boxへ送信 ---------- */
@@ -1108,36 +1440,39 @@ async function buildCheckSummary(siteId, start, end) {
   return out.sort((a, b) => allManualItems().findIndex((x) => x.name === a.item) - allManualItems().findIndex((x) => x.name === b.item));
 }
 
+async function shareSelected() {
+  const site = currentSite();
+  if (!site) return;
+  await sharePhotos(site, sendPicks(await getSitePhotos(site.id)));
+}
+
 async function sendToBox() {
-  if (!selectedIds.size) {
-    toast("報告に使う写真をタップして選んでください");
+  const site = currentSite();
+  if (!site) return;
+  const all = await getSitePhotos(site.id);
+  const cands = unreported(all);
+  const picks = sendPicks(all);
+  if (!picks.length) {
+    toast("工程のページで、送る写真をタップして選んでください");
     return;
   }
   const email = getBoxEmail();
   if (!email) {
-    alert("設定タブで、Boxのアップロード用メールアドレスを登録してください。");
+    alert("設定で、Boxのアップロード用メールアドレスを登録してください。");
     return;
   }
-  const { site, entries } = await chosenPhotoFiles();
-  let start;
-  let end;
-  if (summaryReportId) {
-    const r = await dbGet("reports", summaryReportId);
-    start = r.start;
-    end = r.end;
-  } else {
-    start = periodStart(site, summaryPhotos);
-    end = todayKey();
-  }
-  const procIds = new Set(summaryPhotos.map((p) => p.processId));
-  if (!summaryReportId) site.processes.forEach((id) => procIds.add(id));
+  const entries = photoFiles(site, picks);
+  const start = periodStart(site, cands);
+  const end = todayKey();
+  const procIds = new Set(cands.map((p) => p.processId));
+  site.processes.forEach((id) => procIds.add(id));
   const processes = [...procIds]
     .map(processOf)
     .sort((a, b) => a.no - b.no)
     .map((p) => ({
       no: p.no,
       name: p.name,
-      taken_count: summaryPhotos.filter((ph) => ph.processId === p.id).length,
+      taken_count: cands.filter((ph) => ph.processId === p.id).length,
       selected_count: entries.filter((e) => e.photo.processId === p.id).length,
     }));
   const photoBytes = entries.reduce((s, e) => s + e.file.size, 0);
@@ -1185,6 +1520,7 @@ async function sendToBox() {
           memo: memo.value.trim(),
           photos: entries.map((e) => ({
             file: e.file.name,
+            kind: isRecordPhoto(e.photo) ? "record" : "report",
             process_no: processOf(e.photo.processId).no,
             process: processOf(e.photo.processId).name,
             date: e.photo.dateKey,
@@ -1206,7 +1542,7 @@ async function sendToBox() {
           return; // キャンセル時はシートを開いたまま
         }
         close();
-        if (!summaryReportId && confirm("送信しました。今回の分を報告済みにしますか？")) markReported();
+        if (confirm("送信しました。今回の分を報告済みにしますか？")) markReported();
         else toast("送信しました");
       })
     );
@@ -1215,12 +1551,14 @@ async function sendToBox() {
 }
 
 async function markReported() {
-  const site = await dbGet("sites", currentSiteId);
-  if (!summaryPhotos.length) {
+  const site = currentSite();
+  if (!site) return;
+  const cands = unreported(await getSitePhotos(site.id));
+  if (!cands.length) {
     toast("この期間の写真がありません");
     return;
   }
-  const start = periodStart(site, summaryPhotos);
+  const start = periodStart(site, cands);
   openSheet("報告済みにする", (body, close) => {
     const note = document.createElement("div");
     note.className = "mutedText";
@@ -1241,86 +1579,22 @@ async function markReported() {
           return;
         }
         const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString() };
-        const targets = summaryPhotos.filter((p) => p.dateKey <= end);
-        targets.forEach((p) => (p.reportId = report.id));
+        const targets = cands.filter((p) => p.dateKey <= end);
+        targets.forEach((p) => {
+          p.reportId = report.id;
+          p.sendPick = false;
+        });
         await dbPut("reports", report);
         await dbPutMany("photos", targets);
         site.lastReportEnd = end;
         await dbPut("sites", site);
         close();
         toast(`報告済みにしました（次回は${fmtDate(addDays(end, 1))}から）`);
-        await renderSite();
-        showView("siteView");
+        goReport();
       })
     );
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
-}
-
-// 写真の工程を付け替える（違う工程で撮ってしまった時用）
-function pickProcessSheet(title, onPick) {
-  openSheet(title, (body, close) => {
-    PROCESSES.forEach((p) => {
-      const g = groupOfProcess(p.id);
-      if (g.cats[0] === p.id) {
-        const label = document.createElement("div");
-        label.className = "pickGroupLabel";
-        label.textContent = g.name;
-        body.appendChild(label);
-      }
-      const b = document.createElement("button");
-      b.className = "pickItem";
-      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span>`;
-      b.addEventListener("click", () => {
-        close();
-        onPick(p.id);
-      });
-      body.appendChild(b);
-    });
-    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
-  });
-}
-
-async function retagPhotos(ids, pid) {
-  const photos = (await Promise.all(ids.map((id) => dbGet("photos", id)))).filter(Boolean);
-  photos.forEach((p) => (p.processId = pid));
-  await dbPutMany("photos", photos);
-  await renderSummary();
-  toast(`${photos.length}枚を「${processOf(pid).name}」に変更しました`);
-}
-
-function retagSelectedPhotos() {
-  if (!selectedIds.size) {
-    toast("工程を変更する写真をタップして選んでください");
-    return;
-  }
-  const ids = [...selectedIds];
-  pickProcessSheet(`選んだ${ids.length}枚の工程を変更`, async (pid) => {
-    selectedIds.clear();
-    await retagPhotos(ids, pid);
-  });
-}
-
-async function deleteSelectedPhotos() {
-  if (!selectedIds.size) {
-    toast("削除する写真をタップして選んでください");
-    return;
-  }
-  if (!confirm(`選んだ写真${selectedIds.size}枚を削除します。元に戻せません。よろしいですか？`)) return;
-  await dbDeleteMany("photos", [...selectedIds]);
-  const n = selectedIds.size;
-  selectedIds.clear();
-  await renderSummary();
-  toast(`${n}枚を削除しました`);
-}
-
-async function deleteReportPhotos() {
-  if (!summaryReportId || !summaryPhotos.length) return;
-  if (!confirm(`この報告の写真${summaryPhotos.length}枚を削除します。必要な写真は先に「共有・保存」で書き出してください。削除しますか？`)) return;
-  await dbDeleteMany("photos", summaryPhotos.map((p) => p.id));
-  toast("写真を削除しました");
-  await renderSite();
-  showView("siteView");
 }
 
 /* ---------- マニュアル ---------- */
@@ -1329,7 +1603,6 @@ async function deleteReportPhotos() {
 // 初回に取り込み、IndexedDB(meta / manualPages)に保存して使う
 
 let manualMeta = null; // { key:"manual", version, title, builtAt, importedAt, items, guides }
-let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
 
 const DEFAULT_REPORT_NOTE = "お客様に見せる写真です。ゴミ・工具・資材の散乱が写らないように";
 let reportNote = DEFAULT_REPORT_NOTE;
@@ -1398,11 +1671,9 @@ let currentGroupId = "g1";
 let groupItems = [];       // 表示中の大分類に含まれる項目（17分類の順→PDFの順）
 let currentItemIdx = 0;
 let currentMTab = "check";
-let manualSiteId = "";     // チェックを記録する現場（空＝読むだけ）
 let siteCheckRecs = {};    // itemId → チェック記録
 let siteRecordPhotos = {}; // "項目ID|区分|チェック文" → 記録写真（最新の1枚）
 
-const MANUAL_SITE_KEY = "genba-photo-manual-site";
 
 function allManualItems() {
   if (!manualMeta) return [];
@@ -1412,16 +1683,16 @@ function allManualItems() {
 async function loadSiteChecks() {
   siteCheckRecs = {};
   siteRecordPhotos = {};
-  if (!manualSiteId) return;
-  (await dbGetAll("checks", "siteId", manualSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
-  (await getSitePhotos(manualSiteId))
+  if (!currentSiteId) return;
+  (await dbGetAll("checks", "siteId", currentSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
+  (await getSitePhotos(currentSiteId))
     .filter(isRecordPhoto)
     .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
     .forEach((p) => (siteRecordPhotos[`${p.itemId}|${p.checkKey}`] = p));
 }
 
 function checkRecOf(itemId) {
-  return siteCheckRecs[itemId] || { key: `${manualSiteId}|${itemId}`, siteId: manualSiteId, itemId, na: false, marks: {} };
+  return siteCheckRecs[itemId] || { key: `${currentSiteId}|${itemId}`, siteId: currentSiteId, itemId, na: false, marks: {} };
 }
 
 function itemProgress(it) {
@@ -1449,17 +1720,8 @@ async function openGroup(gid, itemId) {
   $("groupDesc").textContent = g.desc;
   $("groupHeroArt").innerHTML = groupArt(g, 100);
 
-  activeSitesCache = (await getSites()).filter((s) => !s.archived);
-  let saved = "";
-  try {
-    saved = localStorage.getItem(MANUAL_SITE_KEY) || "";
-  } catch (e) {
-    /* ignore */
-  }
-  if (saved === "none") manualSiteId = "";
-  else manualSiteId = activeSitesCache.some((s) => s.id === saved) ? saved : activeSitesCache[0] ? activeSitesCache[0].id : "";
+  await refreshSites();
   await loadSiteChecks();
-  renderSiteBar();
 
   groupItems = manualMeta ? g.cats.flatMap((pid) => manualMeta.items.filter((it) => it.cat === pid)) : [];
   $("groupEmpty").innerHTML = "";
@@ -1472,49 +1734,6 @@ async function openGroup(gid, itemId) {
   showView("groupView");
   if (groupItems.length) await renderItem();
   else renderNavButtons();
-}
-
-function renderSiteBar() {
-  const bar = $("manualSiteBar");
-  const site = activeSitesCache.find((s) => s.id === manualSiteId);
-  bar.classList.toggle("noSite", !site);
-  bar.innerHTML =
-    `${icon(ICONS.building, 18)}<span>チェックする現場</span><b>${site ? esc(site.name) : activeSitesCache.length ? "選ばない（読むだけ）" : "現場が未登録"}</b>` +
-    `<span class="chev">${icon(ICONS.chevron, 16)}</span>`;
-}
-
-function pickManualSite() {
-  if (!activeSitesCache.length) {
-    toast("「写真」タブで担当現場を登録すると、現場ごとにチェックを記録できます");
-    return;
-  }
-  openSheet("チェックを記録する現場", (body, close) => {
-    const choose = async (id) => {
-      close();
-      manualSiteId = id;
-      try {
-        localStorage.setItem(MANUAL_SITE_KEY, id || "none");
-      } catch (e) {
-        /* ignore */
-      }
-      await loadSiteChecks();
-      renderSiteBar();
-      renderItemStrip();
-      await renderItem();
-    };
-    activeSitesCache.forEach((site) => {
-      const b = document.createElement("button");
-      b.className = "pickItem" + (site.id === manualSiteId ? " picked" : "");
-      b.textContent = site.name;
-      b.addEventListener("click", () => choose(site.id));
-      body.appendChild(b);
-    });
-    const none = document.createElement("button");
-    none.className = "pickItem" + (!manualSiteId ? " picked" : "");
-    none.textContent = "選ばない（読むだけ）";
-    none.addEventListener("click", () => choose(""));
-    body.appendChild(none);
-  });
 }
 
 function renderItemStrip(scrollToActive = true) {
@@ -1610,6 +1829,7 @@ async function renderItem() {
         html += `</div>`;
       }
       html += `<div class="guideBoxDetail">${guideHtml(p)}</div>`;
+      html += `<button class="btn btnOutline toReportBtn" data-toreport="1">${icon(ICONS.camera, 18)}この工程の報告写真（撮る・見る）</button>`;
       const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
       html +=
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
@@ -1618,7 +1838,7 @@ async function renderItem() {
       html += tx.checks.length
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
-      if (!manualSiteId) html += `<div class="hint">上の「チェックする現場」を選ぶと、チェックを記録できます。</div>`;
+      if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
       else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの工程はない"}</button>`;
     }
     if (it.pages.length > 1) {
@@ -1655,6 +1875,8 @@ async function renderItem() {
   box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
   const na = box.querySelector("[data-na]");
   if (na) na.addEventListener("click", () => toggleNa(it));
+  const toReport = box.querySelector("[data-toreport]");
+  if (toReport) toReport.addEventListener("click", () => openReportProc(it.cat));
   const go = box.querySelector("[data-go]");
   if (go) go.addEventListener("click", () => switchMTab(go.dataset.go));
   box.querySelectorAll("[data-flow]").forEach((el) =>
@@ -1696,7 +1918,7 @@ function lineHtml(x) {
 function checkRowHtml(sec, c, rec, it) {
   const key = `${sec}|${c.text}`;
   const mark = rec.marks[key];
-  const disabled = !manualSiteId || rec.na;
+  const disabled = !currentSiteId || rec.na;
   // 「写真要」のチェックには記録写真のカメラ。撮る前は灰色、撮ったら写真が出る
   let cam = "";
   if (c.photo === "要") {
@@ -1752,18 +1974,33 @@ function refreshCheckRow(it, key) {
 
 // 記録写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
 function onCheckCamera(it, key) {
-  if (!manualSiteId) {
-    toast("上の「チェックする現場」を選ぶと、記録写真を撮れます");
+  if (!currentSiteId) {
+    toast("上の「今の現場」から現場を登録すると、記録写真を撮れます");
     return;
   }
   const ph = siteRecordPhotos[`${it.id}|${key}`];
   if (!ph) {
     if (checkRecOf(it.id).na) return;
-    startRecordCamera(it, key);
+    openSheet("記録写真", (body, close) => {
+      body.appendChild(
+        sheetButton("撮影する", "btnPrimary btnLarge", () => {
+          close();
+          startRecordCamera(it, key);
+        })
+      );
+      body.appendChild(
+        sheetButton("写真から選ぶ（標準カメラで撮った写真）", "btnSecondary", () => {
+          close();
+          startRecordLibrary(it, key);
+        })
+      );
+      body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+    });
     return;
   }
   openPhotoViewer(ph.blob, [
     { label: "撮り直す", cls: "btnPrimary", onClick: () => startRecordCamera(it, key) },
+    { label: "写真から選ぶ", cls: "btnGhost", onClick: () => startRecordLibrary(it, key) },
     {
       label: "削除",
       cls: "btnDanger",
@@ -1778,16 +2015,16 @@ function onCheckCamera(it, key) {
   ]);
 }
 
-async function saveRecordPhoto(file) {
+async function saveRecordPhoto(file, takenAt = new Date()) {
   const t = recordTarget;
   recordTarget = null;
   try {
-    const rec = await makePhotoRecord(file, t.siteId, shootProcessId, new Date(), { kind: "record", itemId: t.itemId, checkKey: t.checkKey });
+    const rec = await makePhotoRecord(file, t.siteId, shootProcessId, takenAt, { kind: "record", itemId: t.itemId, checkKey: t.checkKey });
     const mapKey = `${t.itemId}|${t.checkKey}`;
     const old = siteRecordPhotos[mapKey];
     await dbPut("photos", rec);
     if (old) await dbDeleteMany("photos", [old.id]); // 撮り直しは前の1枚と入れ替える
-    if (t.siteId === manualSiteId) siteRecordPhotos[mapKey] = rec;
+    if (t.siteId === currentSiteId) siteRecordPhotos[mapKey] = rec;
     const it = groupItems[currentItemIdx];
     if (it && it.id === t.itemId) refreshCheckRow(it, t.checkKey);
     toast("記録写真を保存しました");
@@ -1826,7 +2063,7 @@ async function saveCheckRec(rec) {
 }
 
 async function toggleMark(it, key) {
-  if (!manualSiteId) return;
+  if (!currentSiteId) return;
   const rec = checkRecOf(it.id);
   if (rec.marks[key]) delete rec.marks[key];
   else rec.marks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
@@ -1847,11 +2084,10 @@ async function toggleNa(it) {
   window.scrollTo(0, y);
 }
 
-// 右上のカメラ：今開いている項目の工程（17分類）で撮る
+// 右上のカメラ：今開いている項目の工程（17分類）の報告写真のページへ
 function shootFromGroup() {
   const it = groupItems[currentItemIdx];
-  if (it) shootFromManual(it.cat);
-  else shootFromManual(groupOf(currentGroupId).cats[0]);
+  openReportProc(it ? it.cat : groupOf(currentGroupId).cats[0]);
 }
 
 /* ---------- 工程の検索 ---------- */
@@ -2073,44 +2309,6 @@ async function deleteManual() {
   renderSettings();
 }
 
-// マニュアルから直接撮影する。iPhoneのSafariはユーザー操作から間を置くとカメラ起動を
-// 拒否することがあるので、DB読み込みを挟まず同期的にカメラを開く
-function shootFromManual(pid) {
-  const sites = activeSitesCache;
-  if (!sites.length) {
-    toast("先に「写真」タブで担当現場を登録してください");
-    goHome();
-    return;
-  }
-  const go = (site) => {
-    currentSiteId = site.id;
-    shotFrom = "manual";
-    if (!site.processes.includes(pid)) {
-      site.processes = PROCESSES.filter((p) => p.id === pid || site.processes.includes(p.id)).map((p) => p.id);
-      dbPut("sites", site);
-    }
-    startCamera(pid);
-  };
-  const checking = sites.find((x) => x.id === manualSiteId);
-  if (checking || sites.length === 1) {
-    go(checking || sites[0]);
-    return;
-  }
-  openSheet("どの現場の写真ですか", (body, close) => {
-    sites.forEach((site) => {
-      const b = document.createElement("button");
-      b.className = "pickItem";
-      b.innerHTML = `<span>${esc(site.name)}</span>${icon(ICONS.camera, 20)}`;
-      b.addEventListener("click", () => {
-        close();
-        go(site);
-      });
-      body.appendChild(b);
-    });
-    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
-  });
-}
-
 /* ---------- 設定 ---------- */
 
 const USER_NAME_KEY = "genba-photo-user-name";
@@ -2208,12 +2406,31 @@ function renderBrand() {
 async function renderDash() {
   renderGroupGrid($("dashGroups"));
   renderBrand();
-  const sites = (await getSites()).filter((s) => !s.archived);
-  let total = 0;
-  for (const site of sites) total += unreported(await getSitePhotos(site.id)).length;
-  $("dashReportSub").textContent = total
-    ? `撮った写真 ${total} 枚から報告用を選べます。`
-    : "撮った写真から報告用を選べます。";
+  const site = await refreshSites();
+  const card = $("dashSiteCard");
+  if (!site) {
+    card.innerHTML =
+      `<button class="curSiteCard empty"><span class="curSiteIcon">${icon(ICONS.building, 24)}</span>` +
+      `<span class="curSiteText"><span class="curSiteName">担当現場を登録しましょう</span><span class="curSiteMeta">タップして現場名を登録します</span></span>` +
+      `<span class="siteSwitch">${icon(ICONS.plus, 18)}追加</span></button>`;
+    card.firstElementChild.addEventListener("click", addSite);
+    $("dashReportSub").textContent = "撮った写真から報告用を選べます。";
+  } else {
+    const all = await getSitePhotos(site.id);
+    const cands = unreported(all);
+    const cov = await recordCoverage(site.id);
+    card.innerHTML =
+      `<button class="curSiteCard"><span class="curSiteIcon">${icon(ICONS.building, 24)}</span>` +
+      `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
+      `<span class="curSiteMeta">今回 ${periodLabel(periodStart(site, cands)).text} ・ 報告写真 ${cands.length}枚` +
+      (cov ? ` ・ 写真要 ${cov.done}/${cov.total}` : "") +
+      `</span></span><span class="siteSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
+    card.firstElementChild.addEventListener("click", openSiteSwitcher);
+    const picks = cands.filter((p) => p.sendPick).length;
+    $("dashReportSub").textContent = cands.length
+      ? `今回の写真 ${cands.length} 枚（送る写真 ${picks} 枚）から報告できます。`
+      : "工程ごとに報告写真を撮って、送る写真を選べます。";
+  }
 
   const recent = manualMeta
     ? getRecent().map((r) => ({ r, it: manualMeta.items.find((x) => x.id === r.id) })).filter((x) => x.it)
@@ -2240,47 +2457,14 @@ function goDash() {
   showView("dashView");
 }
 
-/* ---------- 報告タブ：現場の一覧 ---------- */
-
-async function renderReportList() {
-  const sites = (await getSites()).filter((s) => !s.archived);
-  const list = $("reportSiteList");
-  list.innerHTML = "";
-  if (!sites.length) {
-    const empty = document.createElement("div");
-    empty.className = "emptyState";
-    empty.innerHTML = '<div class="emptyText">まだ現場が登録されていません。「写真」タブから担当現場を登録してください。</div>';
-    list.appendChild(empty);
-  }
-  for (const site of sites) {
-    const current = unreported(await getSitePhotos(site.id));
-    const card = document.createElement("button");
-    card.className = "siteCard";
-    card.innerHTML =
-      `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
-      `<span class="chev">${icon(ICONS.chevron, 18)}</span></div>` +
-      `<div class="siteMeta">今回 ${periodLabel(periodStart(site, current)).text} ・ 写真 ${current.length}枚</div>`;
-    card.addEventListener("click", () => {
-      currentSiteId = site.id;
-      openSummary(null, "reportView");
-    });
-    list.appendChild(card);
-  }
-}
-
-function goReport() {
-  renderReportList();
-  showView("reportView");
-}
-
 // 設定・お知らせ・使い方は、タブの外にある画面。戻るで元の画面に帰る
-const SUB_VIEWS = ["settingsView", "announceView", "helpView", "searchView"];
+const SUB_VIEWS = ["settingsView", "announceView", "helpView", "searchView", "siteManageView"];
 function openSubView(id) {
   if (!SUB_VIEWS.includes(currentView)) viewBeforeSettings = currentView;
   showView(id);
 }
 function backFromSubView() {
-  const back = { dashView: goDash, manualView: goManual, homeView: goHome, reportView: goReport }[viewBeforeSettings];
+  const back = { dashView: goDash, manualView: goManual, albumView: goAlbum, reportView: goReport }[viewBeforeSettings];
   if (back) back();
   else showView(viewBeforeSettings);
 }
@@ -2385,7 +2569,7 @@ async function exportBackup() {
     if (opts.sites) {
       head.sites = await dbGetAll("sites");
       head.reports = await dbGetAll("reports");
-      head.settings = { userName: getSetting(USER_NAME_KEY), boxEmail: getSetting(BOX_EMAIL_KEY), manualSite: getSetting(MANUAL_SITE_KEY) };
+      head.settings = { userName: getSetting(USER_NAME_KEY), boxEmail: getSetting(BOX_EMAIL_KEY), manualSite: getSetting(CURRENT_SITE_KEY) };
     }
     if (opts.checks) head.checks = await dbGetAll("checks");
     // 写真は1枚ずつ文字にして並べる（全体を1つの巨大な文字列にするとiPhoneのメモリが足りなくなるため）
@@ -2561,14 +2745,14 @@ const TOUR_STEPS = [
   },
   {
     view: "*",
-    target: () => document.querySelector('.tabBtn[data-tab="photos"]'),
-    text: "最後に、担当現場を登録します。下の「写真」をタップしてください。",
-    waitView: "homeView",
+    target: () => document.querySelector('.tabBtn[data-tab="home"]'),
+    text: "最後に、担当現場を登録します。下の「ホーム」をタップしてください。",
+    waitView: "dashView",
   },
   {
-    view: "homeView",
-    target: () => $("addSiteBtn"),
-    text: "右上の「＋」から現場名を登録すると、工程ごとに写真を撮れるようになります。",
+    view: "dashView",
+    target: () => $("dashSiteCard"),
+    text: "ここが「今の現場」です。タップして現場名を登録・切り替えします。写真やチェックは、この現場に記録されます。",
     next: true,
     nextLabel: "完了",
   },
@@ -2646,23 +2830,15 @@ window.addEventListener("resize", () => requestAnimationFrame(placeTourSpot));
 
 /* ---------- 起動 ---------- */
 
-function goHome() {
-  currentSiteId = null;
-  renderHome();
-  showView("homeView");
-}
-
 function goManual() {
   renderManual();
   showView("manualView");
 }
 
 function init() {
-  $("addSiteBtn").innerHTML = icon(ICONS.plus, 26);
-  $("siteBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("summaryBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("siteMenuBtn").innerHTML = icon(ICONS.dots, 26);
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
+  $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("reportPastBackBtn").innerHTML = icon(ICONS.back, 26);
   $("groupBackBtn").innerHTML = icon(ICONS.back, 26);
   $("settingsBackBtn").innerHTML = icon(ICONS.back, 26);
   document.querySelectorAll(".settingsBtn").forEach((b) => {
@@ -2674,15 +2850,27 @@ function init() {
     el.innerHTML = icon(ICONS[el.dataset.icon], size);
   });
 
-  $("addSiteBtn").addEventListener("click", addSite);
-  $("addSiteEmptyBtn").addEventListener("click", addSite);
-  $("toggleArchivedBtn").addEventListener("click", () => {
-    showArchived = !showArchived;
-    renderHome();
+  document.querySelectorAll(".curSiteBar").forEach((b) => b.addEventListener("click", openSiteSwitcher));
+  $("manageAddBtn").addEventListener("click", addSite);
+  $("albumSort").addEventListener("change", (e) => {
+    albumState.sort = e.target.value;
+    renderAlbum();
   });
-  $("siteBackBtn").addEventListener("click", goHome);
-  $("siteMenuBtn").addEventListener("click", openSiteMenu);
-  $("addProcessBtn").addEventListener("click", openProcessPicker);
+  $("albumUseBtn").addEventListener("click", albumUseForReport);
+  $("albumRetagBtn").addEventListener("click", albumRetag);
+  $("albumSaveBtn").addEventListener("click", async () => sharePhotos(currentSite(), await albumSelected()));
+  $("albumDeleteBtn").addEventListener("click", albumDelete);
+  $("reportProcBackBtn").addEventListener("click", goReport);
+  $("reportPastBackBtn").addEventListener("click", goReport);
+  $("reportShootBtn").addEventListener("click", () => {
+    shotFrom = "report";
+    startCamera(reportProcId);
+  });
+  $("reportImportBtn").addEventListener("click", () => startLibrary(reportProcId));
+  $("pastShareBtn").addEventListener("click", async () =>
+    sharePhotos(currentSite(), (await getSitePhotos(currentSiteId)).filter((p) => p.reportId === reportPastId))
+  );
+  $("recordLibraryInput").addEventListener("change", onRecordLibraryPicked);
   $("cameraInput").addEventListener("change", onCameraPicked);
   $("libraryInput").addEventListener("change", onLibraryPicked);
   $("shotAgainBtn").addEventListener("click", () => startCamera(shootProcessId));
@@ -2690,15 +2878,6 @@ function init() {
   $("shotDoneBtn").addEventListener("click", leaveShot);
   $("shotCloseBtn").addEventListener("click", leaveShot);
   $("shotUndoBtn").addEventListener("click", undoLastShot);
-  $("summaryBackBtn").addEventListener("click", () => {
-    releaseUrls("summary");
-    if (summaryFrom === "reportView") goReport();
-    else {
-      renderSite();
-      showView("siteView");
-    }
-  });
-  $("summaryBtn").addEventListener("click", () => openSummary(null, "siteView"));
   $("groupBackBtn").addEventListener("click", goManual);
   $("groupShootBtn").addEventListener("click", shootFromGroup);
   $("settingsBackBtn").addEventListener("click", backFromSubView);
@@ -2716,11 +2895,9 @@ function init() {
   });
   updateBellDot();
   $("dashReportBtn").addEventListener("click", goReport);
-  $("dashPhotoBtn").addEventListener("click", goHome);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
   $("groupShootBtn").innerHTML = icon(ICONS.camera, 24);
-  $("manualSiteBar").addEventListener("click", pickManualSite);
   document.querySelectorAll(".openSearchBtn").forEach((b) => b.addEventListener("click", openSearch));
   $("searchInput").addEventListener("input", renderSearch);
   $("searchInput").addEventListener("keydown", (e) => {
@@ -2733,8 +2910,6 @@ function init() {
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
   $("copyBoxEmailBtn").addEventListener("click", copyBoxEmail);
-  $("deleteSelectedBtn").addEventListener("click", deleteSelectedPhotos);
-  $("retagSelectedBtn").addEventListener("click", retagSelectedPhotos);
   ["bkSites", "bkChecks", "bkPhotos"].forEach((id) => $(id).addEventListener("change", updateBackupNote));
   $("backupBtn").addEventListener("click", exportBackup);
   $("restoreBtn").addEventListener("click", () => $("restoreInput").click());
@@ -2757,7 +2932,7 @@ function init() {
     b.addEventListener("click", () => {
       if (b.dataset.tab === "home") goDash();
       if (b.dataset.tab === "manual") goManual();
-      if (b.dataset.tab === "photos") goHome();
+      if (b.dataset.tab === "photos") goAlbum();
       if (b.dataset.tab === "report") goReport();
     })
   );

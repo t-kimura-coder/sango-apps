@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
@@ -36,6 +36,7 @@
     <svg class="heroWave" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 10 C 110 18 230 44 400 50 L400 60 L0 60 Z"/></svg>
   </div>
   <div class="viewBody">
+    <div id="dashSiteCard"></div>
     <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>工程名・キーワードで探す</button>
     <div class="sectionHead">
       <h2 class="sectionTitle">工程から探す</h2>
@@ -50,14 +51,6 @@
       </span>
       <img src="art/report-wood.webp?v=1" class="reportCardWood" alt="">
       <img src="art/report-photos.webp?v=1" class="reportCardPhotos" alt="">
-    </button>
-    <button id="dashPhotoBtn" class="bannerBtn">
-      <span class="bannerIcon" data-icon="camera"></span>
-      <span class="bannerText">
-        <span class="bannerTitle">写真整理</span>
-        <span class="bannerSub">工程ごとに写真を撮って保存します。</span>
-      </span>
-      <span class="chev" data-icon="chevron"></span>
     </button>
     <div id="recentSection" hidden>
       <div class="sectionHead rowHead">
@@ -87,7 +80,7 @@
   <header class="topbar">
     <button id="groupBackBtn" class="iconBtn" aria-label="戻る"></button>
     <h1 class="topbarTitle center">工程マニュアル</h1>
-    <button id="groupShootBtn" class="iconBtn" aria-label="この工程の写真を撮る"></button>
+    <button id="groupShootBtn" class="iconBtn" aria-label="この工程の報告写真"></button>
   </header>
   <div id="groupStepper" class="stepper"></div>
   <div class="viewBody groupBody">
@@ -97,7 +90,7 @@
       <div id="groupDesc" class="groupDesc"></div>
       <div id="groupHeroArt" class="groupHeroArt"></div>
     </div>
-    <button id="manualSiteBar" class="siteBar"></button>
+    <button class="siteBar curSiteBar"></button>
     <div id="groupEmpty"></div>
     <div id="itemStrip" class="itemStrip"></div>
     <div id="itemTabs" class="itemTabs">
@@ -115,43 +108,46 @@
   </footer>
 </section>
 
-<!-- 写真：担当現場の一覧 -->
-<section id="homeView" class="view" hidden>
+<!-- 写真：今の現場のアルバム（撮影はしない。見る・整理する・必要な写真が撮れているか確かめる） -->
+<section id="albumView" class="view" hidden>
   <header class="topbar">
     <h1 class="topbarTitle">写真整理</h1>
-    <button id="addSiteBtn" class="iconBtn" aria-label="現場を追加"></button>
+    <button class="iconBtn settingsBtn" aria-label="設定"></button>
   </header>
-  <div class="viewBody">
-    <div class="sectionSub">現場を選んで、工程ごとに写真を撮ります。</div>
-    <div id="siteList" class="siteList"></div>
-    <div id="siteEmpty" class="emptyState" hidden>
-      <div class="emptyTitle">担当現場を登録しましょう</div>
-      <div class="emptyText">現場名を登録すると、工程ごとに写真を撮れるようになります。</div>
-      <button id="addSiteEmptyBtn" class="btn btnPrimary">現場を追加</button>
+  <div class="viewBody albumBody">
+    <button class="siteBar curSiteBar"></button>
+    <div id="albumStats" class="albumStats"></div>
+    <div id="albumKinds" class="segRow"></div>
+    <div id="albumChips" class="chipRow"></div>
+    <div class="summaryHead">
+      <div>
+        <div id="albumHeading" class="sectionTitle small"></div>
+        <div id="albumCount" class="sectionSub"></div>
+      </div>
+      <select id="albumSort" class="sortSelect">
+        <option value="new">撮影日 新しい順</option>
+        <option value="old">撮影日 古い順</option>
+        <option value="proc">工程順</option>
+      </select>
     </div>
-    <button id="toggleArchivedBtn" class="linkBtn" hidden></button>
-    <div id="archivedList" class="siteList" hidden></div>
+    <div id="albumGrid" class="photoGrid"></div>
+    <div id="albumEmpty" class="emptyState" hidden></div>
+    <div class="hint">タップで選択、長押しで拡大。写真は工程マニュアルと報告タブから撮ります。</div>
   </div>
-</section>
-
-<!-- 写真：現場画面（撮影の起点） -->
-<section id="siteView" class="view" hidden>
-  <header class="topbar">
-    <button id="siteBackBtn" class="iconBtn" aria-label="戻る"></button>
-    <h1 id="siteTitle" class="topbarTitle"></h1>
-    <button id="siteMenuBtn" class="iconBtn" aria-label="現場メニュー"></button>
-  </header>
-  <div class="viewBody">
-    <div class="periodBar">
-      <span class="periodLabel">今回の報告期間</span>
-      <span id="sitePeriod" class="periodValue"></span>
+  <footer id="albumBar" class="bottomActions selectBar" hidden>
+    <div class="selectBarRow">
+      <div class="selectBarText">
+        <div class="selectBarTitle">選択中</div>
+        <div class="selectBarCount"><b id="albumSelCount">0</b> 枚</div>
+      </div>
+      <button id="albumUseBtn" class="btn btnPrimary">報告に使う</button>
     </div>
-    <div class="sectionLabel">今回の工程（タップで撮影）</div>
-    <div id="processCards" class="processCards"></div>
-    <button id="addProcessBtn" class="btn btnDashed">＋ 工程を追加</button>
-    <button id="summaryBtn" class="btn btnSecondary btnLarge">報告用の写真を選ぶ</button>
-    <div id="pastReports" class="pastReports"></div>
-  </div>
+    <div class="btnRow subActions">
+      <button id="albumRetagBtn" class="btn btnOutline">工程で仕分け</button>
+      <button id="albumSaveBtn" class="btn btnOutline">保存</button>
+      <button id="albumDeleteBtn" class="btn btnOutline dangerOutline">削除</button>
+    </div>
+  </footer>
 </section>
 
 <!-- 撮影直後（連続撮影） -->
@@ -177,57 +173,80 @@
   </div>
 </section>
 
-<!-- 報告：現場の一覧 -->
+<!-- 報告：今回の期間の工程一覧 -->
 <section id="reportView" class="view" hidden>
   <header class="topbar">
     <h1 class="topbarTitle">報告</h1>
     <button class="iconBtn settingsBtn" aria-label="設定"></button>
   </header>
   <div class="viewBody">
-    <div class="sectionSub">報告する現場を選ぶと、撮りためた写真から報告用を選べます。</div>
-    <div id="reportSiteList" class="siteList"></div>
+    <button class="siteBar curSiteBar"></button>
+    <div id="reportBody"></div>
   </div>
-</section>
-
-<!-- 報告：写真を選ぶ -->
-<section id="summaryView" class="view" hidden>
-  <header class="topbar">
-    <button id="summaryBackBtn" class="iconBtn" aria-label="戻る"></button>
-    <h1 id="summaryTitle" class="topbarTitle"></h1>
-  </header>
-  <div class="viewBody summaryBody">
-    <div class="summaryHead">
-      <div>
-        <div id="summaryHeading" class="sectionTitle"></div>
-        <div id="summaryCount" class="sectionSub"></div>
-      </div>
-      <span id="summaryPeriod" class="pill pillMuted"></span>
-    </div>
-    <div id="summaryChips" class="chipRow"></div>
-    <div id="summaryGrid" class="photoGrid"></div>
-    <div id="summaryEmpty" class="emptyState" hidden>
-      <div class="emptyText">この期間の写真はまだありません。</div>
-    </div>
-    <div class="hint">タップで選択、長押しで拡大表示。</div>
-  </div>
-  <footer class="bottomActions selectBar">
+  <footer id="reportBar" class="bottomActions selectBar" hidden>
     <div class="selectBarRow">
       <div class="selectBarText">
-        <div class="selectBarTitle">今週の報告</div>
-        <div class="selectBarCount">選択中 <b id="selectedCount">0</b> 枚</div>
+        <div class="selectBarTitle">送る写真</div>
+        <div class="selectBarCount"><b id="sendCount">0</b> 枚</div>
       </div>
       <button id="sendBoxBtn" class="btn btnPrimary"><span data-icon="send"></span>Boxへ送信</button>
     </div>
-    <div class="btnRow">
+    <div class="btnRow subActions">
       <button id="shareSelectedBtn" class="btn btnOutline">写真を保存</button>
       <button id="markReportedBtn" class="btn btnOutline">報告済みにする</button>
     </div>
-    <div class="btnRow subActions">
-      <button id="retagSelectedBtn" class="btn btnOutline">工程を変更</button>
-      <button id="deleteSelectedBtn" class="btn btnOutline dangerOutline">削除</button>
-    </div>
-    <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
   </footer>
+</section>
+
+<!-- 報告：工程のページ（撮影メモ・注意文・撮る・取り込む・この工程の報告写真） -->
+<section id="reportProcView" class="view" hidden>
+  <header class="topbar">
+    <button id="reportProcBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 id="reportProcTitle" class="topbarTitle"></h1>
+  </header>
+  <div class="viewBody">
+    <div id="reportProcGuide" class="guideBoxDetail"></div>
+    <div class="btnRow">
+      <button id="reportShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>撮影する</button>
+      <button id="reportImportBtn" class="btn btnSecondary btnLarge"><span data-icon="photo"></span>取り込む</button>
+    </div>
+    <div class="summaryHead">
+      <div>
+        <div class="sectionTitle small">この工程の報告写真</div>
+        <div id="reportProcCount" class="sectionSub"></div>
+      </div>
+      <span id="reportProcPeriod" class="pill pillMuted"></span>
+    </div>
+    <div id="reportProcGrid" class="photoGrid"></div>
+    <div id="reportProcEmpty" class="emptyState" hidden><div class="emptyText">まだ報告写真がありません。上の「報告写真を撮る」から撮影してください。</div></div>
+    <div class="hint">タップで「送る写真」に選ぶ／外す。長押しで拡大・工程の変更・削除。</div>
+  </div>
+</section>
+
+<!-- 報告：過去の報告の写真 -->
+<section id="reportPastView" class="view" hidden>
+  <header class="topbar">
+    <button id="reportPastBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 id="reportPastTitle" class="topbarTitle"></h1>
+  </header>
+  <div class="viewBody">
+    <div id="reportPastGrid" class="photoGrid"></div>
+    <div id="reportPastEmpty" class="emptyState" hidden><div class="emptyText">この報告の写真は削除済みです。</div></div>
+    <button id="pastShareBtn" class="btn btnOutline">この報告の写真を保存</button>
+    <button id="deleteReportPhotosBtn" class="btn btnDanger">この報告の写真を削除</button>
+  </div>
+</section>
+
+<!-- 現場の管理 -->
+<section id="siteManageView" class="view" hidden>
+  <header class="topbar">
+    <button class="iconBtn subBackBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle">現場の管理</h1>
+  </header>
+  <div class="viewBody">
+    <button id="manageAddBtn" class="btn btnPrimary"><span data-icon="plus"></span>現場を追加</button>
+    <div id="manageList" class="siteList"></div>
+  </div>
 </section>
 
 <!-- 設定 -->
@@ -323,7 +342,7 @@
       <ol class="helpList">
         <li>右上の歯車から<b>氏名</b>と<b>Boxのアップロード用メールアドレス</b>を登録します。</li>
         <li>「工程」タブの案内から、Boxにある<b>マニュアル_○○.json</b>を取り込みます。取り込んだマニュアルはこのiPhoneの中に保存されます。</li>
-        <li>「写真」タブで<b>担当現場</b>を登録します。</li>
+        <li>ホームの「今の現場」から<b>担当現場</b>を登録します。どの画面でも、上の現場の欄から切り替えられます。</li>
       </ol>
     </div>
     <div class="card helpCard">
@@ -337,20 +356,19 @@
       </ol>
     </div>
     <div class="card helpCard">
-      <div class="helpStep">現場で写真を撮る</div>
+      <div class="helpStep">写真を撮る</div>
       <ol class="helpList">
-        <li>「写真」タブで現場を選び、今回の工程の<b>撮影</b>を押します。工程マニュアルの画面の「撮る」「写真を撮る」からも撮れます。</li>
-        <li>撮るとその場で「現場×工程」に仕分けられます。続けて撮るときは<b>もう1枚撮る</b>。</li>
-        <li>標準カメラで撮った写真は、撮影ボタン横の写真マークからまとめて取り込めます。</li>
-        <li>写真は2種類あります。<b>報告写真</b>（お客様向け。工程カードの撮影ボタン）と、<b>記録写真</b>（マニュアルが求める写真。工程マニュアルの「写真要」のチェック横のカメラ）。撮る前に色付きのラベルの撮影メモを見てください。</li>
-        <li>写真を消すときは、「報告」の写真一覧で写真を長押しして「削除」、まとめて消すときは選んでから下の「削除」。撮影直後の画面の小さい写真をタップしても消せます。</li>
-        <li>違う工程で撮ってしまった写真は、「報告」の写真一覧で選んで「工程を変更」（長押しの画面からも変更できます）。</li>
+        <li><b>記録写真</b>（緑）：工程マニュアルの「写真要」のチェック横のカメラから。マニュアルが求める写真です。</li>
+        <li><b>報告写真</b>（木の色）：報告タブの工程ページ、または工程マニュアルの「この工程の報告写真」から。お客様に見せる写真なので、ゴミ・工具が写らないように。</li>
+        <li>標準カメラで撮った写真は、どちらも「写真から選ぶ」「取り込む」で入れられます。</li>
+        <li>「写真」タブは今の現場のアルバムです。撮った写真が全部見え、必要な記録写真がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます。</li>
       </ol>
     </div>
     <div class="card helpCard">
+      <div class="helpStep">週の報告を送る（金・土曜）</div>    <div class="card helpCard">
       <div class="helpStep">週の報告を送る（金・土曜）</div>
       <ol class="helpList">
-        <li>「報告」タブで現場を選び、報告に使う写真をタップして選びます。長押しで拡大できます。</li>
+        <li>「報告」タブで工程を開き、送る写真をタップして選びます（工程をまたいで選べます）。写真タブで「報告に使う」を付けた写真もここに入ります。</li>
         <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選んで宛先に貼り付けて送ります。期間中に工程マニュアルで付けたチェックも一緒に送られ、報告づくりの材料になります。</li>
         <li>送ったら<b>報告済み</b>にします。次の報告は翌日からの写真になります。休工で間が空いても、前回の報告の翌日から自動でまとまります。</li>
       </ol>
@@ -359,7 +377,7 @@
       <div class="helpStep">データについて</div>
       <ul class="helpList">
         <li>写真とマニュアルは、このiPhoneの中だけに保存されます。機種変更に備えて、設定の「バックアップ」で書き出しておけます。</li>
-        <li>容量が気になったら、「写真」タブの現場画面にある過去の報告から、送った写真を削除してください。</li>
+        <li>容量が気になったら、報告タブの「過去の報告」から、送った写真を削除してください。</li>
       </ul>
     </div>
   </div>
@@ -413,7 +431,8 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 <input type="file" id="restoreInput" accept="application/json,.json" hidden>
+<input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

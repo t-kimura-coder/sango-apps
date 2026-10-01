@@ -546,3 +546,58 @@ svg { flex: none; }
 .tourSkip { background: none; border: none; color: var(--color-text-muted); font-size: var(--fs-sm); text-decoration: underline; padding: var(--space-sm) 0; }
 .tourNext { min-height: 44px; }
 .tourNext[hidden] { display: none !important; }
+
+/* ---------- 今の現場 ---------- */
+.siteBar .siteSwitch, .curSiteCard .siteSwitch { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-xs); font-weight: 700; color: var(--color-primary); }
+.siteBar > span:not(.siteSwitch) { flex: none; }
+.curSiteCard { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; padding: var(--space-md) var(--space-lg); border-radius: var(--radius-md); border: 1.5px solid var(--color-primary); background: var(--color-surface); box-shadow: var(--shadow-card); position: relative; z-index: 5; margin-top: calc(-1 * var(--space-lg)); }
+.curSiteCard.empty { border-style: dashed; }
+.curSiteIcon { flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--color-primary-soft); color: var(--color-primary); display: flex; align-items: center; justify-content: center; }
+.curSiteText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.curSiteLabel { font-size: 11px; font-weight: 700; color: var(--color-text-muted); }
+.curSiteName { font-size: var(--fs-lg); font-weight: 800; color: var(--color-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.curSiteMeta { font-size: var(--fs-xs); color: var(--color-text-sub); }
+#dashView .searchBox { margin-top: 0; }
+.badgeOk { background: var(--color-ok-soft); color: var(--color-ok-text); }
+.manageCard { gap: 4px; }
+.manageBtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-sm); }
+.manageBtns .btn { min-height: 36px; padding: 0 12px; font-size: var(--fs-xs); }
+
+/* ---------- 写真タブ（アルバム） ---------- */
+.albumBody { padding-bottom: var(--space-sm); }
+.albumStats { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 6px; }
+.albumStats:empty { display: none; }
+.statBox { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: var(--space-sm); border-radius: var(--radius-sm); background: var(--color-surface); border: 1px solid var(--color-border); font-size: var(--fs-xs); color: var(--color-text-sub); }
+.statBox b { font-size: var(--fs-lg); color: var(--color-heading); }
+.statBox .kindLabel { margin-right: 2px; }
+.statBar { flex-basis: 100%; height: 5px; border-radius: 3px; background: var(--color-surface-sub); overflow: hidden; }
+.statBar span { display: block; height: 100%; background: var(--color-primary); }
+.segRow { display: flex; border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; background: var(--color-surface); }
+.segRow:empty { display: none; }
+.segBtn { flex: 1; min-height: 40px; border: none; background: none; font-size: var(--fs-sm); font-weight: 700; color: var(--color-text-sub); }
+.segBtn + .segBtn { border-left: 1px solid var(--color-border); }
+.segBtn.active { background: var(--color-primary); color: var(--color-primary-text); }
+.sortSelect { flex: none; min-height: 38px; padding: 0 var(--space-sm); border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-heading); font-size: var(--fs-xs); font-weight: 700; }
+.cellKind { position: absolute; top: 6px; left: 6px; z-index: 2; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 5px; }
+.cellKind.report { background: var(--color-wood-soft); color: var(--color-wood-text); }
+.cellKind.record { background: var(--color-primary-soft); color: var(--color-primary); }
+.cellDone { position: absolute; top: 26px; left: 6px; z-index: 2; font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+.cellDone.use { background: var(--color-wood); }
+
+/* ---------- 報告タブ ---------- */
+.reportProcCard { position: relative; gap: var(--space-sm); }
+.reportProcOpen { display: flex; align-items: center; gap: var(--space-sm); width: 100%; padding: 0 32px 0 0; border: none; background: none; text-align: left; }
+.reportProcOpen .processName { flex: 1; min-width: 0; }
+.reportProcCard .removeProcessBtn { position: absolute; top: 4px; right: 2px; }
+.reportThumbs { display: flex; gap: 4px; min-height: 0; }
+.reportThumbs:empty { display: none; }
+.reportThumbs img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; }
+.reportThumbs img.picked { outline: 3px solid var(--color-primary); outline-offset: -3px; }
+.toReportBtn { min-height: 46px; font-size: var(--fs-sm); }
+.pastReports .sectionLabel { margin-bottom: 2px; }
+.reportProcOpen { flex-wrap: wrap; row-gap: 2px; }
+.reportProcOpen .processCount { order: 3; flex-basis: 100%; }
+#reportBody > .btnDashed { width: 100%; margin-top: var(--space-sm); }
+#reportBody .processCards { margin-top: var(--space-xs); }
+#reportBody .periodBar { margin-bottom: var(--space-sm); }
+.statBox:not(.wide) { flex-wrap: nowrap; white-space: nowrap; }
