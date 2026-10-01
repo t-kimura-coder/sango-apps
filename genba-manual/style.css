@@ -709,3 +709,7 @@ svg { flex: none; }
 .pillSwitch { position: absolute; top: var(--space-sm); right: var(--space-sm); padding: 3px 10px; border-radius: 12px; background: var(--color-primary-soft); }
 .curSiteCard.rich { position: relative; }
 .curSiteCard.rich .curSiteName { padding-right: 52px; }
+.siteBoard { position: relative; background: var(--color-surface); }
+.siteBoard .boardBg { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); object-fit: cover; }
+.siteBoard .boardImg { position: relative; width: 86%; height: auto; object-fit: contain; align-self: flex-end; margin-bottom: 4px; }
+@media (prefers-color-scheme: dark) { .siteBoard .boardBg { opacity: 0.35; } }

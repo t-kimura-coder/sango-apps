@@ -1,9 +1,9 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
-const HAS_SITE_BOARD = false;
+const HAS_SITE_BOARD = true;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -2589,7 +2589,7 @@ async function renderDash() {
     const pct = cov && cov.total ? Math.round((cov.done / cov.total) * 100) : 0;
     card.innerHTML =
       `<button class="curSiteCard rich">` +
-      `<span class="siteBoard">${HAS_SITE_BOARD ? '<img src="art/site-board.webp?v=1" alt="">' : icon(ICONS.building, 40)}</span>` +
+      `<span class="siteBoard">${HAS_SITE_BOARD ? '<img class="boardBg" src="art/site-bg.webp?v=1" alt=""><img class="boardImg" src="art/site-board.webp?v=1" alt="">' : icon(ICONS.building, 40)}</span>` +
       `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
       `<span class="curSiteMeta">${icon(ICONS.calendar, 14)}${periodLabel(periodStart(site, cands)).text}</span>` +
       `<span class="siteTiles">` +
