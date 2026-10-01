@@ -382,8 +382,8 @@ svg { flex: none; }
 .pickGroupLabel { font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-muted); margin-top: var(--space-sm); }
 
 /* ---------- 拡大・処理中・トースト ---------- */
-.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.9); display: flex; align-items: center; justify-content: center; }
-.lightbox img { max-width: 100%; max-height: 100%; }
+.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + var(--space-md)); }
+.lightbox img { max-width: 100%; max-height: 100%; min-height: 0; flex: 0 1 auto; object-fit: contain; }
 .processing { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.5); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); }
 .spinner { width: 36px; height: 36px; border: 4px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -492,3 +492,35 @@ svg { flex: none; }
 .docPages img { width: 100%; height: auto; display: block; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #fff; }
 .navBtn { font-size: var(--fs-sm); min-height: 52px; padding: 0 var(--space-sm); }
 .navBtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---------- 写真の種別（記録＝マニュアル用 / 報告＝お客様向け） ---------- */
+.kindLabel { display: inline-flex; align-items: center; flex: none; font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 6px; margin-right: 6px; vertical-align: 1px; }
+.kindLabel.record { background: var(--color-primary-soft); color: var(--color-primary); }
+.kindLabel.report { background: var(--color-wood-soft); color: var(--color-wood-text); }
+.guideLines { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--color-text); }
+.guideLine { display: flex; align-items: flex-start; }
+.guideNote { font-size: 11px; color: var(--color-wood-text); padding-left: 2px; }
+.guideBoxDetail { background: var(--color-surface-sub); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+#shotGuide .guideLines { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+
+/* チェック行：左がチェック、右が記録写真のカメラ */
+.checkRow { align-items: center; cursor: default; }
+.checkMain { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: var(--space-sm); text-align: left; background: none; border: none; padding: 0; font-size: var(--fs-sm); color: inherit; }
+.checkMain:disabled { opacity: 0.55; }
+.checkRow.on .checkMain .checkText { color: var(--color-text-sub); }
+.checkCam { flex: none; width: 50px; height: 42px; padding: 0; border-radius: 10px; border: 1.5px dashed var(--color-text-muted); background: var(--color-surface-sub); color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.checkCam.has { border: 2px solid var(--color-primary); background: var(--color-primary); }
+.checkCam img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.checkCam:disabled { opacity: 0.4; }
+
+.lightboxActions { display: flex; gap: var(--space-sm); padding: 0 var(--space-lg); width: 100%; max-width: 480px; }
+.lightboxActions:empty { display: none; }
+.lightboxActions .btn { flex: 1; min-width: 0; }
+.lightboxActions .btnGhost { background: rgba(255, 255, 255, 0.12); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3); }
+.dangerOutline { border-color: var(--color-danger); color: var(--color-danger); flex: 0 0 auto !important; padding: 0 var(--space-md); }
+.addrRow { display: flex; gap: var(--space-sm); margin-top: var(--space-xs); }
+.addrRow .sheetInput { flex: 1; min-width: 0; }
+.addrRow .sheetInput[readonly] { background: var(--color-surface-sub); color: var(--color-heading); font-weight: 700; }
+.copyBtn { flex: none; min-height: var(--tap-min); }
+.shotStrip img { cursor: pointer; }
+.guideHint { font-size: 11px; color: var(--color-text-muted); padding-left: 2px; }

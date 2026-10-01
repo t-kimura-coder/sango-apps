@@ -11,7 +11,7 @@
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -164,6 +164,7 @@
   <div class="viewBody shotBody">
     <div class="shotPreviewWrap"><img id="shotPreview" class="shotPreview" alt=""></div>
     <div id="shotStatus" class="statusOk"></div>
+    <div id="shotGuide"></div>
     <div id="shotStrip" class="shotStrip"></div>
     <div class="shotActions">
       <button id="shotAgainBtn" class="btn btnPrimary btnHuge">もう1枚撮る</button>
@@ -220,6 +221,7 @@
     <div class="btnRow">
       <button id="shareSelectedBtn" class="btn btnOutline">写真を保存</button>
       <button id="markReportedBtn" class="btn btnOutline">報告済みにする</button>
+      <button id="deleteSelectedBtn" class="btn btnOutline dangerOutline">削除</button>
     </div>
     <button id="deleteReportPhotosBtn" class="btn btnDanger" hidden>この報告の写真を削除</button>
   </footer>
@@ -237,8 +239,11 @@
       <label class="fieldLabel" for="userNameInput">氏名</label>
       <input id="userNameInput" class="sheetInput" placeholder="山郷 太郎" autocomplete="name">
       <label class="fieldLabel" for="boxEmailInput">Boxのアップロード用メールアドレス</label>
-      <input id="boxEmailInput" class="sheetInput" type="email" inputmode="email" placeholder="xxxx@u.box.com" autocomplete="off">
       <div class="mutedText">送信時にこのアドレスをコピーするので、メールの宛先に貼り付けてください。</div>
+      <div class="addrRow">
+        <input id="boxEmailInput" class="sheetInput" type="email" inputmode="email" placeholder="xxxx@u.box.com" autocomplete="off">
+        <button id="copyBoxEmailBtn" class="btn btnSecondary copyBtn" type="button">コピー</button>
+      </div>
     </div>
     <div class="card">
       <div class="cardTitle">マニュアル</div>
@@ -316,6 +321,8 @@
         <li>「写真」タブで現場を選び、今回の工程の<b>撮影</b>を押します。工程マニュアルの画面の「撮る」「写真を撮る」からも撮れます。</li>
         <li>撮るとその場で「現場×工程」に仕分けられます。続けて撮るときは<b>もう1枚撮る</b>。</li>
         <li>標準カメラで撮った写真は、撮影ボタン横の写真マークからまとめて取り込めます。</li>
+        <li>写真は2種類あります。<b>報告写真</b>（お客様向け。工程カードの撮影ボタン）と、<b>記録写真</b>（マニュアルが求める写真。工程マニュアルの「写真要」のチェック横のカメラ）。撮る前に色付きのラベルの撮影メモを見てください。</li>
+        <li>写真を消すときは、「報告」の写真一覧で写真を長押しして「削除」、まとめて消すときは選んでから下の「削除」。撮影直後の画面の小さい写真をタップしても消せます。</li>
       </ol>
     </div>
     <div class="card helpCard">
@@ -353,9 +360,10 @@
   </div>
 </div>
 
-<!-- 拡大表示 -->
+<!-- 写真・図の拡大表示（写真は削除・撮り直しもここから） -->
 <div id="lightbox" class="lightbox" hidden>
   <img id="lightboxImg" alt="">
+  <div id="lightboxActions" class="lightboxActions"></div>
 </div>
 
 <!-- 処理中 -->
@@ -370,6 +378,6 @@
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

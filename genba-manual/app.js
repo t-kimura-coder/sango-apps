@@ -1,11 +1,20 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 14;
+const APP_VERSION = 16;
+
+// Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
+// 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
+const BOX_UPLOAD_EMAIL = "";
 
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "写真を「報告写真（お客様向け）」と「記録写真（マニュアル用）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
+  { date: "2026-10-01", type: "feature", text: "工程マニュアルの「写真要」のチェック横にカメラを付けました。撮ると写真が表示され、タップで確認・撮り直し・削除ができます" },
+  { date: "2026-10-01", type: "feature", text: "写真を削除できるようにしました（報告の写真一覧で長押し、または選んで「削除」）" },
+  { date: "2026-10-01", type: "fix", text: "チェックを付けると画面が一番上に戻ってしまう不具合を直しました" },
+  { date: "2026-10-01", type: "fix", text: "一部の工程で、中身のない「□」だけのポイントが表示される不具合を直しました（最新のマニュアルを取り込むと反映）" },
   { date: "2026-10-01", type: "feature", text: "会社のロゴを表示するようにしました（ホームの一番下と設定。最新のマニュアルを取り込むと表示されます）" },
   { date: "2026-10-01", type: "feature", text: "工程の検索を追加しました。ホームと工程タブの検索欄から、工程名やチェック項目の言葉で探せます（ひらがな可、「建て方」でも上棟が見つかります）" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルを見やすくしました。項目ごとに概要・ポイント・チェックポイント・作業の流れ・参考図を表示し、現場ごとにチェックを記録できます（マニュアルを最新版に取り込み直してください）" },
@@ -240,8 +249,13 @@ async function getSites() {
 async function getSitePhotos(siteId) {
   return dbGetAll("photos", "siteId", siteId);
 }
+// 写真の種別：kind = "report"（お客様向けの報告写真。種別なしの古い写真もこちら）/ "record"（マニュアルが求める記録写真）
+function isRecordPhoto(p) {
+  return p.kind === "record";
+}
+// 今回の報告に入る写真（報告写真のうち、まだ報告済みにしていないもの）
 function unreported(photos) {
-  return photos.filter((p) => !p.reportId);
+  return photos.filter((p) => !p.reportId && !isRecordPhoto(p));
 }
 
 // 今回の報告期間の開始日 = 前回報告の終了日の翌日
@@ -351,7 +365,7 @@ function parseTiffDate(v, tiff) {
   return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
 }
 
-async function makePhotoRecord(file, siteId, processId, takenAt) {
+async function makePhotoRecord(file, siteId, processId, takenAt, extra = {}) {
   const blob = await downscaleImage(file, 1600, 0.82);
   const thumb = await downscaleImage(blob, 360, 0.7);
   return {
@@ -363,6 +377,8 @@ async function makePhotoRecord(file, siteId, processId, takenAt) {
     blob,
     thumb,
     reportId: null,
+    kind: "report",
+    ...extra,
   };
 }
 
@@ -467,15 +483,41 @@ function askText(title, initial, okLabel) {
   });
 }
 
-function openLightbox(blob) {
+// actions: [{label, cls, onClick}]。onClick が false を返したら閉じない（確認でキャンセルした時など）
+// ボタンの処理はタップの中で同期的に呼ぶ（撮り直しでカメラを開けるように）
+function openPhotoViewer(blob, actions = []) {
   const url = URL.createObjectURL(blob);
-  $("lightboxImg").src = url;
-  $("lightbox").hidden = false;
-  $("lightbox").onclick = () => {
-    $("lightbox").hidden = true;
+  const box = $("lightbox");
+  const close = () => {
+    box.hidden = true;
     $("lightboxImg").removeAttribute("src");
     URL.revokeObjectURL(url);
   };
+  $("lightboxImg").src = url;
+  const bar = $("lightboxActions");
+  bar.innerHTML = "";
+  actions.concat([{ label: "閉じる", cls: "btnGhost", onClick: () => {} }]).forEach((a) => {
+    const b = document.createElement("button");
+    b.className = `btn ${a.cls || "btnGhost"}`;
+    b.textContent = a.label;
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const r = a.onClick();
+      if (r && typeof r.then === "function") {
+        if ((await r) === false) return;
+      } else if (r === false) return;
+      close();
+    });
+    bar.appendChild(b);
+  });
+  box.hidden = false;
+  box.onclick = (e) => {
+    if (e.target === box || e.target.id === "lightboxImg") close();
+  };
+}
+
+function openLightbox(blob) {
+  openPhotoViewer(blob, []);
 }
 
 /* ---------- ① ホーム ---------- */
@@ -569,7 +611,7 @@ async function renderSite() {
       `<div class="processHead"><span class="processName"><span class="processNo">${p.no}</span>${esc(p.name)}</span>` +
       `<span class="processCount">${count}枚</span>` +
       `<button class="iconBtn removeProcessBtn" aria-label="この工程を外す">${icon(ICONS.x, 18)}</button></div>` +
-      (p.guide ? `<div class="processGuide">撮影メモ：${esc(p.guide)}</div>` : "") +
+      guideHtml(p, { report: true, record: true, recordHint: true }) +
       `<div class="processActions">` +
       `<button class="btn btnPrimary shootBtn">${icon(ICONS.camera)}撮影</button>` +
       `<button class="btn btnSecondary libraryBtn" aria-label="写真ライブラリから取り込む">${icon(ICONS.photo)}</button>` +
@@ -685,7 +727,18 @@ let shootProcessId = null;
 let lastShotId = null;
 let libraryProcessId = null;
 
+// 記録写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
+let recordTarget = null;
+
+function startRecordCamera(it, key) {
+  recordTarget = { siteId: manualSiteId, itemId: it.id, checkKey: key };
+  currentSiteId = manualSiteId;
+  shootProcessId = it.cat;
+  $("cameraInput").click();
+}
+
 function startCamera(pid) {
+  recordTarget = null;
   shootProcessId = pid;
   $("cameraInput").click();
 }
@@ -701,6 +754,11 @@ async function onCameraPicked() {
   input.value = "";
   if (!file || !shootProcessId || !currentSiteId) return;
   setProcessing(true);
+  if (recordTarget) {
+    await saveRecordPhoto(file);
+    setProcessing(false);
+    return;
+  }
   try {
     const rec = await makePhotoRecord(file, currentSiteId, shootProcessId, new Date());
     await dbPut("photos", rec);
@@ -719,21 +777,41 @@ async function renderShot(rec) {
   releaseUrls("shot");
   const p = processOf(shootProcessId);
   $("shotTitle").textContent = p.name;
+  $("shotGuide").innerHTML = guideHtml(p, { report: true, record: false });
   const current = unreported(await getSitePhotos(currentSiteId))
     .filter((ph) => ph.processId === shootProcessId)
     .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
   if (rec) {
     $("shotPreview").src = blobUrl("shot", rec.blob);
-    $("shotStatus").textContent = `保存しました（この工程 ${current.length}枚目）`;
+    $("shotStatus").textContent = `報告写真を保存しました（この工程 ${current.length}枚目）`;
   } else {
     $("shotPreview").removeAttribute("src");
     $("shotStatus").textContent = `取り消しました（この工程 ${current.length}枚）`;
   }
   $("shotUndoBtn").hidden = !rec;
-  $("shotStrip").innerHTML = current
-    .slice(0, 12)
-    .map((ph) => `<img src="${blobUrl("shot", ph.thumb)}" alt="">`)
-    .join("");
+  const strip = $("shotStrip");
+  strip.innerHTML = "";
+  current.slice(0, 12).forEach((ph) => {
+    const img = document.createElement("img");
+    img.src = blobUrl("shot", ph.thumb);
+    img.alt = "";
+    img.addEventListener("click", () =>
+      openPhotoViewer(ph.blob, [
+        {
+          label: "この写真を削除",
+          cls: "btnDanger",
+          onClick: async () => {
+            if (!confirm("この写真を削除しますか？")) return false;
+            await dbDeleteMany("photos", [ph.id]);
+            if (lastShotId === ph.id) lastShotId = null;
+            await renderShot(lastShotId ? await dbGet("photos", lastShotId) : null);
+            toast("写真を削除しました");
+          },
+        },
+      ])
+    );
+    strip.appendChild(img);
+  });
 }
 
 async function undoLastShot() {
@@ -889,7 +967,19 @@ function photoCell(ph) {
     longPressed = false;
     pressTimer = setTimeout(() => {
       longPressed = true;
-      openLightbox(ph.blob);
+      openPhotoViewer(ph.blob, [
+        {
+          label: "この写真を削除",
+          cls: "btnDanger",
+          onClick: async () => {
+            if (!confirm("この写真を削除しますか？")) return false;
+            await dbDeleteMany("photos", [ph.id]);
+            selectedIds.delete(ph.id);
+            await renderSummary();
+            toast("写真を削除しました");
+          },
+        },
+      ]);
     }, 450);
   }, { passive: true });
   const cancel = () => clearTimeout(pressTimer);
@@ -966,7 +1056,7 @@ async function sendToBox() {
     toast("報告に使う写真をタップして選んでください");
     return;
   }
-  const email = getSetting(BOX_EMAIL_KEY);
+  const email = getBoxEmail();
   if (!email) {
     alert("設定タブで、Boxのアップロード用メールアドレスを登録してください。");
     return;
@@ -1106,6 +1196,19 @@ async function markReported() {
   });
 }
 
+async function deleteSelectedPhotos() {
+  if (!selectedIds.size) {
+    toast("削除する写真をタップして選んでください");
+    return;
+  }
+  if (!confirm(`選んだ写真${selectedIds.size}枚を削除します。元に戻せません。よろしいですか？`)) return;
+  await dbDeleteMany("photos", [...selectedIds]);
+  const n = selectedIds.size;
+  selectedIds.clear();
+  await renderSummary();
+  toast(`${n}枚を削除しました`);
+}
+
 async function deleteReportPhotos() {
   if (!summaryReportId || !summaryPhotos.length) return;
   if (!confirm(`この報告の写真${summaryPhotos.length}枚を削除します。必要な写真は先に「共有・保存」で書き出してください。削除しますか？`)) return;
@@ -1123,11 +1226,35 @@ async function deleteReportPhotos() {
 let manualMeta = null; // { key:"manual", version, title, builtAt, importedAt, items, guides }
 let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう、分類画面を開いた時点で読んでおく
 
+const DEFAULT_REPORT_NOTE = "お客様に見せる写真です。ゴミ・工具・資材の散乱が写らないように";
+let reportNote = DEFAULT_REPORT_NOTE;
+
 async function loadManualMeta() {
   manualMeta = await dbGet("meta", "manual");
   searchIndex = null;
   const guides = (manualMeta && manualMeta.guides) || {};
-  PROCESSES.forEach((p) => (p.guide = guides[p.id] || ""));
+  reportNote = guides._reportNote || DEFAULT_REPORT_NOTE;
+  PROCESSES.forEach((p) => {
+    const g = guides[p.id];
+    // 古いパックは文字列1つ、新しいパックは {record, report}
+    p.guideRecord = typeof g === "string" ? g : (g && g.record) || "";
+    p.guideReport = typeof g === "object" && g ? g.report || "" : "";
+  });
+}
+
+// 撮影メモ。報告写真（お客様向け）と記録写真（マニュアル用）で撮り方が違うので、色付きラベルで分けて出す
+function guideHtml(p, opts = { report: true, record: true }) {
+  const lines = [];
+  if (opts.report) {
+    lines.push(`<div class="guideLine"><span class="kindLabel report">報告</span><span>${esc(p.guideReport || "進み具合が分かる全景")}</span></div>`);
+    lines.push(`<div class="guideNote">${esc(reportNote)}</div>`);
+  }
+  if (opts.record && p.guideRecord) {
+    lines.push(`<div class="guideLine"><span class="kindLabel record">記録</span><span>${esc(p.guideRecord)}</span></div>`);
+    // 工程カードの「撮影」は報告写真。記録写真は工程マニュアルのチェック横のカメラから撮る
+    if (opts.recordHint) lines.push(`<div class="guideHint">記録写真は「工程」タブのマニュアルで、写真要のチェック横のカメラから撮ります</div>`);
+  }
+  return lines.length ? `<div class="guideLines">${lines.join("")}</div>` : "";
 }
 
 // 6つの大分類カード（ホームと工程タブで共通）
@@ -1168,6 +1295,7 @@ let currentItemIdx = 0;
 let currentMTab = "check";
 let manualSiteId = "";     // チェックを記録する現場（空＝読むだけ）
 let siteCheckRecs = {};    // itemId → チェック記録
+let siteRecordPhotos = {}; // "項目ID|区分|チェック文" → 記録写真（最新の1枚）
 
 const MANUAL_SITE_KEY = "genba-photo-manual-site";
 
@@ -1178,8 +1306,13 @@ function allManualItems() {
 
 async function loadSiteChecks() {
   siteCheckRecs = {};
+  siteRecordPhotos = {};
   if (!manualSiteId) return;
   (await dbGetAll("checks", "siteId", manualSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
+  (await getSitePhotos(manualSiteId))
+    .filter(isRecordPhoto)
+    .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
+    .forEach((p) => (siteRecordPhotos[`${p.itemId}|${p.checkKey}`] = p));
 }
 
 function checkRecOf(itemId) {
@@ -1279,7 +1412,7 @@ function pickManualSite() {
   });
 }
 
-function renderItemStrip() {
+function renderItemStrip(scrollToActive = true) {
   const strip = $("itemStrip");
   strip.innerHTML = "";
   let lastCat = "";
@@ -1304,8 +1437,9 @@ function renderItemStrip() {
     });
     strip.appendChild(b);
   });
+  // 選んだ項目を横方向だけ中央へ寄せる（scrollIntoView は画面ごと縦にも動いてしまうので使わない）
   const active = strip.querySelector(".itemChip.active");
-  if (active) active.scrollIntoView({ inline: "center", block: "nearest" });
+  if (active && scrollToActive) strip.scrollLeft = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
 }
 
 function renderNavButtons() {
@@ -1370,13 +1504,14 @@ async function renderItem() {
         if (tx.goal.length) html += `<div class="pointSub">ゴール</div><ul class="pointList">${tx.goal.map(lineHtml).join("")}</ul>`;
         html += `</div>`;
       }
+      html += `<div class="guideBoxDetail">${guideHtml(p)}</div>`;
       const done = tx.checks.filter((c) => rec.marks["checks|" + c.text]).length;
       html +=
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
-        (tx.checks.length ? `${done}/${tx.checks.length}` : "") +
+        (tx.checks.length ? `<span id="checkProgress">${done}/${tx.checks.length}</span>` : "") +
         `<button class="miniBtn" data-go="docs">詳細を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
       html += tx.checks.length
-        ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec)).join("")}</div>`
+        ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!manualSiteId) html += `<div class="hint">上の「チェックする現場」を選ぶと、チェックを記録できます。</div>`;
       else html += `<button class="naBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? "この現場では該当なし（解除する）" : "この現場ではこの工程はない"}</button>`;
@@ -1403,7 +1538,7 @@ async function renderItem() {
       }
       html += `<div class="secHead">${icon(ICONS.checkSquare, 22)}事前準備</div>`;
       html += tx.prep.length
-        ? `<div class="checkList">${tx.prep.map((c) => checkRowHtml("prep", c, rec)).join("")}</div>`
+        ? `<div class="checkList">${tx.prep.map((c) => checkRowHtml("prep", c, rec, it)).join("")}</div>`
         : `<div class="emptyNote">事前準備はまだ登録されていません。</div>`;
     }
   } else {
@@ -1412,7 +1547,7 @@ async function renderItem() {
   }
   box.innerHTML = html;
 
-  box.querySelectorAll(".checkRow").forEach((row) => row.addEventListener("click", () => toggleMark(it, row.dataset.key)));
+  box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
   const na = box.querySelector("[data-na]");
   if (na) na.addEventListener("click", () => toggleNa(it));
   const go = box.querySelector("[data-go]");
@@ -1453,20 +1588,108 @@ function lineHtml(x) {
   return `<li>${esc(x.text)}${x.added ? ` <span class="addedDate">（${esc(x.added)}追記）</span>` : ""}</li>`;
 }
 
-function checkRowHtml(sec, c, rec) {
+function checkRowHtml(sec, c, rec, it) {
   const key = `${sec}|${c.text}`;
   const mark = rec.marks[key];
   const disabled = !manualSiteId || rec.na;
+  // 「写真要」のチェックには記録写真のカメラ。撮る前は灰色、撮ったら写真が出る
+  let cam = "";
+  if (c.photo === "要") {
+    const ph = siteRecordPhotos[`${it.id}|${key}`];
+    cam = ph
+      ? `<button class="checkCam has" data-cam="1" aria-label="記録写真を見る"><img src="${blobUrl("manual", ph.thumb)}" alt=""></button>`
+      : `<button class="checkCam" data-cam="1" aria-label="記録写真を撮る"${disabled ? " disabled" : ""}>${icon(ICONS.camera, 22)}</button>`;
+  }
   const meta = [
     c.photo === "要" ? `<span class="photoReq">${icon(ICONS.camera, 12)}写真要</span>` : "",
     c.added ? `<span class="addedDate">${esc(c.added)}追記</span>` : "",
     mark ? `<span class="checkBy">${esc(fmtDateTime(mark.at))}${mark.by ? " " + esc(mark.by) : ""}</span>` : "",
   ].join("");
   return (
-    `<button class="checkRow${mark ? " on" : ""}" data-key="${esc(key)}"${disabled ? " disabled" : ""}>` +
-    `<span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
-    `<span class="checkText">${esc(c.text)}${meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>`
+    `<div class="checkRow${mark ? " on" : ""}" data-key="${esc(key)}">` +
+    `<button class="checkMain"${disabled ? " disabled" : ""}><span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
+    `<span class="checkText">${esc(c.text)}${meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>` +
+    cam +
+    `</div>`
   );
+}
+
+function checkDefOf(it, key) {
+  const [sec, ...rest] = key.split("|");
+  const text = rest.join("|");
+  const list = (it.text && it.text[sec]) || [];
+  return list.find((c) => c.text === text);
+}
+
+function bindCheckRow(row, it) {
+  const key = row.dataset.key;
+  row.querySelector(".checkMain").addEventListener("click", () => toggleMark(it, key));
+  const cam = row.querySelector("[data-cam]");
+  if (cam) cam.addEventListener("click", () => onCheckCamera(it, key));
+}
+
+// 1行だけ描き直す（全体を描き直すと画面の位置がずれるため）
+function refreshCheckRow(it, key) {
+  const row = [...document.querySelectorAll("#itemDetail .checkRow")].find((r) => r.dataset.key === key);
+  const def = checkDefOf(it, key);
+  if (!row || !def) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = checkRowHtml(key.split("|")[0], def, checkRecOf(it.id), it);
+  const fresh = tmp.firstElementChild;
+  row.replaceWith(fresh);
+  bindCheckRow(fresh, it);
+  const prog = $("checkProgress");
+  if (prog && it.text) {
+    const rec = checkRecOf(it.id);
+    prog.textContent = `${it.text.checks.filter((c) => rec.marks["checks|" + c.text]).length}/${it.text.checks.length}`;
+  }
+}
+
+// 記録写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
+function onCheckCamera(it, key) {
+  if (!manualSiteId) {
+    toast("上の「チェックする現場」を選ぶと、記録写真を撮れます");
+    return;
+  }
+  const ph = siteRecordPhotos[`${it.id}|${key}`];
+  if (!ph) {
+    if (checkRecOf(it.id).na) return;
+    startRecordCamera(it, key);
+    return;
+  }
+  openPhotoViewer(ph.blob, [
+    { label: "撮り直す", cls: "btnPrimary", onClick: () => startRecordCamera(it, key) },
+    {
+      label: "削除",
+      cls: "btnDanger",
+      onClick: async () => {
+        if (!confirm("この記録写真を削除しますか？")) return false;
+        await dbDeleteMany("photos", [ph.id]);
+        delete siteRecordPhotos[`${it.id}|${key}`];
+        refreshCheckRow(it, key);
+        toast("記録写真を削除しました");
+      },
+    },
+  ]);
+}
+
+async function saveRecordPhoto(file) {
+  const t = recordTarget;
+  recordTarget = null;
+  try {
+    const rec = await makePhotoRecord(file, t.siteId, shootProcessId, new Date(), { kind: "record", itemId: t.itemId, checkKey: t.checkKey });
+    const mapKey = `${t.itemId}|${t.checkKey}`;
+    const old = siteRecordPhotos[mapKey];
+    await dbPut("photos", rec);
+    if (old) await dbDeleteMany("photos", [old.id]); // 撮り直しは前の1枚と入れ替える
+    if (t.siteId === manualSiteId) siteRecordPhotos[mapKey] = rec;
+    const it = groupItems[currentItemIdx];
+    if (it && it.id === t.itemId) refreshCheckRow(it, t.checkKey);
+    toast("記録写真を保存しました");
+  } catch (e) {
+    console.error(e);
+    alert("写真を保存できませんでした。もう一度撮影してください。");
+  }
 }
 
 function flowCardHtml(label, f) {
@@ -1503,10 +1726,8 @@ async function toggleMark(it, key) {
   if (rec.marks[key]) delete rec.marks[key];
   else rec.marks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
   await saveCheckRec(rec);
-  renderItemStrip();
-  const y = window.scrollY;
-  await renderItem();
-  window.scrollTo(0, y);
+  renderItemStrip(false);
+  refreshCheckRow(it, key);
 }
 
 async function toggleNa(it) {
@@ -1515,7 +1736,7 @@ async function toggleNa(it) {
   rec.naAt = new Date().toISOString();
   rec.naBy = getSetting(USER_NAME_KEY);
   await saveCheckRec(rec);
-  renderItemStrip();
+  renderItemStrip(false);
   const y = window.scrollY;
   await renderItem();
   window.scrollTo(0, y);
@@ -1801,10 +2022,29 @@ function setSetting(key, value) {
   }
 }
 
+function getBoxEmail() {
+  return BOX_UPLOAD_EMAIL || getSetting(BOX_EMAIL_KEY);
+}
+
+async function copyBoxEmail() {
+  const email = getBoxEmail();
+  if (!email) {
+    toast("先にBoxのアップロード用アドレスを入力してください");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(email);
+    toast("アドレスをコピーしました");
+  } catch (e) {
+    toast("コピーできませんでした");
+  }
+}
+
 async function renderSettings() {
   renderBrand();
   $("userNameInput").value = getSetting(USER_NAME_KEY);
-  $("boxEmailInput").value = getSetting(BOX_EMAIL_KEY);
+  $("boxEmailInput").value = getBoxEmail();
+  $("boxEmailInput").readOnly = !!BOX_UPLOAD_EMAIL;
   $("versionInfo").textContent = `バージョン ${APP_VERSION}`;
   $("manualInfo").textContent = manualMeta
     ? `${manualMeta.title}（${manualMeta.version}版・${manualMeta.items.length}項目）
@@ -2055,6 +2295,8 @@ function init() {
   $("deleteManualBtn").addEventListener("click", deleteManual);
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
+  $("copyBoxEmailBtn").addEventListener("click", copyBoxEmail);
+  $("deleteSelectedBtn").addEventListener("click", deleteSelectedPhotos);
   $("markReportedBtn").addEventListener("click", markReported);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   document.querySelector(".sheetBackdrop").addEventListener("click", () => ($("sheet").hidden = true));
