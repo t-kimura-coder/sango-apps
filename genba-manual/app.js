@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,16 +10,18 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "「記録写真」を「品質写真」に名前を変えました。並びはどこでも「品質（左）・報告（右）」にそろえています" },
+  { date: "2026-10-01", type: "feature", text: "ホームに「写真整理」の入口を戻しました。工程タブでは、今の現場のチェックと品質写真の進み具合が分かるようにしました" },
   { date: "2026-10-01", type: "feature", text: "現場をアプリ全体で1つにまとめました。ホームの「今の現場」や各画面の上の欄から切り替え・追加ができ、「現場の管理」で名前の変更・完了・削除ができます" },
-  { date: "2026-10-01", type: "feature", text: "写真タブを今の現場のアルバムにしました。報告写真・記録写真が全部見え、写真要の記録がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます" },
+  { date: "2026-10-01", type: "feature", text: "写真タブを今の現場のアルバムにしました。報告写真・品質写真が全部見え、写真要の記録がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます" },
   { date: "2026-10-01", type: "feature", text: "報告タブを工程ごとのページにしました。撮影メモと注意文を見ながら報告写真を撮り・取り込み、送る写真を選べます。工程マニュアルの「この工程の報告写真」からも開けます" },
-  { date: "2026-10-01", type: "feature", text: "記録写真を、写真ライブラリからも選べるようにしました" },
+  { date: "2026-10-01", type: "feature", text: "品質写真を、写真ライブラリからも選べるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて使う人向けに、画面の場所を照らして案内する「使い方の案内」を付けました（設定・使い方からいつでも見られます）" },
   { date: "2026-10-01", type: "feature", text: "設定にバックアップを追加しました。登録情報・チェックの記録・写真から選んで書き出し、機種変更のときに戻せます" },
   { date: "2026-10-01", type: "feature", text: "Boxへ送る報告に、期間中に付けたチェック（誰が・いつ）を含めるようにしました" },
   { date: "2026-10-01", type: "feature", text: "違う工程で撮った写真を、あとから正しい工程に変更できるようにしました" },
   { date: "2026-10-01", type: "feature", text: "初めて開いたときに、お名前の登録を案内するようにしました（チェックの記録に名前が残ります）" },
-  { date: "2026-10-01", type: "feature", text: "写真を「報告写真（お客様向け）」と「記録写真（マニュアル用）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
+  { date: "2026-10-01", type: "feature", text: "写真を「報告写真（お客様向け）」と「品質写真（マニュアル用）」に分け、それぞれの撮影メモを色付きのラベルで表示するようにしました" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルの「写真要」のチェック横にカメラを付けました。撮ると写真が表示され、タップで確認・撮り直し・削除ができます" },
   { date: "2026-10-01", type: "feature", text: "写真を削除できるようにしました（報告の写真一覧で長押し、または選んで「削除」）" },
   { date: "2026-10-01", type: "fix", text: "チェックを付けると画面が一番上に戻ってしまう不具合を直しました" },
@@ -258,11 +260,11 @@ async function getSites() {
 async function getSitePhotos(siteId) {
   return dbGetAll("photos", "siteId", siteId);
 }
-// 写真の種別：kind = "report"（お客様向けの報告写真。種別なしの古い写真もこちら）/ "record"（マニュアルが求める記録写真）
+// 写真の種別：kind = "report"（お客様向けの報告写真。種別なしの古い写真もこちら）/ "record"（マニュアルが求める品質写真）
 function isRecordPhoto(p) {
   return p.kind === "record";
 }
-// 今回の報告に入る写真（報告写真と「報告に使う」を付けた記録写真のうち、まだ報告済みにしていないもの）
+// 今回の報告に入る写真（報告写真と「報告に使う」を付けた品質写真のうち、まだ報告済みにしていないもの）
 function unreported(photos) {
   return photos.filter((p) => !p.reportId && (!isRecordPhoto(p) || p.forReport));
 }
@@ -692,7 +694,7 @@ async function renderSiteManage() {
 function photoCell(ph, opts) {
   const cell = document.createElement("button");
   cell.className = "photoCell" + (opts.selected && opts.selected.has(ph.id) ? " selected" : "");
-  const kind = isRecordPhoto(ph) ? '<span class="cellKind record">記録</span>' : '<span class="cellKind report">報告</span>';
+  const kind = isRecordPhoto(ph) ? '<span class="cellKind record">品質</span>' : '<span class="cellKind report">報告</span>';
   cell.innerHTML =
     `<img src="${blobUrl(opts.bucket, ph.thumb)}" alt="">` +
     `<span class="check">${icon(ICONS.check, 18, 3)}</span>` +
@@ -827,7 +829,7 @@ function goAlbum() {
   showView("albumView");
 }
 
-// 写真要のチェックのうち、記録写真が撮れている数（該当なしにした工程は数えない）
+// 写真要のチェックのうち、品質写真が撮れている数（該当なしにした工程は数えない）
 async function recordCoverage(siteId) {
   if (!manualMeta) return null;
   const recs = Object.fromEntries((await dbGetAll("checks", "siteId", siteId)).map((r) => [r.itemId, r]));
@@ -867,15 +869,15 @@ async function renderAlbum() {
   const nReport = all.filter((p) => !isRecordPhoto(p)).length;
   const nRecord = all.length - nReport;
   $("albumStats").innerHTML =
+    `<div class="statBox"><span class="kindLabel record">品質</span><b>${nRecord}</b>枚</div>` +
     `<div class="statBox"><span class="kindLabel report">報告</span><b>${nReport}</b>枚</div>` +
-    `<div class="statBox"><span class="kindLabel record">記録</span><b>${nRecord}</b>枚</div>` +
     (cov
-      ? `<div class="statBox wide"><span>写真要の記録</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span></div>`
+      ? `<div class="statBox wide"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span></div>`
       : "");
 
   const kinds = $("albumKinds");
   kinds.innerHTML = "";
-  [["all", "すべて"], ["report", "報告写真"], ["record", "記録写真"]].forEach(([k, label]) => {
+  [["all", "すべて"], ["record", "品質写真"], ["report", "報告写真"]].forEach(([k, label]) => {
     const b = document.createElement("button");
     b.className = "segBtn" + (albumState.kind === k ? " active" : "");
     b.textContent = label;
@@ -912,7 +914,7 @@ async function renderAlbum() {
   albumPhotos.sort(sorters[albumState.sort]);
   $("albumSort").value = albumState.sort;
   const gName = albumState.group === "all" ? "" : groupOf(albumState.group).name;
-  const kName = { all: "写真", report: "報告写真", record: "記録写真" }[albumState.kind];
+  const kName = { all: "写真", report: "報告写真", record: "品質写真" }[albumState.kind];
   $("albumHeading").textContent = `${gName ? gName + "の" : ""}${kName}`;
   $("albumCount").textContent = `${albumPhotos.length}枚あります。`;
   albumPhotos.forEach((ph) =>
@@ -935,7 +937,7 @@ async function renderAlbum() {
   if (!albumPhotos.length) {
     empty.innerHTML = all.length
       ? '<div class="emptyText">この条件の写真はありません。</div>'
-      : '<div class="emptyTitle">まだ写真がありません</div><div class="emptyText">記録写真は工程マニュアルの「写真要」のチェック横、報告写真は報告タブの工程ページから撮れます。</div>';
+      : '<div class="emptyTitle">まだ写真がありません</div><div class="emptyText">品質写真は工程マニュアルの「写真要」のチェック横、報告写真は報告タブの工程ページから撮れます。</div>';
   }
   [...albumSel].forEach((id) => {
     if (!all.some((p) => p.id === id)) albumSel.delete(id);
@@ -952,7 +954,7 @@ async function albumSelected() {
   return (await Promise.all([...albumSel].map((id) => dbGet("photos", id)))).filter(Boolean);
 }
 
-// 選んだ写真を「送る写真」にする（記録写真も報告に使えるようにする）
+// 選んだ写真を「送る写真」にする（品質写真も報告に使えるようにする）
 async function albumUseForReport() {
   const photos = await albumSelected();
   const usable = photos.filter((p) => !p.reportId);
@@ -992,7 +994,7 @@ let lastShotId = null;
 let libraryProcessId = null;
 let shotFrom = "report"; // 撮影を始めた画面（"manual" なら工程マニュアル、"report" なら報告の工程ページに戻る）
 
-// 記録写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
+// 品質写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
 let recordTarget = null;
 
 function startRecordCamera(it, key) {
@@ -1157,7 +1159,7 @@ async function onLibraryPicked() {
 }
 
 /* ---------- 報告タブ：今回の期間の工程一覧 ---------- */
-// 報告に使う写真（報告候補）＝報告写真 ＋ 写真タブで「報告に使う」を付けた記録写真。そのうち sendPick の付いたものを送る
+// 報告に使う写真（報告候補）＝報告写真 ＋ 写真タブで「報告に使う」を付けた品質写真。そのうち sendPick の付いたものを送る
 
 let reportProcId = null;
 let reportPastId = null;
@@ -1620,30 +1622,58 @@ async function loadManualMeta() {
   });
 }
 
-// 撮影メモ。報告写真（お客様向け）と記録写真（マニュアル用）で撮り方が違うので、色付きラベルで分けて出す
+// 撮影メモ。報告写真（お客様向け）と品質写真（マニュアル用）で撮り方が違うので、色付きラベルで分けて出す
 function guideHtml(p, opts = { report: true, record: true }) {
   const lines = [];
+  if (opts.record && p.guideRecord) {
+    lines.push(`<div class="guideLine"><span class="kindLabel record">品質</span><span>${esc(p.guideRecord)}</span></div>`);
+    // 工程カードの「撮影」は報告写真。品質写真は工程マニュアルのチェック横のカメラから撮る
+    if (opts.recordHint) lines.push(`<div class="guideHint">品質写真は「工程」タブのマニュアルで、写真要のチェック横のカメラから撮ります</div>`);
+  }
   if (opts.report) {
     lines.push(`<div class="guideLine"><span class="kindLabel report">報告</span><span>${esc(p.guideReport || "進み具合が分かる全景")}</span></div>`);
     lines.push(`<div class="guideNote">${esc(reportNote)}</div>`);
   }
-  if (opts.record && p.guideRecord) {
-    lines.push(`<div class="guideLine"><span class="kindLabel record">記録</span><span>${esc(p.guideRecord)}</span></div>`);
-    // 工程カードの「撮影」は報告写真。記録写真は工程マニュアルのチェック横のカメラから撮る
-    if (opts.recordHint) lines.push(`<div class="guideHint">記録写真は「工程」タブのマニュアルで、写真要のチェック横のカメラから撮ります</div>`);
-  }
   return lines.length ? `<div class="guideLines">${lines.join("")}</div>` : "";
 }
 
-// 6つの大分類カード（ホームと工程タブで共通）
-function renderGroupGrid(container) {
+// 大分類ごとの進み具合（今の現場のチェックと品質写真。該当なしにした項目は数えない）
+function groupProgress(g) {
+  const out = { checks: 0, checksDone: 0, photos: 0, photosDone: 0 };
+  if (!manualMeta || !currentSiteId) return out;
+  manualMeta.items
+    .filter((it) => g.cats.includes(it.cat))
+    .forEach((it) => {
+      const rec = siteCheckRecs[it.id];
+      if (rec && rec.na) return;
+      ((it.text && it.text.checks) || []).forEach((c) => {
+        const key = "checks|" + c.text;
+        out.checks++;
+        if (rec && rec.marks[key]) out.checksDone++;
+        if (c.photo === "要") {
+          out.photos++;
+          if (siteRecordPhotos[`${it.id}|${key}`]) out.photosDone++;
+        }
+      });
+    });
+  return out;
+}
+
+// 6つの大分類カード（ホームと工程タブで共通）。withProgress なら今の現場の進み具合も出す
+function renderGroupGrid(container, withProgress = false) {
   container.innerHTML = "";
   GROUPS.forEach((g) => {
     const b = document.createElement("button");
     b.className = "groupCard";
+    const pr = withProgress ? groupProgress(g) : null;
     b.innerHTML =
       `<span class="groupArt">${groupArt(g)}</span>` +
       `<span class="groupName">${esc(g.name)}<span class="chev">${icon(ICONS.chevron, 18, 2.6)}</span></span>` +
+      (pr && pr.checks
+        ? `<span class="groupProg"><span>チェック <b>${pr.checksDone}</b>/${pr.checks}</span>` +
+          (pr.photos ? `<span><span class="kindLabel record">品質</span><b>${pr.photosDone}</b>/${pr.photos}</span>` : "") +
+          `</span>`
+        : "") +
       `<span class="groupSub">${esc(g.sub)}</span>`;
     b.addEventListener("click", () => openGroup(g.id));
     container.appendChild(b);
@@ -1660,11 +1690,13 @@ function manualEmptyCard() {
   return card;
 }
 
-function renderManual() {
+async function renderManual() {
   const empty = $("manualEmpty");
   empty.innerHTML = "";
   if (!manualMeta) empty.appendChild(manualEmptyCard());
-  renderGroupGrid($("manualGroups"));
+  await refreshSites();
+  await loadSiteChecks();
+  renderGroupGrid($("manualGroups"), !!currentSiteId);
 }
 
 let currentGroupId = "g1";
@@ -1672,7 +1704,7 @@ let groupItems = [];       // 表示中の大分類に含まれる項目（17分
 let currentItemIdx = 0;
 let currentMTab = "check";
 let siteCheckRecs = {};    // itemId → チェック記録
-let siteRecordPhotos = {}; // "項目ID|区分|チェック文" → 記録写真（最新の1枚）
+let siteRecordPhotos = {}; // "項目ID|区分|チェック文" → 品質写真（最新の1枚）
 
 
 function allManualItems() {
@@ -1919,13 +1951,13 @@ function checkRowHtml(sec, c, rec, it) {
   const key = `${sec}|${c.text}`;
   const mark = rec.marks[key];
   const disabled = !currentSiteId || rec.na;
-  // 「写真要」のチェックには記録写真のカメラ。撮る前は灰色、撮ったら写真が出る
+  // 「写真要」のチェックには品質写真のカメラ。撮る前は灰色、撮ったら写真が出る
   let cam = "";
   if (c.photo === "要") {
     const ph = siteRecordPhotos[`${it.id}|${key}`];
     cam = ph
-      ? `<button class="checkCam has" data-cam="1" aria-label="記録写真を見る"><img src="${blobUrl("manual", ph.thumb)}" alt=""></button>`
-      : `<button class="checkCam" data-cam="1" aria-label="記録写真を撮る"${disabled ? " disabled" : ""}>${icon(ICONS.camera, 22)}</button>`;
+      ? `<button class="checkCam has" data-cam="1" aria-label="品質写真を見る"><img src="${blobUrl("manual", ph.thumb)}" alt=""></button>`
+      : `<button class="checkCam" data-cam="1" aria-label="品質写真を撮る"${disabled ? " disabled" : ""}>${icon(ICONS.camera, 22)}</button>`;
   }
   const meta = [
     c.photo === "要" ? `<span class="photoReq">${icon(ICONS.camera, 12)}写真要</span>` : "",
@@ -1972,16 +2004,16 @@ function refreshCheckRow(it, key) {
   }
 }
 
-// 記録写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
+// 品質写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
 function onCheckCamera(it, key) {
   if (!currentSiteId) {
-    toast("上の「今の現場」から現場を登録すると、記録写真を撮れます");
+    toast("上の「今の現場」から現場を登録すると、品質写真を撮れます");
     return;
   }
   const ph = siteRecordPhotos[`${it.id}|${key}`];
   if (!ph) {
     if (checkRecOf(it.id).na) return;
-    openSheet("記録写真", (body, close) => {
+    openSheet("品質写真", (body, close) => {
       body.appendChild(
         sheetButton("撮影する", "btnPrimary btnLarge", () => {
           close();
@@ -2005,11 +2037,11 @@ function onCheckCamera(it, key) {
       label: "削除",
       cls: "btnDanger",
       onClick: async () => {
-        if (!confirm("この記録写真を削除しますか？")) return false;
+        if (!confirm("この品質写真を削除しますか？")) return false;
         await dbDeleteMany("photos", [ph.id]);
         delete siteRecordPhotos[`${it.id}|${key}`];
         refreshCheckRow(it, key);
-        toast("記録写真を削除しました");
+        toast("品質写真を削除しました");
       },
     },
   ]);
@@ -2027,7 +2059,7 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
     if (t.siteId === currentSiteId) siteRecordPhotos[mapKey] = rec;
     const it = groupItems[currentItemIdx];
     if (it && it.id === t.itemId) refreshCheckRow(it, t.checkKey);
-    toast("記録写真を保存しました");
+    toast("品質写真を保存しました");
   } catch (e) {
     console.error(e);
     alert("写真を保存できませんでした。もう一度撮影してください。");
@@ -2415,6 +2447,7 @@ async function renderDash() {
       `<span class="siteSwitch">${icon(ICONS.plus, 18)}追加</span></button>`;
     card.firstElementChild.addEventListener("click", addSite);
     $("dashReportSub").textContent = "撮った写真から報告用を選べます。";
+    $("dashAlbumSub").textContent = "撮った写真を、工程ごとに確認・整理します。";
   } else {
     const all = await getSitePhotos(site.id);
     const cands = unreported(all);
@@ -2426,6 +2459,10 @@ async function renderDash() {
       (cov ? ` ・ 写真要 ${cov.done}/${cov.total}` : "") +
       `</span></span><span class="siteSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
     card.firstElementChild.addEventListener("click", openSiteSwitcher);
+    const nRec = all.filter(isRecordPhoto).length;
+    $("dashAlbumSub").textContent = all.length
+      ? `品質写真 ${nRec}枚・報告写真 ${all.length - nRec}枚を、工程ごとに確認できます。`
+      : "撮った写真を、工程ごとに確認・整理します。";
     const picks = cands.filter((p) => p.sendPick).length;
     $("dashReportSub").textContent = cands.length
       ? `今回の写真 ${cands.length} 枚（送る写真 ${picks} 枚）から報告できます。`
@@ -2846,7 +2883,7 @@ function init() {
     b.addEventListener("click", openSettings);
   });
   document.querySelectorAll("[data-icon]").forEach((el) => {
-    const size = el.classList.contains("tabIcon") ? 24 : el.classList.contains("reportCardIcon") ? 40 : el.classList.contains("bannerIcon") ? 28 : 20;
+    const size = el.classList.contains("tabIcon") ? 24 : el.classList.contains("reportCardIcon") ? 40 : el.classList.contains("bannerIcon") || el.classList.contains("albumCardIcon") ? 28 : 20;
     el.innerHTML = icon(ICONS[el.dataset.icon], size);
   });
 
@@ -2895,6 +2932,7 @@ function init() {
   });
   updateBellDot();
   $("dashReportBtn").addEventListener("click", goReport);
+  $("dashAlbumBtn").addEventListener("click", goAlbum);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
   $("groupShootBtn").innerHTML = icon(ICONS.camera, 24);

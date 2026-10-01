@@ -550,7 +550,7 @@ svg { flex: none; }
 /* ---------- 今の現場 ---------- */
 .siteBar .siteSwitch, .curSiteCard .siteSwitch { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-xs); font-weight: 700; color: var(--color-primary); }
 .siteBar > span:not(.siteSwitch) { flex: none; }
-.curSiteCard { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; padding: var(--space-md) var(--space-lg); border-radius: var(--radius-md); border: 1.5px solid var(--color-primary); background: var(--color-surface); box-shadow: var(--shadow-card); position: relative; z-index: 5; margin-top: calc(-1 * var(--space-lg)); }
+.curSiteCard { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; padding: var(--space-md) var(--space-lg); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); position: relative; z-index: 5; margin-top: calc(-1 * var(--space-lg)); }
 .curSiteCard.empty { border-style: dashed; }
 .curSiteIcon { flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--color-primary-soft); color: var(--color-primary); display: flex; align-items: center; justify-content: center; }
 .curSiteText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -601,3 +601,12 @@ svg { flex: none; }
 #reportBody .processCards { margin-top: var(--space-xs); }
 #reportBody .periodBar { margin-bottom: var(--space-sm); }
 .statBox:not(.wide) { flex-wrap: nowrap; white-space: nowrap; }
+
+/* ホーム：写真整理の入口 */
+.albumCard { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; border-radius: var(--radius-md); padding: var(--space-lg); background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-card); }
+.albumCardIcon { flex: none; width: 52px; height: 52px; border-radius: 14px; background: var(--color-primary-soft); color: var(--color-primary); display: flex; align-items: center; justify-content: center; }
+.albumCard .chev { color: var(--color-text-muted); }
+/* 工程タブ：大分類ごとの進み具合 */
+.groupProg { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 0 4px 6px; font-size: 10.5px; color: var(--color-text-sub); }
+.groupProg b { color: var(--color-heading); font-size: var(--fs-sm); }
+.groupProg .kindLabel { font-size: 9.5px; padding: 0 5px; margin-right: 3px; }
