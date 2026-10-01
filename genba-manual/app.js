@@ -1,17 +1,18 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
-const BOX_UPLOAD_EMAIL = "";
+const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.現場ナビ/報告/社内報告」のアップロード用（アップロード専用なので公開しても読まれない）
 
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "報告の送り先（Boxのアドレス）を最初から入れました。設定での入力は不要です。報告のファイル名に、送った人の名前が入るようにしました" },
   { date: "2026-10-02", type: "feature", text: "上司からの返信を受け取れるようになりました。ホームの「上司からの返信」→「返信を取り込む」で、Boxの「返信」フォルダのファイルを選ぶと、気づき・疑問メモの下に返信が表示されます" },
   { date: "2026-10-02", type: "feature", text: "報告に、6つの工程の進み具合と、疑問を解決済みにしたことも入るようにしました（上司が報告をまとめて見られる仕組みの準備です）" },
   { date: "2026-10-01", type: "feature", text: "工程タブの最初の画面を見やすくしました。6つの工程ごとに、今の現場のチェックと品質写真の進み具合が大きく出ます" },
@@ -1716,7 +1717,7 @@ async function sendToBox() {
           checks: checkSummary,
           progress,
         };
-        const jsonName = safeFileName(`報告_${site.name}_${start}_${end}.json`);
+        const jsonName = safeFileName(`報告_${getSetting(USER_NAME_KEY) || "名前なし"}_${site.name}_${start}_${end}.json`); // Boxで一覧した時に誰の報告か分かるよう名前も入れる
         const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
         const files = [jsonFile, ...entries.map((e) => e.file)];
         if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
