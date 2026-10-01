@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "";
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "報告に、6つの工程の進み具合と、疑問を解決済みにしたことも入るようにしました（上司が報告をまとめて見られる仕組みの準備です）" },
   { date: "2026-10-01", type: "feature", text: "工程タブの最初の画面を見やすくしました。6つの工程ごとに、今の現場のチェックと品質写真の進み具合が大きく出ます" },
   { date: "2026-10-01", type: "feature", text: "「疑問」のメモに「回答待ち／解決済み」を付けられるようにしました。報告にも状態が入ります" },
   { date: "2026-10-01", type: "feature", text: "マニュアル改訂に備えて、チェックに固定の番号を付けました。新しいマニュアル（2026版の再配布分）を取り込むと、今までのチェックと品質写真はそのまま引き継がれます" },
@@ -858,7 +859,7 @@ function photoFiles(site, photos) {
   return sorted.map((p) => {
     const short = processOf(p.processId).short;
     counters[short] = (counters[short] || 0) + 1;
-    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}.jpg`);
+    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}_${p.id.slice(0, 6)}.jpg`);
     return { photo: p, file: new File([p.blob], name, { type: "image/jpeg" }) };
   });
 }
@@ -1571,12 +1572,15 @@ async function buildCheckSummary(siteId, start, end) {
       .sort((a, b) => (a.at < b.at ? -1 : 1));
     const na = rec.na && inPeriod(rec.naAt);
     const notes = (rec.notes || [])
-      .filter((n) => inPeriod(n.at))
+      .filter((n) => inPeriod(n.at) || inPeriod(n.updatedAt))
       .map((n) => ({
         id: n.id,
         type: (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label,
         type_id: n.type,
         status: n.type === "question" ? n.status || "open" : "",
+        resolved_at: n.resolvedAt || "",
+        resolved_by: n.resolvedBy || "",
+        updated_at: n.updatedAt || n.at,
         text: n.text,
         at: n.at,
         by: n.by || "",
@@ -1635,6 +1639,13 @@ async function sendToBox() {
   const photoBytes = entries.reduce((s, e) => s + e.file.size, 0);
   const checkSummary = await buildCheckSummary(site.id, start, end);
   const checkCount = checkSummary.reduce((n, x) => n + x.checked.length, 0);
+  // 6工程の進み具合（送信時点の累計。管理者側で現場ごとの進捗を出すため）
+  if (site.id !== currentSiteId) await setCurrentSite(site.id);
+  await loadSiteChecks();
+  const progress = GROUPS.map((g) => {
+    const pr = groupProgress(g);
+    return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, photos_done: pr.photosDone, photos_total: pr.photos };
+  });
 
   openSheet("Boxへ送信", (body, close) => {
     const box = document.createElement("div");
@@ -1677,7 +1688,7 @@ async function sendToBox() {
       sheetButton("送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
-          schema: 3, // 2: checks（期間中に付けたチェック）、3: 番号（site_id・item_id・チェックid・メモid）と疑問の状態、manual_version
+          schema: 4, // 2: checks（期間中に付けたチェック）、3: 番号（site_id・item_id・チェックid・メモid）と疑問の状態、4: progress（6工程の累計）・写真id・解決日時
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -1689,6 +1700,7 @@ async function sendToBox() {
           processes,
           memo: memo.value.trim(),
           photos: entries.map((e) => ({
+            id: e.photo.id,
             file: e.file.name,
             kind: isRecordPhoto(e.photo) ? "record" : "report",
             process_no: processOf(e.photo.processId).no,
@@ -1700,6 +1712,7 @@ async function sendToBox() {
             check: isRecordPhoto(e.photo) && e.photo.checkKey ? checkTextOf(e.photo.itemId, e.photo.checkKey) : "",
           })),
           checks: checkSummary,
+          progress,
         };
         const jsonName = safeFileName(`報告_${site.name}_${start}_${end}.json`);
         const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });

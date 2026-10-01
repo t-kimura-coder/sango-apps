@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f7f5ef">
+<title>報告ビューア</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<header class="appHeader">
+  <a class="brand" href="#/home">
+    <img src="icon-96.png" class="brandIcon" alt="">
+    <span id="appName" class="brandName">報告ビューア</span>
+  </a>
+  <div class="headerSpacer"></div>
+  <label class="headerSearch">
+    <span data-icon="search"></span>
+    <input id="globalSearch" type="search" placeholder="現場名・担当者名で検索" autocomplete="off">
+  </label>
+  <button id="reloadBtn" class="iconBtn" title="報告フォルダを読み直す" aria-label="読み直す"></button>
+</header>
+
+<div class="appBody">
+  <nav class="sideNav">
+    <a href="#/home" data-nav="home"><span data-icon="home"></span>ホーム</a>
+    <a href="#/notes" data-nav="notes"><span data-icon="chat"></span>疑問・気づき<span id="navBadge" class="navBadge" hidden></span></a>
+    <a href="#/sites" data-nav="sites"><span data-icon="building"></span>監督・現場</a>
+    <a href="#/settings" data-nav="settings"><span data-icon="gear"></span>設定</a>
+    <div id="sourceInfo" class="sourceInfo"></div>
+  </nav>
+  <main id="main" class="main"></main>
+</div>
+
+<!-- 返信を書く（右から開くパネル） -->
+<div id="drawer" class="drawer" hidden>
+  <div class="drawerBackdrop"></div>
+  <aside class="drawerPanel" role="dialog" aria-label="返信を書く">
+    <div class="drawerHead">
+      <span data-icon="reply"></span>
+      <div>
+        <div class="drawerTitle">返信を書く</div>
+        <div class="drawerSub">現場の疑問や相談に返信して、現場の作業をサポートしましょう。</div>
+      </div>
+      <button id="drawerClose" class="iconBtn" aria-label="閉じる"></button>
+    </div>
+    <div id="drawerBody" class="drawerBody"></div>
+    <div id="drawerFoot" class="drawerFoot"></div>
+  </aside>
+</div>
+
+<div id="lightbox" class="lightbox" hidden><img id="lightboxImg" alt=""></div>
+<div id="toast" class="toast" hidden></div>
+<input id="folderInput" type="file" webkitdirectory multiple hidden>
+
+<script src="demo.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
