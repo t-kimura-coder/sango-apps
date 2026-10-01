@@ -391,6 +391,22 @@ svg { flex: none; }
 /* 下部に操作バーがある画面は、バーがタブの真上に来るよう余白を詰める */
 .view:has(> .bottomActions) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 
+/* ---------- 工程の検索 ---------- */
+.searchBox { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: 50px; padding: 0 var(--space-lg); border-radius: 25px; border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); color: var(--color-text-muted); font-size: var(--fs-md); text-align: left; }
+.searchBox svg { color: var(--color-primary); }
+#dashView .searchBox { position: relative; z-index: 5; margin-top: calc(-1 * var(--space-lg)); }
+.searchBar { gap: 0; }
+.searchInput { flex: 1; min-width: 0; height: 42px; margin-right: var(--space-sm); padding: 0 var(--space-lg); border-radius: 21px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); font-size: 16px; }
+.searchResults { display: flex; flex-direction: column; gap: var(--space-sm); }
+.searchItem { display: flex; align-items: center; gap: var(--space-md); width: 100%; text-align: left; padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.searchItem .itemChipNo { background: var(--color-primary-soft); color: var(--color-primary); }
+.searchText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.searchName { font-weight: 800; color: var(--color-heading); }
+.searchMeta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--color-text-muted); }
+.searchSnippet { font-size: var(--fs-xs); color: var(--color-text-sub); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.searchSnippet mark { background: var(--color-wood-soft); color: var(--color-wood-text); border-radius: 3px; padding: 0 1px; }
+.searchCount { font-size: var(--fs-xs); color: var(--color-text-muted); }
+
 /* ---------- 工程マニュアル（項目の詳細） ---------- */
 .groupBody { gap: var(--space-md); }
 .groupBody .groupHero { min-height: 120px; }

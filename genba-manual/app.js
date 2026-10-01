@@ -1,11 +1,12 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 11;
+const APP_VERSION = 13;
 
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-01", type: "feature", text: "工程の検索を追加しました。ホームと工程タブの検索欄から、工程名やチェック項目の言葉で探せます（ひらがな可、「建て方」でも上棟が見つかります）" },
   { date: "2026-10-01", type: "feature", text: "工程マニュアルを見やすくしました。項目ごとに概要・ポイント・チェックポイント・作業の流れ・参考図を表示し、現場ごとにチェックを記録できます（マニュアルを最新版に取り込み直してください）" },
   { date: "2026-09-30", type: "feature", text: "お知らせと使い方のページを追加しました（ホーム右上のベルと？マーク）" },
   { date: "2026-09-30", type: "feature", text: "「現場ナビ」として公開しました。工程ごとのマニュアル閲覧、写真の撮りだめ、報告用の写真選択とBoxへの送信ができます" },
@@ -93,6 +94,7 @@ const ICONS = {
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
   checkSquare: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12l3 3 5-6"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
@@ -393,6 +395,7 @@ const VIEW_TABS = {
   summaryView: "report",
   settingsView: "",
   announceView: "",
+  searchView: "",
   helpView: "",
 };
 let currentView = "dashView";
@@ -1121,6 +1124,7 @@ let activeSitesCache = []; // 撮影ボタンを同期処理で押せるよう�
 
 async function loadManualMeta() {
   manualMeta = await dbGet("meta", "manual");
+  searchIndex = null;
   const guides = (manualMeta && manualMeta.guides) || {};
   PROCESSES.forEach((p) => (p.guide = guides[p.id] || ""));
 }
@@ -1523,6 +1527,141 @@ function shootFromGroup() {
   else shootFromManual(groupOf(currentGroupId).cats[0]);
 }
 
+/* ---------- 工程の検索 ---------- */
+// 初心者が現場で聞いた工程名からでもマニュアルに辿り着けるよう、項目名だけでなく
+// 概要・ポイント・チェック項目の文章からも探す。ひらがな/カタカナ・全角/半角は区別しない。
+// 言い換え（建て方＝上棟 など）はマニュアルパックの synonyms で足していく
+
+let searchIndex = null;
+
+function normText(s) {
+  return String(s || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+    .replace(/[\s・、。,.（）()「」『』【】\-－ー〜~]/g, "");
+}
+
+function buildSearchIndex() {
+  if (!manualMeta) return [];
+  return allManualItems().map((it) => {
+    const tx = it.text || {};
+    const p = processOf(it.cat);
+    const g = groupOfProcess(it.cat);
+    const fields = [
+      { label: "", raw: it.name, w: 10 },
+      { label: "", raw: `${p.name} ${g.name}`, w: 3 },
+      { label: "概要", raw: tx.summary || "", w: 3 },
+      ...(tx.purpose || []).concat(tx.goal || []).map((x) => ({ label: "ポイント", raw: x.text, w: 2 })),
+      ...(tx.checks || []).map((x) => ({ label: "チェック", raw: x.text, w: 2 })),
+      ...(tx.prep || []).map((x) => ({ label: "事前準備", raw: x.text, w: 1 })),
+    ].filter((f) => f.raw);
+    fields.forEach((f) => (f.n = normText(f.raw)));
+    return { it, g, fields, no: normText(it.no) };
+  });
+}
+
+// 入力語＋言い換え辞書で同じ組にある語（部分一致で置き換えたものも含む）
+function expandTerm(term) {
+  const n = normText(term);
+  const out = new Set([n]);
+  ((manualMeta && manualMeta.synonyms) || []).forEach((group) => {
+    const words = group.map(normText).filter(Boolean);
+    words.forEach((w) => {
+      if (n.includes(w)) words.forEach((other) => out.add(n.replace(w, other)));
+    });
+  });
+  return [...out].filter(Boolean);
+}
+
+function searchManual(query) {
+  if (!searchIndex) searchIndex = buildSearchIndex();
+  const terms = query.split(/[\s　]+/).filter(Boolean).map(expandTerm).filter((v) => v.length);
+  if (!terms.length) return [];
+  const results = [];
+  searchIndex.forEach((entry, order) => {
+    let score = 0;
+    let hit = null;
+    for (const variants of terms) {
+      let best = 0;
+      if (variants.some((v) => entry.no && entry.no === v)) best = 12;
+      for (const f of entry.fields) {
+        const v = variants.find((x) => f.n.includes(x));
+        if (!v) continue;
+        let w = f.w;
+        if (v !== variants[0]) w *= 0.7; // 言い換えで当たったものは、入力した言葉そのままより下に出す
+        else if (f.w === 10 && f.n.startsWith(v)) w += 4;
+        if (w > best) best = w;
+        if (!hit && f.label) hit = { f, v };
+      }
+      if (!best) return; // すべての語に当てはまる項目だけ出す
+      score += best;
+    }
+    results.push({ entry, score, hit, order });
+  });
+  return results.sort((a, b) => b.score - a.score || a.order - b.order).slice(0, 50);
+}
+
+// 正規化した文字で当たった箇所を、元の文字列の上で強調する
+function highlight(raw, v) {
+  const chars = [...raw];
+  const map = [];
+  let norm = "";
+  chars.forEach((c, i) => {
+    const n = normText(c);
+    for (const x of n) {
+      norm += x;
+      map.push(i);
+    }
+  });
+  const pos = norm.indexOf(v);
+  if (pos < 0) return esc(raw);
+  const start = map[pos];
+  const end = map[pos + v.length - 1] + 1;
+  return esc(chars.slice(0, start).join("")) + "<mark>" + esc(chars.slice(start, end).join("")) + "</mark>" + esc(chars.slice(end).join(""));
+}
+
+function renderSearch() {
+  const q = $("searchInput").value.trim();
+  const box = $("searchResults");
+  box.innerHTML = "";
+  $("searchHint").hidden = !!q;
+  if (!manualMeta) {
+    box.appendChild(manualEmptyCard());
+    return;
+  }
+  if (!q) return;
+  const results = searchManual(q);
+  const count = document.createElement("div");
+  count.className = "searchCount";
+  count.textContent = results.length ? `${results.length}件見つかりました` : "見つかりませんでした。別の言葉や、短い言葉で試してください。";
+  box.appendChild(count);
+  results.forEach(({ entry, hit }) => {
+    const { it, g } = entry;
+    const b = document.createElement("button");
+    b.className = "searchItem";
+    b.innerHTML =
+      `<span class="itemChipNo">${esc(it.no || "・")}</span>` +
+      `<span class="searchText"><span class="searchName">${esc(it.name)}</span>` +
+      `<span class="searchMeta"><span class="pill pillWood">${esc(g.name)}</span>${esc(processOf(it.cat).name)}</span>` +
+      (hit ? `<span class="searchSnippet">${esc(hit.f.label)}：${highlight(hit.f.raw, hit.v)}</span>` : "") +
+      `</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.addEventListener("click", () => {
+      $("searchInput").blur();
+      openGroup(g.id, it.id);
+    });
+    box.appendChild(b);
+  });
+}
+
+// iPhoneでキーボードを出すため、タップの処理の中で同期的にフォーカスする
+function openSearch() {
+  openSubView("searchView");
+  const input = $("searchInput");
+  input.focus();
+  renderSearch();
+}
+
 /* ---------- 最近見た項目（ホームの「前回の続き」） ---------- */
 
 const RECENT_KEY = "genba-photo-recent";
@@ -1577,6 +1716,7 @@ async function onManualPicked() {
       importedAt: new Date().toISOString(),
       items: pack.items,
       guides: pack.guides || {},
+      synonyms: pack.synonyms || [],
       schema: pack.schema || 1,
     });
     await loadManualMeta();
@@ -1753,7 +1893,7 @@ function goReport() {
 }
 
 // 設定・お知らせ・使い方は、タブの外にある画面。戻るで元の画面に帰る
-const SUB_VIEWS = ["settingsView", "announceView", "helpView"];
+const SUB_VIEWS = ["settingsView", "announceView", "helpView", "searchView"];
 function openSubView(id) {
   if (!SUB_VIEWS.includes(currentView)) viewBeforeSettings = currentView;
   showView(id);
@@ -1878,6 +2018,11 @@ function init() {
   $("shareSelectedBtn").addEventListener("click", shareSelected);
   $("groupShootBtn").innerHTML = icon(ICONS.camera, 24);
   $("manualSiteBar").addEventListener("click", pickManualSite);
+  document.querySelectorAll(".openSearchBtn").forEach((b) => b.addEventListener("click", openSearch));
+  $("searchInput").addEventListener("input", renderSearch);
+  $("searchInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("searchInput").blur();
+  });
   document.querySelectorAll(".itemTab").forEach((t) => t.addEventListener("click", () => switchMTab(t.dataset.mtab)));
   $("manualInput").addEventListener("change", onManualPicked);
   $("importManualBtn").addEventListener("click", () => $("manualInput").click());
