@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 // 工事看板のイラスト（art/site-board.webp）が届いたら true にする。届くまではアイコンで代用
 const HAS_SITE_BOARD = true;
 
@@ -12,6 +12,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-02", type: "feature", text: "ホームを作り直しました。担当現場が全部並び、それぞれ今どの工程かが分かります。その下に「やること」（上司からの返信・報告日・撮り忘れの品質写真）と「次に見る項目」が出ます。6つの工程は下の「工程」タブから開けます" },
   { date: "2026-10-02", type: "feature", text: "現場に「工事番号」と「担当者（苗字）」を登録できるようにしました。同じ現場を二人で担当する時に、上司の画面で一つの現場としてまとめて見られます。登録済みの現場は「現場の管理」→「現場の情報を変更」から入れてください" },
   { date: "2026-10-02", type: "feature", text: "気づき・疑問メモは、書く前に種類（疑問／気づき／職人さんの要望）を選ぶようにしました。上司に答えてほしい時は「疑問」を選んでください" },
   { date: "2026-10-02", type: "feature", text: "報告の送り先（Boxのアドレス）を最初から入れました。設定での入力は不要です。報告のファイル名に、送った人の名前が入るようにしました" },
@@ -137,6 +138,7 @@ const ICONS = {
   grid3: '<path d="M3.5 3.5h4.5v4.5H3.5zM9.75 3.5h4.5v4.5h-4.5zM16 3.5h4.5v4.5H16zM3.5 9.75h4.5v4.5H3.5zM9.75 9.75h4.5v4.5h-4.5zM16 9.75h4.5v4.5H16zM3.5 16h4.5v4.5H3.5zM9.75 16h4.5v4.5h-4.5zM16 16h4.5v4.5H16z"/>',
   dotsV: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
   reply: '<path d="M10 9V5l-7 7 7 7v-4c5 0 8 1.5 11 5-1-6-4-11-11-11z"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.3" r="0.6" fill="currentColor"/>',
@@ -673,13 +675,13 @@ function normKoujiNo(s) {
 
 function editSiteSheet(site) {
   return new Promise((resolve) => {
-    openSheet(site ? "現場の情報を変更" : "現場を追加", (body, close) => {
+    openSheet(site ? "現場の情報を変更" : "現場を登録", (body, close) => {
       const me = mySurname();
       let members = site && site.members ? [...site.members] : me ? [me] : []; // まだ担当者を入れていない現場は、自分を選んだ状態から
       const field = (label, value, placeholder, mode) => {
         const l = document.createElement("label");
-        l.className = "fieldLabel";
-        l.textContent = label;
+        l.className = "fieldLabel strong";
+        l.innerHTML = `${esc(label)}<span class="req">必須</span>`;
         const i = document.createElement("input");
         i.className = "sheetInput";
         i.value = value || "";
@@ -690,24 +692,44 @@ function editSiteSheet(site) {
         return i;
       };
       const nameIn = field("現場名", site && site.name, "例：山田様邸 新築");
-      const noIn = field("工事番号（経理で使っている番号）", site && site.koujiNo, "例：2026-0143", "text");
+      const noIn = field("工事番号", site && site.koujiNo, "例：2026-0143", "text");
+      const noHint = document.createElement("div");
+      noHint.className = "mutedText";
+      noHint.textContent = "経理で使っている番号";
+      body.appendChild(noHint);
       const ml = document.createElement("div");
-      ml.className = "fieldLabel";
-      ml.textContent = "担当者（苗字）";
+      ml.className = "fieldLabel strong";
+      ml.innerHTML = '担当者<span class="req">必須</span>';
       body.appendChild(ml);
+      const picked = document.createElement("div");
+      picked.className = "memberChips";
       const chips = document.createElement("div");
       chips.className = "memberChips";
+      body.appendChild(picked);
       body.appendChild(chips);
       const draw = () => {
-        const cands = [...new Set([...members, ...memberHistory(), ...(me ? [me] : [])])];
+        const cands = [...new Set([...memberHistory(), ...(me ? [me] : [])])].filter((n) => !members.includes(n));
+        picked.innerHTML = "";
+        members.forEach((n) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "memberChip on";
+          b.innerHTML = `<span>${esc(n)}</span>${icon(ICONS.x, 16, 2.4)}`;
+          b.setAttribute("aria-label", `${n}を外す`);
+          b.addEventListener("click", () => {
+            members = members.filter((x) => x !== n);
+            draw();
+          });
+          picked.appendChild(b);
+        });
         chips.innerHTML = "";
         cands.forEach((n) => {
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "memberChip" + (members.includes(n) ? " on" : "");
-          b.innerHTML = (members.includes(n) ? icon(ICONS.check, 14, 3) : "") + `<span>${esc(n)}</span>`;
+          b.className = "memberChip";
+          b.textContent = n;
           b.addEventListener("click", () => {
-            members = members.includes(n) ? members.filter((x) => x !== n) : [...members, n];
+            members = [...members, n];
             draw();
           });
           chips.appendChild(b);
@@ -732,7 +754,16 @@ function editSiteSheet(site) {
         sheetButton(site ? "変更する" : "登録する", "btnPrimary btnLarge", () => {
           const name = nameIn.value.trim();
           if (!name) {
+            toast("現場名を入れてください");
             nameIn.focus();
+            return;
+          }
+          if (!members.length) {
+            toast("担当者を1人以上選んでください");
+            return;
+          }
+          if (!normKoujiNo(noIn.value) && !confirm("工事番号が空です。このまま登録しますか？\n（あとから「現場の管理」で入れられます。二人で担当する現場は、同じ番号を入れると上司の画面でまとまります）")) {
+            noIn.focus();
             return;
           }
           addMemberHistory(members);
@@ -1748,7 +1779,7 @@ async function sendToBox() {
   if (site.id !== currentSiteId) await setCurrentSite(site.id);
   await loadSiteChecks();
   const progress = GROUPS.map((g) => {
-    const pr = groupProgress(g);
+    const pr = groupProgress(g, siteCheckRecs, siteRecordPhotos);
     return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, photos_done: pr.photosDone, photos_total: pr.photos };
   });
 
@@ -1946,13 +1977,15 @@ function guideHtml(p, opts = { report: true, record: true }) {
 }
 
 // 大分類ごとの進み具合（今の現場のチェックと品質写真。該当なしにした項目は数えない）
-function groupProgress(g) {
+function groupProgress(g, recs, recPhotos) {
   const out = { checks: 0, checksDone: 0, photos: 0, photosDone: 0 };
-  if (!manualMeta || !currentSiteId) return out;
+  if (!manualMeta || (!recs && !currentSiteId)) return out;
+  recs = recs || siteCheckRecs;
+  recPhotos = recPhotos || siteRecordPhotos;
   manualMeta.items
     .filter((it) => g.cats.includes(it.cat))
     .forEach((it) => {
-      const rec = siteCheckRecs[it.id];
+      const rec = recs[it.id];
       if (rec && rec.na) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const key = checkKey("checks", c);
@@ -1960,7 +1993,7 @@ function groupProgress(g) {
         if (rec && rec.marks[key]) out.checksDone++;
         if (c.photo === "要") {
           out.photos++;
-          if (siteRecordPhotos[`${it.id}|${key}`]) out.photosDone++;
+          if (recPhotos[`${it.id}|${key}`]) out.photosDone++;
         }
       });
     });
@@ -2674,32 +2707,6 @@ async function openReplyItem(rec) {
   if (sec) sec.scrollIntoView({ block: "start" });
 }
 
-async function renderDashReplies() {
-  const box = $("dashReplies");
-  if (!box) return;
-  const list = await unreadReplies();
-  const sites = Object.fromEntries((await getSites()).map((x) => [x.id, x.name]));
-  box.innerHTML =
-    `<div class="replyCard${list.length ? " has" : ""}"><div class="replyCardHead">${icon(ICONS.reply, 20)}<b>上司からの返信</b>` +
-    (list.length ? `<span class="newMark">新着 ${list.length}件</span>` : "") +
-    `<button class="miniBtn" id="dashReplyImport">返信を取り込む</button></div>` +
-    (list.length
-      ? list
-          .slice(0, 3)
-          .map((x, i) => {
-            const it = manualMeta && manualMeta.items.find((y) => y.id === x.rec.itemId);
-            return (
-              `<button class="replyRow" data-i="${i}"><span class="replyRowMeta">${esc(sites[x.rec.siteId] || "")}・${esc(it ? it.name : "")}　${esc(x.reply.from)}</span>` +
-              `<span class="replyRowText">${esc(x.reply.text)}</span></button>`
-            );
-          })
-          .join("")
-      : `<div class="replyCardSub">Box の「返信」フォルダに届いた返信を取り込むと、メモの下に表示されます。</div>`) +
-    `</div>`;
-  $("dashReplyImport").addEventListener("click", () => $("replyInput").click());
-  box.querySelectorAll(".replyRow").forEach((b) => b.addEventListener("click", () => openReplyItem(list[Number(b.dataset.i)].rec)));
-}
-
 // 疑問の状態（回答待ち ⇔ 解決済み）。いつ・誰が解決にしたかも残す
 async function toggleNoteStatus(it, id) {
   const rec = checkRecOf(it.id);
@@ -2869,7 +2876,7 @@ function openSearch() {
   renderSearch();
 }
 
-/* ---------- 最近見た項目（ホームの「前回の続き」） ---------- */
+/* ---------- 最近見た項目（ホームの「次に見る項目」の「続きから」） ---------- */
 
 const RECENT_KEY = "genba-photo-recent";
 
@@ -3057,78 +3064,191 @@ function renderBrand() {
 }
 
 /* ---------- ホーム ---------- */
+// ホームの役割：担当現場を全部見渡して、今どこまで進んでいて、次に何をすればいいかが3秒で分かること。
+// 6工程の一覧は工程タブ、写真は写真タブ、報告は報告タブ。ホームは「現在地」と「やること」だけを出す
+
+// 1つの現場の様子（6工程の進み具合・今の工程・撮り忘れ・報告日・未読の返信）
+async function siteSummary(site) {
+  const recs = Object.fromEntries((await dbGetAll("checks", "siteId", site.id)).map((r) => [r.itemId, r]));
+  const photos = await getSitePhotos(site.id);
+  const recPhotos = {};
+  photos
+    .filter(isRecordPhoto)
+    .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
+    .forEach((p) => (recPhotos[`${p.itemId}|${p.checkKey}`] = p));
+  const groups = GROUPS.map((g) => groupProgress(g, recs, recPhotos));
+  let cur = 0;
+  groups.forEach((x, i) => {
+    if (x.checksDone > 0) cur = i;
+  });
+  const total = groups.reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
+  // 撮り忘れ：チェックを始めた項目の「写真要」で、品質写真がまだ無いもの
+  const missing = [];
+  if (manualMeta)
+    allManualItems().forEach((it) => {
+      const rec = recs[it.id];
+      if (!rec || rec.na || !Object.keys(rec.marks || {}).length) return;
+      ((it.text && it.text.checks) || []).forEach((c) => {
+        if (c.photo === "要" && !recPhotos[`${it.id}|${checkKey("checks", c)}`]) missing.push(it);
+      });
+    });
+  const cands = unreported(photos);
+  const wd = new Date().getDay();
+  const reportDue = (wd === 5 || wd === 6) && cands.length > 0;
+  const unread = Object.values(recs).reduce((n, r) => n + (r.notes || []).reduce((m, x) => m + (x.replies || []).filter((y) => !y.readAt).length, 0), 0);
+  const thumb = photos.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0] || photos.sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0];
+  return { site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, unread, thumb, recs };
+}
+
+function siteThumbHtml(sm) {
+  return sm.thumb
+    ? `<img src="${blobUrl("dash", sm.thumb.thumb)}" alt="">`
+    : groupArt(GROUPS[sm.cur], 56);
+}
+
+function siteMetaText(site) {
+  const parts = [];
+  if (site.koujiNo) parts.push("No." + esc(site.koujiNo));
+  if ((site.members || []).length) parts.push("担当：" + esc(site.members.join("・")));
+  return parts.length ? parts.join('<span class="sep">｜</span>') : '<span class="warnInline">工事番号・担当者が未登録</span>';
+}
+
+// 6工程の現在地。済んだ工程は薄い緑、今の工程は濃い緑
+function stepDots(sm, withLabels) {
+  return (
+    `<span class="dashSteps${withLabels ? " labels" : ""}">` +
+    GROUPS.map((g, i) => {
+      const x = sm.groups[i];
+      const done = x.checks && x.checksDone >= x.checks;
+      return `<span class="dashStep${i === sm.cur ? " cur" : done ? " done" : ""}"><span class="dot"></span>${withLabels || i === sm.cur ? `<span class="lbl">${esc(g.name)}</span>` : ""}</span>`;
+    }).join("") +
+    `</span>`
+  );
+}
 
 async function renderDash() {
-  renderGroupGrid($("dashGroups"));
   renderBrand();
-  const site = await refreshSites();
-  const card = $("dashSiteCard");
-  if (!site) {
-    card.innerHTML =
+  releaseUrls("dash");
+  const current = await refreshSites();
+  const sites = (await getSites()).filter((x) => !x.archived);
+  const box = $("dashSiteCard");
+  $("dashSiteCount").textContent = sites.length ? `（${sites.length}件）` : "";
+  const sums = [];
+  for (const x of sites) sums.push(await siteSummary(x));
+  const curSum = current ? sums.find((x) => x.site.id === current.id) : null;
+  if (current) await loadSiteChecks();
+
+  // ---- 担当現場 ----
+  box.innerHTML = "";
+  if (!sites.length) {
+    box.innerHTML =
       `<button class="curSiteCard empty"><span class="curSiteIcon">${icon(ICONS.building, 24)}</span>` +
-      `<span class="curSiteText"><span class="curSiteName">担当現場を登録しましょう</span><span class="curSiteMeta">タップして現場名を登録します</span></span>` +
+      `<span class="curSiteText"><span class="curSiteName">担当現場を登録しましょう</span><span class="curSiteMeta">タップして現場名・工事番号・担当者を登録します</span></span>` +
       `<span class="siteSwitch">${icon(ICONS.plus, 18)}追加</span></button>`;
-    card.firstElementChild.addEventListener("click", addSite);
-    $("dashReportSub").textContent = "撮った写真から報告用を選べます。";
-    $("dashAlbumSub").textContent = "撮った写真を、工程ごとに確認・整理します。";
+    box.firstElementChild.addEventListener("click", addSite);
   } else {
-    const all = await getSitePhotos(site.id);
-    const cands = unreported(all);
-    const cov = await recordCoverage(site.id);
-    await loadSiteChecks();
-    const prog = GROUPS.map(groupProgress).reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
-    const pct = prog.c ? Math.round((prog.d / prog.c) * 100) : 0;
-    card.innerHTML =
-      `<button class="curSiteCard rich">` +
-      `<span class="siteBoard">${HAS_SITE_BOARD ? '<img class="boardBg" src="art/site-bg.webp?v=1" alt=""><img class="boardImg" src="art/site-board.webp?v=1" alt="">' : icon(ICONS.building, 40)}</span>` +
-      `<span class="curSiteText"><span class="curSiteLabel">今の現場</span><span class="curSiteName">${esc(site.name)}</span>` +
-      `<span class="curSiteMeta">${icon(ICONS.calendar, 14)}${periodLabel(periodStart(site, cands)).text}</span>` +
-      `<span class="siteTiles">` +
-      (cov ? `<span class="siteTile"><span class="tileLabel">${icon(ICONS.report, 14)}品質写真</span><span><b>${cov.done}</b>/${cov.total}</span></span>` : "") +
-      `<span class="siteTile"><span class="tileLabel">${icon(ICONS.camSmall, 14)}報告写真</span><span><b>${cands.length}</b> 枚</span></span>` +
-      (prog.c ? `<span class="siteTile"><span class="tileLabel">チェック</span><span class="tileBar"><span style="width:${pct}%"></span></span><span class="tilePct">${pct}%</span></span>` : "") +
-      `</span></span><span class="siteSwitch pillSwitch">切替${icon(ICONS.chevron, 14)}</span></button>`;
-    card.firstElementChild.addEventListener("click", openSiteSwitcher);
-    const nRec = all.filter(isRecordPhoto).length;
-    $("dashAlbumSub").textContent = all.length
-      ? `品質写真 ${nRec}枚・報告写真 ${all.length - nRec}枚を、工程ごとに確認できます。`
-      : "撮った写真を、工程ごとに確認・整理します。";
-    const picks = cands.filter((p) => p.sendPick).length;
-    $("dashReportSub").textContent = cands.length
-      ? `今回の写真 ${cands.length} 枚（送る写真 ${picks} 枚）から報告できます。`
-      : "工程ごとに報告写真を撮って、送る写真を選べます。";
+    if (curSum) {
+      const b = document.createElement("button");
+      b.className = "dashSiteMain";
+      b.innerHTML =
+        `<span class="pill pillGreen">今の現場</span>` +
+        `<span class="dsmRow"><span class="dsThumb big">${siteThumbHtml(curSum)}</span><span class="dsText"><span class="dsName">${esc(current.name)}</span>` +
+        `<span class="dsMeta">${siteMetaText(current)}</span></span><span class="chev">${icon(ICONS.chevron, 20)}</span></span>` +
+        stepDots(curSum, true) +
+        `<span class="dsProg"><span class="dsProgLabel">チェック進み具合</span><b>${curSum.pct}</b><span class="pctMark">%</span><span class="tileBar"><span style="width:${curSum.pct}%"></span></span></span>`;
+      // 今の工程の最初の項目（続きがその工程にあればそこ）を開く
+      b.addEventListener("click", () => openGroup(GROUPS[curSum.cur].id));
+      box.appendChild(b);
+    }
+    sums
+      .filter((x) => !current || x.site.id !== current.id)
+      .forEach((sm) => {
+        const b = document.createElement("button");
+        b.className = "dashSiteRow";
+        const alert = sm.unread || sm.reportDue || sm.missing.length;
+        b.innerHTML =
+          `<span class="dsThumb">${siteThumbHtml(sm)}</span><span class="dsText"><span class="dsName">${esc(sm.site.name)}${alert ? '<span class="redDot"></span>' : ""}</span>` +
+          `<span class="dsMeta">${siteMetaText(sm.site)}</span></span>${stepDots(sm, false)}<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+        b.addEventListener("click", async () => {
+          await setCurrentSite(sm.site.id);
+          toast(`今の現場を「${sm.site.name}」にしました`);
+        });
+        box.appendChild(b);
+      });
+    const add = document.createElement("button");
+    add.className = "dashAddSite";
+    add.innerHTML = `${icon(ICONS.plus, 16)}現場を追加`;
+    add.addEventListener("click", addSite);
+    box.appendChild(add);
   }
 
-  const recent = manualMeta
-    ? getRecent().map((r) => ({ r, it: manualMeta.items.find((x) => x.id === r.id) })).filter((x) => x.it)
-    : [];
-  // いちばん最近の1件は今の現場のすぐ下に「続きから」として出す
-  const resume = $("dashResume");
-  resume.innerHTML = "";
-  if (recent.length) {
-    const { it } = recent[0];
-    const g = groupOfProcess(it.cat);
-    const b = document.createElement("button");
-    b.className = "resumeBtn";
-    b.innerHTML = `<span class="resumeLabel">続きから</span><span class="resumeName">${esc(it.name)}</span><span class="pill pillWood">${esc(g.name)}</span>${icon(ICONS.chevron, 18)}`;
-    b.addEventListener("click", () => openGroup(g.id, it.id));
-    resume.appendChild(b);
+  // ---- やること（その時に必要なものだけ） ----
+  const todo = [];
+  const unread = await unreadReplies();
+  if (unread.length) todo.push({ icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
+  const due = sums.filter((x) => x.reportDue);
+  due.forEach((x) =>
+    todo.push({
+      icon: ICONS.report,
+      cls: "wood",
+      html: `今日は報告日：<b class="em">未送信</b>${sites.length > 1 ? `<small>${esc(x.site.name)}</small>` : ""}`,
+      go: async () => {
+        if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
+        goReport();
+      },
+    })
+  );
+  if (curSum && curSum.missing.length)
+    todo.push({
+      icon: ICONS.camera,
+      cls: "blue",
+      html: `撮り忘れの品質写真 <b class="em">${curSum.missing.length}件</b>`,
+      go: () => openGroup(groupOfProcess(curSum.missing[0].cat).id, curSum.missing[0].id),
+    });
+  if (!unread.length) todo.push({ icon: ICONS.reply, cls: "muted", html: `上司からの返信を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
+  const todoBox = $("dashTodo");
+  todoBox.innerHTML = "";
+  if (todo.length === 1 && todo[0].pick) {
+    const n = document.createElement("div");
+    n.className = "dashNone";
+    n.textContent = "今やることはありません";
+    todoBox.appendChild(n);
   }
-  renderDashReplies();
-  $("recentSection").hidden = recent.length <= 1;
-  const list = $("recentList");
-  list.innerHTML = "";
-  recent.slice(1).forEach(({ r, it }) => {
-    const g = groupOfProcess(it.cat);
+  todo.forEach((x) => {
     const b = document.createElement("button");
-    b.className = "recentItem";
-    b.innerHTML =
-      `<span class="recentThumb">${groupArt(g, 40)}</span>` +
-      `<span class="recentText"><span><span class="pill pillWood">${esc(g.name)}</span></span>` +
-      `<span class="recentName">${esc(it.name)}</span><span class="recentMeta">最終閲覧：${fmtDateTime(r.at)}</span></span>` +
-      `<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
-    b.addEventListener("click", () => openGroup(g.id, it.id));
-    list.appendChild(b);
+    b.className = "dashRow" + (x.pick ? " sub" : "");
+    b.innerHTML = `<span class="dashIcon ${x.cls}">${icon(x.icon, 22)}</span><span class="dashRowText">${x.html}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    // 返信の取り込みはファイル選択を開くので、タップの中で同期的に呼ぶ（iPhone）
+    b.addEventListener("click", () => (x.pick ? $("replyInput").click() : x.go()));
+    todoBox.appendChild(b);
+  });
+
+  // ---- 次に見る項目（いつも出る） ----
+  const nextBox = $("dashNext");
+  nextBox.innerHTML = "";
+  const recent = manualMeta ? getRecent().map((r) => manualMeta.items.find((x) => x.id === r.id)).filter(Boolean) : [];
+  const rows = [];
+  if (recent[0]) rows.push({ icon: ICONS.play, cls: "green", label: "続きから", it: recent[0] });
+  const all = allManualItems();
+  const from = recent[0] ? all.findIndex((x) => x.id === recent[0].id) + 1 : 0;
+  const isDone = (it) => {
+    const rec = siteCheckRecs[it.id];
+    if (rec && rec.na) return true;
+    const cs = (it.text && it.text.checks) || [];
+    return !!rec && cs.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
+  };
+  const next = all.slice(from).find((it) => !isDone(it));
+  if (next) {
+    const prep = ((next.text && next.text.prep) || []).length;
+    rows.push({ icon: ICONS.report, cls: "wood", label: "次の項目", it: next, extra: prep ? `（事前準備 ${prep}件）` : "" });
+  }
+  if (!rows.length) nextBox.innerHTML = `<div class="dashNone">${manualMeta ? "工程タブから項目を開くと、ここに続きが出ます" : "設定からマニュアルを取り込むと、ここに項目が出ます"}</div>`;
+  rows.forEach((x) => {
+    const b = document.createElement("button");
+    b.className = "dashRow";
+    b.innerHTML = `<span class="dashIcon ${x.cls}">${icon(x.icon, 22)}</span><span class="dashRowText">${x.label}：${esc(x.it.name)}${x.extra || ""}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.addEventListener("click", () => openGroup(groupOfProcess(x.it.cat).id, x.it.id));
+    nextBox.appendChild(b);
   });
 }
 
@@ -3482,10 +3602,9 @@ const TOUR_STEPS = [
   },
   {
     view: "dashView",
-    target: () => $("dashGroups"),
-    text: "最後に、品質写真の撮り方です。工程を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。",
+    target: () => document.querySelector('.tabBtn[data-tab="manual"]'),
+    text: "最後に、品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。",
     next: true,
-    scroll: true,
     nextLabel: "完了",
   },
 ];
@@ -3630,8 +3749,7 @@ function init() {
     b.addEventListener("click", () => openSubView("helpView"));
   });
   updateBellDot();
-  $("dashReportBtn").addEventListener("click", goReport);
-  $("dashAlbumBtn").addEventListener("click", goAlbum);
+  $("dashSitesMore").addEventListener("click", openSiteManage);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
   $("groupShootBtn").innerHTML = `${icon(ICONS.camera, 18)}<span>報告写真</span>`;

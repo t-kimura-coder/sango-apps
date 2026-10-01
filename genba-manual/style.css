@@ -823,3 +823,78 @@ svg { flex: none; }
 .memberChip.on { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
 .memberChip.add { border-style: dashed; color: var(--color-primary); }
 .warnInline { color: var(--color-warning-text); font-weight: 700; }
+
+/* ---------- ホーム（2026-10-02 作り直し：担当現場・やること・次に見る項目） ---------- */
+.hero { min-height: calc(190px + env(safe-area-inset-top)); }
+.dashBody { margin-top: -28px; position: relative; z-index: 4; }
+.dashBody { gap: var(--space-sm); }
+.dashHead { margin-top: var(--space-sm); align-items: center; }
+.dashHead .sectionTitle { font-size: var(--fs-xl); }
+.countText { font-size: var(--fs-lg); font-weight: 700; margin-left: 2px; }
+.moreLink { margin-left: auto; display: inline-flex; align-items: center; gap: 0; background: none; border: none; min-height: 40px; color: var(--color-primary); font-size: var(--fs-sm); font-weight: 700; }
+.dashSites { display: flex; flex-direction: column; gap: var(--space-sm); }
+.dashSites .curSiteCard { margin-top: 0; }
+.dashSiteMain, .dashSiteRow { display: flex; width: 100%; text-align: left; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); color: inherit; }
+.dashSiteMain { flex-direction: column; align-items: stretch; gap: var(--space-sm); padding: var(--space-md); position: relative; z-index: 5; }
+.dashSiteMain .pill { align-self: flex-start; }
+.dsmRow { display: flex; align-items: center; gap: var(--space-md); }
+.dsThumb { flex: none; width: 64px; height: 48px; border-radius: 8px; overflow: hidden; background: var(--color-sky); display: flex; align-items: center; justify-content: center; }
+.dsThumb.big { width: 92px; height: 64px; border-radius: 10px; }
+.dsThumb img { width: 100%; height: 100%; object-fit: cover; }
+.dsThumb .groupArtImg, .dsThumb svg { max-width: 90%; max-height: 90%; }
+.dsText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dsName { display: flex; align-items: center; gap: 6px; font-size: var(--fs-lg); font-weight: 800; color: var(--color-heading); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dashSiteMain .dsName { font-size: var(--fs-xl); }
+.dsMeta { font-size: var(--fs-xs); color: var(--color-text-sub); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dsMeta .sep { margin: 0 6px; color: var(--color-border); }
+.redDot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-danger); }
+.dashSiteRow { align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); }
+.dashSiteRow .chev, .dashSiteMain .chev { color: var(--color-text-muted); display: flex; }
+.dashSteps { display: flex; align-items: flex-start; position: relative; }
+.dashSteps::before { content: ""; position: absolute; left: 8px; right: 8px; top: 7px; height: 2px; background: var(--color-border); }
+.dashStep { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.dashSteps.labels { padding: 2px 4px 0; }
+.dashSteps.labels .dashStep { flex: 1; }
+.dashSteps.labels::before { left: 8%; right: 8%; top: 9px; }
+.dashStep .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #b9c4bd; background: var(--color-surface); }
+.dashSteps.labels .dot { width: 18px; height: 18px; }
+.dashStep.done .dot { background: var(--color-primary-soft); border-color: #86b3a1; }
+.dashStep.cur .dot { background: var(--color-primary); border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.dashStep .lbl { font-size: var(--fs-xs); color: var(--color-text-sub); white-space: nowrap; }
+.dashStep.cur .lbl { color: var(--color-primary); font-weight: 800; }
+.dashSiteRow .dashSteps { flex: none; gap: 3px; }
+.dashSiteRow .dashSteps::before { left: 4px; right: 4px; }
+.dashSiteRow .dashStep { width: 12px; }
+.dashSiteRow .dashStep .dot { width: 12px; height: 12px; }
+.dashSiteRow .dsThumb { width: 52px; height: 42px; }
+.dashSiteRow .dsName { font-size: var(--fs-md); }
+.dashSiteRow .dashStep .lbl { position: absolute; top: 16px; font-size: 11px; }
+.dashSiteRow { padding-bottom: 14px; }
+.dsProg { display: flex; align-items: baseline; gap: 4px; font-size: var(--fs-sm); color: var(--color-text-sub); }
+.dsProg b { font-size: 26px; color: var(--color-heading); margin-left: 8px; line-height: 1; }
+.dsProg .pctMark { font-weight: 800; color: var(--color-heading); margin-right: 10px; }
+.dsProg .tileBar { flex: 1; align-self: center; height: 8px; margin-top: 0; border-radius: 4px; }
+.dashAddSite { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px dashed var(--color-border); background: none; color: var(--color-primary); font-size: var(--fs-sm); font-weight: 700; }
+.dashList { display: flex; flex-direction: column; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); overflow: hidden; }
+.dashRow { display: flex; align-items: center; gap: var(--space-md); width: 100%; min-height: 58px; padding: 6px var(--space-md); border: none; border-bottom: 1px solid var(--color-border); background: none; text-align: left; color: var(--color-text); font-size: var(--fs-md); }
+.dashRow:last-child { border-bottom: none; }
+.dashRow .chev { color: var(--color-text-muted); display: flex; margin-left: auto; }
+.dashRowText { flex: 1; min-width: 0; display: block; }
+.dashRowText small { display: block; font-size: var(--fs-xs); color: var(--color-text-sub); font-weight: 400; }
+.dashRowText .em { color: var(--color-danger); font-weight: 800; }
+.dashRow.sub { min-height: 50px; color: var(--color-text-sub); font-size: var(--fs-sm); }
+.dashIcon { flex: none; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.dashIcon.green { background: var(--color-primary-soft); color: var(--color-primary); }
+.dashIcon.wood { background: var(--color-wood-soft); color: var(--color-wood-text); }
+.dashIcon.blue { background: var(--color-sky); color: #2f6f9f; }
+.dashIcon.muted { background: var(--color-surface-sub); color: var(--color-text-muted); }
+.dashNone { padding: 12px var(--space-md); font-size: var(--fs-sm); color: var(--color-text-sub); border-bottom: 1px solid var(--color-border); }
+.dashNone:last-child { border-bottom: none; }
+.dashBody .searchBox { margin-top: var(--space-sm); }
+/* 現場の登録シート */
+.fieldLabel.strong { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 800; color: var(--color-heading); margin-top: var(--space-md); }
+.req { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 700; color: var(--color-danger); }
+.req::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--color-danger); }
+.memberChips:empty { display: none; }
+.memberChip.on { background: var(--color-primary-soft); border-color: var(--color-primary-soft); color: var(--color-heading); font-size: var(--fs-md); gap: 8px; }
+.memberChip.add { border: 1.5px solid var(--color-primary); border-style: solid; }
