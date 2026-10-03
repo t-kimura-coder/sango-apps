@@ -993,3 +993,26 @@ img.imgBroken { visibility: hidden; }
 .periodSub .em { color: var(--color-danger); }
 .badgeOk { background: var(--color-ok-soft); color: var(--color-ok-text); }
 .badgeDanger { background: var(--color-danger-soft); color: var(--color-danger); }
+
+/* 項目名の横の「この現場はなし」 */
+.itemHead { align-items: center; }
+.naHeadBtn { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 3px; min-height: 36px; padding: 0 9px; border-radius: 18px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-sub); font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
+.naHeadBtn.on { background: var(--color-text-sub); border-color: var(--color-text-sub); color: var(--color-surface); }
+.naNote { padding: 8px 12px; border-radius: var(--radius-sm); background: var(--color-surface-sub); color: var(--color-text-sub); font-size: var(--fs-sm); }
+/* 工程タブ：写真要の一覧へ */
+#manualReq:empty { display: none; }
+.manualReqBtn { display: flex; align-items: center; gap: var(--space-md); width: 100%; min-height: 56px; padding: 6px var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); text-align: left; color: var(--color-text-muted); }
+.mrIcon { flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--color-primary-soft); color: var(--color-primary); display: flex; align-items: center; justify-content: center; }
+.mrText { flex: 1; display: flex; flex-direction: column; }
+.mrText b { font-size: var(--fs-md); color: var(--color-heading); }
+.mrText small { font-size: var(--fs-xs); color: var(--color-text-sub); }
+.mrText .em { color: var(--color-danger); font-weight: 800; }
+/* 休工 */
+.dsmTop { display: flex; align-items: center; gap: 6px; }
+.pillMuted { background: var(--color-surface-sub); color: var(--color-text-sub); }
+.pauseBtn { margin-left: auto; display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-xs); font-weight: 800; color: var(--color-text-sub); }
+.pauseBtn.on { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-primary-text); }
+.dashSiteMain.paused > :not(.dsmTop), .dashSiteRow.paused > * { opacity: 0.5; }
+.dashSiteMain.paused { background: var(--color-surface-sub); }
+.dashSiteRow.paused { background: var(--color-surface-sub); box-shadow: none; }
+.dashSiteRow.paused .dsName .pill { opacity: 1; }

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 47;
+const APP_VERSION = 49;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "現場を「休工」にできるようにしました（ホームの今の現場のカードから）。休工中は報告の遅れに数えず、ホームでは薄く表示します。工程マニュアルの「この現場ではこの項目はない」を、項目名の右の「該当なし」に移し、工程タブから「写真要の一覧」を開けるようにしました" },
   { date: "2026-10-03", type: "feature", text: "報告の期間を「週（月〜土）」で表示するようにしました。報告は金曜から翌週の月曜まで（遅くとも火曜）。月・火曜は、先週の報告がまだなら先週の分が出ます。報告が遅れている週があると、ホームの「やること」に出ます" },
   { date: "2026-10-03", type: "feature", text: "「写真要の一覧」を追加しました。マニュアルで写真が必要なチェックを工程順に並べ、撮った・まだ・撮り忘れが一目で分かります（写真タブの「写真要の品質写真」、ホームの「撮り忘れ」から）。この現場では撮らなくてよいものは「不要」にすると、数から外れます" },
   { date: "2026-10-02", type: "fix", text: "写真が「？」になって見えなくなる不具合の原因を直しました（写真の画像と、送る・報告済みなどの印を別々に保存するようにしました）。使っている途中でアプリが勝手に読み込み直されることも無くなりました（新しい版はホームに戻った時に切り替わります）" },
@@ -428,6 +429,30 @@ function periodStart(site, currentPhotos) {
 function weekMon(key) {
   return addDays(key, -((keyToDate(key).getDay() + 6) % 7));
 }
+// 休工：site.pauses = [{ from, to }]（to が空なら休工中）。その週の金曜（報告する日）に休工していた週は、報告しなくてよい
+function pausedOn(site, key) {
+  return (site.pauses || []).some((p) => p.from <= key && (!p.to || key <= p.to));
+}
+function isPaused(site) {
+  return (site.pauses || []).some((p) => !p.to);
+}
+async function togglePause(site) {
+  site.pauses = site.pauses || [];
+  const open = site.pauses.find((p) => !p.to);
+  if (open) {
+    if (!confirm(`「${site.name}」の工事を再開しますか？`)) return;
+    open.to = todayKey();
+    toast("工事を再開しました");
+  } else {
+    if (!confirm(`「${site.name}」を休工にしますか？\n休工中は報告の遅れに数えず、ホームでは薄く表示します。再開する時は同じボタンを押します。`)) return;
+    site.pauses.push({ from: todayKey(), to: null });
+    toast("休工にしました");
+  }
+  await dbPut("sites", site);
+  await refreshSites();
+  rerenderCurrentView();
+}
+
 function reportWeek(site, reports, today = todayKey()) {
   const done = (reports || []).map((r) => (r.createdAt ? toDateKey(new Date(r.createdAt)) : r.end)).filter(Boolean);
   const isReported = (mon) => done.some((k) => k >= addDays(mon, 4) && k <= addDays(mon, 10));
@@ -437,10 +462,12 @@ function reportWeek(site, reports, today = todayKey()) {
   let mon = thisMon;
   if (daysBetween(thisMon, today) <= 1 && prevMon >= startMon && !isReported(prevMon)) mon = prevMon;
   const w = { mon, sat: addDays(mon, 5), fri: addDays(mon, 4), due: addDays(mon, 7), late: addDays(mon, 8), isPrev: mon !== thisMon };
-  w.state = isReported(mon) ? "done" : today < w.fri ? "before" : today <= w.due ? "open" : today <= w.late ? "late" : "over";
-  // 期限（火曜）を過ぎても報告していない週の数（現場を登録した週より前は数えない）
+  w.state = isReported(mon) ? "done" : pausedOn(site, w.fri <= today ? w.fri : today) ? "paused" : today < w.fri ? "before" : today <= w.due ? "open" : today <= w.late ? "late" : "over";
+  // 期限（火曜）を過ぎても報告していない週の数（現場を登録した週より前と、休工していた週は数えない）
   w.missed = 0;
-  for (let m = addDays(mon, -7); m >= startMon && w.missed < 8 && !isReported(m); m = addDays(m, -7)) w.missed++;
+  for (let m = addDays(mon, -7); m >= startMon && w.missed < 8 && !isReported(m); m = addDays(m, -7)) {
+    if (!pausedOn(site, addDays(m, 4))) w.missed++;
+  }
   return w;
 }
 function reportWeekHtml(w) {
@@ -451,6 +478,7 @@ function reportWeekHtml(w) {
     open: `報告は ${fmtDate(w.due)}まで（遅くとも ${fmtDate(w.late)}）`,
     late: `今日 ${fmtDate(w.late)} が期限です`,
     over: "期限を過ぎています",
+    paused: "休工中（報告はお休み）",
   }[w.state];
   const badge = { done: '<span class="badge badgeOk">済</span>', open: '<span class="badge badgeWarning">報告日</span>', late: '<span class="badge badgeDanger">期限</span>', over: '<span class="badge badgeDanger">遅れ</span>' }[w.state] || "";
   return (
@@ -1156,6 +1184,10 @@ async function renderSiteManage() {
       await refreshSites();
       renderSiteManage();
     });
+    if (!site.archived) add(isPaused(site) ? "工事を再開" : "休工にする", "btnSecondary", async () => {
+      await togglePause(site);
+      renderSiteManage();
+    });
     add(site.archived ? "進行中に戻す" : "完了にする", "btnSecondary", async () => {
       site.archived = !site.archived;
       await dbPut("sites", site);
@@ -1411,7 +1443,7 @@ async function renderAlbum() {
       ? `<button class="statBox wide statLink" id="albumReqBtn"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span><span class="statPct">${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%</span><span class="statGo">一覧${icon(ICONS.chevron, 14)}</span></button>`
       : "");
 
-  if ($("albumReqBtn")) $("albumReqBtn").addEventListener("click", () => openRequired("todo"));
+  if ($("albumReqBtn")) $("albumReqBtn").addEventListener("click", () => openRequired("all"));
   const kinds = $("albumKinds");
   kinds.innerHTML = "";
   [["all", "すべて"], ["record", "品質写真"], ["report", "報告写真"]].forEach(([k, label]) => {
@@ -2218,6 +2250,8 @@ async function sendToBox() {
           site_id: site.id,
           kouji_no: site.koujiNo || "",
           start_group: GROUPS[site.startGroup || 0].name,
+          paused: isPaused(site),
+          pauses: site.pauses || [],
           members: site.members || [],
           period: { start, end },
           processes,
@@ -2427,6 +2461,19 @@ async function renderManual() {
   await refreshSites();
   await loadSiteChecks();
   renderGroupGrid($("manualGroups"), !!currentSiteId);
+  const reqBox = $("manualReq");
+  reqBox.innerHTML = "";
+  const site = currentSite();
+  if (site && manualMeta) {
+    const cov = await recordCoverage(site.id);
+    const sm = await siteSummary(site);
+    const b = document.createElement("button");
+    b.className = "manualReqBtn";
+    b.innerHTML =
+      `<span class="mrIcon">${icon(ICONS.camera, 20)}</span><span class="mrText"><b>写真要の一覧</b><small>品質写真 ${cov.done}/${cov.total}${sm.missing.length ? `・<span class="em">撮り忘れ ${sm.missing.length}件</span>` : ""}</small></span>${icon(ICONS.chevron, 18)}`;
+    b.addEventListener("click", () => openRequired("all"));
+    reqBox.appendChild(b);
+  }
 }
 
 let currentGroupId = "g1";
@@ -2579,7 +2626,12 @@ async function renderItem() {
   const p = processOf(it.cat);
   let html =
     `<div class="itemHead">${it.no ? `<span class="itemHeadNo">${esc(it.no)}</span>` : ""}` +
-    `<div class="itemHeadText"><div class="itemTitle">${esc(it.name)}</div><div class="itemCat">${esc(p.name)}</div></div></div>`;
+    `<div class="itemHeadText"><div class="itemTitle">${esc(it.name)}</div><div class="itemCat">${esc(p.name)}</div></div>` +
+    // この現場に無い項目を、開いてすぐ「なし」にできるよう、項目名の右に置く
+    (currentSiteId && currentMTab === "check" && tx
+      ? `<button class="naHeadBtn${rec.na ? " on" : ""}" data-na="1">${rec.na ? `${icon(ICONS.check, 14, 3)}該当なし` : "該当なし"}</button>`
+      : "") +
+    `</div>`;
   if (tx && tx.summary) html += `<div class="itemSummary">${esc(tx.summary)}</div>`;
 
   if (currentMTab === "check") {
@@ -2596,7 +2648,7 @@ async function renderItem() {
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
       // 該当なしにしている時は、チェックが押せない理由が分かるよう、チェックのすぐ下に出す
-      else if (rec.na) html += `<button class="naBtn on" data-na="1">この現場では該当なし（解除する）</button>`;
+      else if (rec.na) html += `<div class="naNote">この現場では「なし」にしています（チェック・写真は数えません）。戻す時は項目名の右の「該当なし」を押してください。</div>`;
       html += `<div id="memoSection" class="memoSection"></div>`;
       // 毎回は読まない情報は、見出しだけ出して開け閉めする（閉じたかどうかは次も覚えておく）
       if (tx.purpose.length || tx.goal.length) {
@@ -2611,7 +2663,6 @@ async function renderItem() {
       html += `<div class="secHead">${icon(ICONS.photo, 22)}参考図・写真</div><div class="figStrip" id="figStrip"></div>`;
     }
     html += relatedSoonHtml();
-    if (tx && currentSiteId && !rec.na) html += `<button class="naBtn bottom" data-na="1">この現場ではこの項目はない</button>`;
   } else if (currentMTab === "flow") {
     if (!tx) {
       html += `<div class="emptyNote">最新版のマニュアルを取り込み直すと、作業の流れが表示されます。</div>`;
@@ -3576,7 +3627,7 @@ async function renderDash() {
   renderBrand();
   releaseUrls("dash");
   const current = await refreshSites();
-  const sites = (await getSites()).filter((x) => !x.archived);
+  const sites = (await getSites()).filter((x) => !x.archived).sort((a, b) => isPaused(a) - isPaused(b));
   const box = $("dashSiteCard");
   $("dashSiteCount").textContent = sites.length ? `（${sites.length}件）` : "";
   const sums = await Promise.all(sites.map(siteSummary));
@@ -3596,9 +3647,12 @@ async function renderDash() {
   } else {
     if (curSum) {
       const b = document.createElement("button");
-      b.className = "dashSiteMain";
+      const paused = isPaused(current);
+      const pz = paused ? (current.pauses || []).find((p) => !p.to) : null;
+      b.className = "dashSiteMain" + (paused ? " paused" : "");
       b.innerHTML =
-        `<span class="pill pillGreen">今の現場</span>` +
+        `<span class="dsmTop"><span class="pill pillGreen">今の現場</span>${paused ? `<span class="pill pillMuted">休工中（${fmtDate(pz.from)}〜）</span>` : ""}` +
+        `<span class="pauseBtn${paused ? " on" : ""}" data-pause="1" role="button">${paused ? "再開する" : "休工"}</span></span>` +
         `<span class="dsmRow"><span class="dsThumb big">${siteThumbHtml(curSum)}</span><span class="dsText"><span class="dsName">${esc(current.name)}</span>` +
         `<span class="dsMeta">${siteMetaText(current)}</span></span><span class="chev">${icon(ICONS.chevron, 20)}</span></span>` +
         stepDots(curSum, true) +
@@ -3606,6 +3660,7 @@ async function renderDash() {
       // 今の工程の最初の項目を開く（「未登録」の文字を押した時は、現場の情報の変更）
       b.addEventListener("click", (e) => {
         if (e.target.closest("[data-editsite]")) editSiteInfo(current);
+        else if (e.target.closest("[data-pause]")) togglePause(current);
         else openGroup(GROUPS[curSum.cur].id);
       });
       box.appendChild(b);
@@ -3614,10 +3669,11 @@ async function renderDash() {
       .filter((x) => !current || x.site.id !== current.id)
       .forEach((sm) => {
         const b = document.createElement("button");
-        b.className = "dashSiteRow";
-        const alert = sm.unread || sm.reportDue || sm.overdue || sm.missing.length;
+        const paused = isPaused(sm.site);
+        b.className = "dashSiteRow" + (paused ? " paused" : "");
+        const alert = !paused && (sm.unread || sm.reportDue || sm.overdue || sm.missing.length);
         b.innerHTML =
-          `<span class="dsThumb">${siteThumbHtml(sm)}</span><span class="dsText"><span class="dsName">${esc(sm.site.name)}${alert ? '<span class="redDot"></span>' : ""}</span>` +
+          `<span class="dsThumb">${siteThumbHtml(sm)}</span><span class="dsText"><span class="dsName">${esc(sm.site.name)}${alert ? '<span class="redDot"></span>' : ""}${paused ? '<span class="pill pillMuted">休工中</span>' : ""}</span>` +
           `<span class="dsMeta">${siteMetaText(sm.site)}</span></span>${stepDots(sm, false)}<span class="chev">${icon(ICONS.chevron, 18)}</span>`;
         b.addEventListener("click", async (e) => {
           if (e.target.closest("[data-editsite]")) return editSiteInfo(sm.site);
@@ -3664,7 +3720,7 @@ async function renderDash() {
         },
       })
     );
-  if (curSum && curSum.missing.length)
+  if (curSum && curSum.missing.length && !isPaused(current))
     todo.push({
       icon: ICONS.camera,
       cls: "blue",
@@ -4185,7 +4241,7 @@ const REQ_FILTERS = [
 ];
 
 function openRequired(filter) {
-  requiredFrom = currentView === "dashView" ? "dashView" : "albumView";
+  requiredFrom = ["dashView", "manualView"].includes(currentView) ? currentView : "albumView";
   if (filter) requiredFilter = filter;
   showView("requiredView");
   window.scrollTo(0, 0);
@@ -4385,7 +4441,7 @@ function init() {
   $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
   $("reportPastBackBtn").innerHTML = icon(ICONS.back, 26);
   $("requiredBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("requiredBackBtn").addEventListener("click", () => (requiredFrom === "dashView" ? goDash() : goAlbum()));
+  $("requiredBackBtn").addEventListener("click", () => (requiredFrom === "dashView" ? goDash() : requiredFrom === "manualView" ? goManual() : goAlbum()));
   $("groupBackBtn").innerHTML = icon(ICONS.back, 26);
   $("settingsBackBtn").innerHTML = icon(ICONS.back, 26);
   document.querySelectorAll(".settingsBtn").forEach((b) => {
