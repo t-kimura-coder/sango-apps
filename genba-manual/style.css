@@ -1075,3 +1075,18 @@ img.imgBroken { visibility: hidden; }
 .themeSeg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 14px; background: var(--color-surface-sub); }
 .themeSeg button { min-height: 42px; border: none; border-radius: 10px; background: none; font-size: var(--fs-sm); font-weight: 700; color: var(--color-text-sub); }
 .themeSeg button.on { background: var(--color-surface); color: var(--color-heading); box-shadow: var(--shadow-card); }
+
+/* 日付などの部品も、表示の色に合わせる */
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* 工程マニュアル右上：報告写真（お客様向け） */
+.hsb { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
+.hsb b { font-size: var(--fs-xs); }
+.hsb small { font-size: 10px; font-weight: 700; opacity: 0.85; }
+/* 報告の工程ページ：全部選ぶ */
+.summaryHead #reportProcAllBtn { margin-left: 8px; min-height: 36px; }
+/* 現場の管理：削除は離して置く */
+.manageDel { margin-top: var(--space-md); min-height: 40px; font-size: var(--fs-xs); align-self: flex-end; }
+.manageCard { display: flex; flex-direction: column; }

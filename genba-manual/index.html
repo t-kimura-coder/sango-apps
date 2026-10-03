@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=53">
+<link rel="stylesheet" href="style.css?v=55">
 </head>
 <body>
 
@@ -42,14 +42,14 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
   <div class="viewBody dashBody">
     <div class="sectionHead rowHead dashHead">
       <h2 class="sectionTitle">担当現場<span id="dashSiteCount" class="countText"></span></h2>
-      <button id="dashSitesMore" class="moreLink" type="button">すべて見る<span data-icon="chevron"></span></button>
+      <button id="dashSitesMore" class="moreLink" type="button">現場の管理<span data-icon="chevron"></span></button>
     </div>
     <div id="dashSiteCard" class="dashSites"></div>
     <div class="sectionHead rowHead dashHead"><h2 class="sectionTitle">やること</h2></div>
     <div id="dashTodo" class="dashList"></div>
     <div class="sectionHead rowHead dashHead"><h2 class="sectionTitle">次に見る項目</h2></div>
     <div id="dashNext" class="dashList"></div>
-    <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>工程名・キーワードで探す</button>
+    <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>項目名・キーワードで探す</button>
     <div id="brandFooter" class="brandFooter" hidden></div>
   </div>
 </section>
@@ -65,7 +65,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
   <div class="viewBody manualBody">
     <button class="siteBar curSiteBar"></button>
     <div id="manualReq"></div>
-    <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>工程名・キーワードで探す</button>
+    <button class="searchBox openSearchBtn" type="button"><span data-icon="search"></span>項目名・キーワードで探す</button>
     <div id="manualEmpty"></div>
     <div id="manualGroups" class="groupGrid"></div>
   </div>
@@ -81,7 +81,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
   <div id="groupStepper" class="stepper"></div>
   <div class="viewBody groupBody">
     <div class="groupHero">
-      <span class="pill pillWood">工程</span>
+      <span class="pill pillWood">段階</span>
       <div id="groupTitle" class="groupTitle"></div>
       <div id="groupDesc" class="groupDesc"></div>
       <div id="groupHeroArt" class="groupHeroArt"></div>
@@ -138,7 +138,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
   <footer id="albumBar" class="bottomActions selectBar" hidden>
     <div class="selectBarTitle"><b id="albumSelCount">0</b> 枚を選択中</div>
     <div class="toolRow">
-      <button id="albumUseBtn" class="toolBtn primary"><span data-icon="report"></span><span id="albumUseLabel">報告に使う</span></button>
+      <button id="albumUseBtn" class="toolBtn primary"><span data-icon="report"></span><span id="albumUseLabel">送る写真に入れる</span></button>
       <button id="albumRetagBtn" class="toolBtn"><span data-icon="folder"></span><span>工程で仕分け</span></button>
       <button id="albumSaveBtn" class="toolBtn"><span data-icon="download"></span><span>保存</span></button>
       <button id="albumDeleteBtn" class="toolBtn danger"><span data-icon="trash"></span><span>削除</span></button>
@@ -234,16 +234,17 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="summaryHead">
       <div class="sectionTitle small">この工程の報告写真</div>
       <div id="reportProcCount" class="selCount"></div>
+      <button id="reportProcAllBtn" class="miniBtn" type="button" hidden>全部選ぶ</button>
     </div>
     <div id="reportProcGrid" class="photoGrid captioned"></div>
     <div id="reportProcEmpty" class="emptyState" hidden><div class="emptyText">まだ報告写真がありません。上の「撮影する」か「取り込む」から入れてください。</div></div>
-    <div class="hint">タップで「送る写真」に選ぶ／外す。「︙」で拡大・工程の変更・削除。</div>
+    <div class="hint">タップで「送る写真」に選ぶ／外す。指で横になぞると、まとめて選べます。「︙」で拡大・工程の変更・削除。</div>
   </div>
   <footer class="bottomActions selectBar procBar">
     <div class="procBarRow">
       <div id="procBarThumbs" class="procBarThumbs"></div>
-      <div class="procBarText">選択中 <b id="procBarCount">0</b> 枚</div>
-      <button id="procBarDoneBtn" class="btn btnPrimary">報告に追加<span data-icon="chevron"></span></button>
+      <div class="procBarText">送る写真 <b id="procBarCount">0</b> 枚</div>
+      <button id="procBarDoneBtn" class="btn btnPrimary">報告タブに戻る<span data-icon="chevron"></span></button>
     </div>
   </footer>
 </section>
@@ -380,47 +381,62 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
-        <li>右上の歯車から<b>氏名</b>と<b>Boxのアップロード用メールアドレス</b>を登録します。</li>
-        <li>「工程」タブの案内から、Boxにある<b>マニュアル_○○.json</b>を取り込みます。取り込んだマニュアルはこのiPhoneの中に保存されます。</li>
-        <li>ホームの「今の現場」から<b>担当現場</b>を登録します。どの画面でも、上の現場の欄から切り替えられます。</li>
+        <li>右上の歯車（設定）で<b>氏名</b>を登録し、Boxにある<b>マニュアル_○○.json</b>を取り込みます。マニュアルはこのiPhoneの中に保存されます。</li>
+        <li>ホームの「担当現場」の<b>＋ 現場を追加</b>から、現場名・<b>工事番号</b>（経理の番号）・<b>担当者</b>を登録します。二人で担当する現場は、全員が同じ工事番号を入れてください。</li>
+        <li>途中から担当する現場は、「記録を始めた段階」を選びます。それより前は「導入前」として数えません。</li>
       </ol>
     </div>
     <div class="card helpCard">
-      <div class="helpStep">マニュアルを見る</div>
+      <div class="helpStep">言葉について</div>
+      <ul class="helpList">
+        <li><b>段階</b>：基礎・上棟・外装・内装・設備・引渡しの6つ。</li>
+        <li><b>工程</b>：段階を細かく分けた17の分類（報告写真はこの単位でまとめます）。</li>
+        <li><b>項目</b>：マニュアルの1ページずつ（チェックポイントが並ぶ単位）。</li>
+      </ul>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">現場で使う</div>
       <ol class="helpList">
-        <li>ホームか「工程」タブで、基礎〜引渡しの6つから工程を選びます。</li>
-        <li>上に並んだ番号を左右にスクロールして項目を選ぶと、概要・ポイント・チェックポイントが出ます。「作業手順」で前後の工程と事前準備、「参考資料」でマニュアル原本のページを見られます。</li>
-        <li>上の<b>今の現場</b>に、チェックポイントのチェックが記録されます。付けた日時と名前が残るので、後から見返せます。その現場にない工程は「この現場ではこの工程はない」で灰色にできます。</li>
-        <li>チェックポイントの下の<b>気づき・疑問メモ</b>に、現場で気づいたこと・疑問・職人さんの要望を残せます。日時と名前が一緒に残り、報告にも含まれます。</li>
-        <li>品質写真を撮ると、そのチェックにも自動で印が付きます。</li>
-        <li>写真タブの「写真要の品質写真」から「写真要の一覧」を開くと、マニュアルで写真が必要なチェックが工程順に並び、撮った・まだ・撮り忘れが分かります。撮らなくてよいものは「撮影不要」にすると数から外れます。</li>
-        <li>上司からの返信は、ホームの「やること」→「上司からの返信を取り込む」で、Box の「返信」フォルダのファイルを選ぶと、メモの下に表示されます。</li>
-        <li>ホームには担当現場が全部並び、今どの工程かが分かります。現場をタップすると「今の現場」に切り替わります。「次に見る項目」から、続きと次の項目をすぐ開けます。</li>
-        <li>工程名が分からないときは、ホームか「工程」タブの<b>検索欄</b>に、現場で聞いた言葉を入れてください。チェック項目の文章からも探します（ひらがな可）。</li>
+        <li><b>ホーム</b>には担当現場が全部並び、今どの段階かが分かります。いちばん上が「今の現場」で、押すと今の段階のマニュアルが開きます。ほかの現場を押すと、そちらが今の現場になります。</li>
+        <li><b>やること</b>には、上司からの返信・報告の期限・撮り忘れの品質写真など、その時に必要なものだけが出ます。<b>次に見る項目</b>から、続きと次の項目をすぐ開けます。</li>
+        <li>「工程」タブで段階を選び、上に並んだ項目を左右にスクロールして選びます。チェックを付けると、日時と名前が残ります。その現場にない項目は、項目名の右の<b>該当なし</b>で外せます。</li>
+        <li><b>気づき・疑問メモ</b>の「メモを書く」から、気づいたこと・疑問・職人さんの要望を残せます。疑問は上司に届き、返信が来るとメモの下に出ます。</li>
+        <li>項目名が分からない時は、検索欄に現場で聞いた言葉を入れてください（ひらがな可）。</li>
       </ol>
     </div>
     <div class="card helpCard">
       <div class="helpStep">写真を撮る</div>
       <ol class="helpList">
-        <li><b>品質写真</b>（緑）：工程マニュアルの「写真要」のチェック横のカメラから。マニュアルが求める写真です。</li>
-        <li><b>報告写真</b>（木の色）：報告タブの工程ページ、または工程マニュアルの「この工程の報告写真」から。お客様に見せる写真なので、ゴミ・工具が写らないように。</li>
-        <li>標準カメラで撮った写真は、どちらも「写真から選ぶ」「取り込む」で入れられます。</li>
-        <li>「写真」タブは今の現場のアルバムです。撮った写真が全部見え、必要な品質写真がどれだけ撮れているかも分かります。選んで「報告に使う」「工程で仕分け」「保存」「削除」ができます。</li>
+        <li><b>品質写真</b>（緑）：工程マニュアルの「写真要」のチェック横のカメラから。撮るとチェックも自動で付きます。この現場で撮らなくてよいものは、カメラから「撮影不要」を選びます。</li>
+        <li><b>報告写真</b>（木の色・お客様向け）：工程マニュアルの右上の「報告写真」か、報告タブの工程ページから。ゴミ・工具が写らないように。</li>
+        <li>写真が足りているかは、写真タブや工程タブの<b>写真要の一覧</b>で確かめられます（全部の段階が1ページに並びます）。</li>
+        <li>写真タブでは、写真を選んで「送る写真に入れる」「工程で仕分け」「保存」「削除」ができます。指で横になぞると、まとめて選べます。</li>
       </ol>
     </div>
     <div class="card helpCard">
-      <div class="helpStep">週の報告を送る（金・土曜）</div>
+      <div class="helpStep">週の報告を送る</div>
       <ol class="helpList">
-        <li>「報告」タブで工程を開き、送る写真をタップして選びます（工程をまたいで選べます）。写真タブで「報告に使う」を付けた写真もここに入ります。</li>
-        <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選んで宛先に貼り付けて送ります。期間中に工程マニュアルで付けたチェックも一緒に送られ、報告づくりの材料になります。</li>
-        <li>送ったら<b>報告済み</b>にします。次の報告は翌日からの写真になります。休工で間が空いても、前回の報告の翌日から自動でまとまります。</li>
+        <li>月〜土の工事を、<b>金曜〜翌週の月曜</b>（遅くとも火曜）に送ります。月・火曜は、先週の分がまだなら先週の分が出ます。</li>
+        <li>「報告」タブで工程を開き、<b>送る写真</b>を選びます（「全部選ぶ」や、指でなぞってまとめて選べます）。</li>
+        <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選び、宛先に貼り付けて送ります。「送れましたか？」でOKを押すと、送った写真が報告済みになります（選ばなかった写真は次の報告に残ります）。</li>
+        <li>アプリの外で報告した週や、自分は担当しない週は、「報告済みにする」で<b>アプリ外で報告した</b>・<b>今週は報告なし</b>を選びます。上司にもその場で知らせられます。</li>
+      </ol>
+    </div>
+    <div class="card helpCard">
+      <div class="helpStep">現場を休む・終える</div>
+      <ol class="helpList">
+        <li><b>休工</b>：ホームの今の現場のカード右上の「休工」から。休工中は報告の遅れに数えません。再開する時は同じボタンです。</li>
+        <li><b>完工</b>：「現場の管理」の「完工にする」から。上司に知らせてから完工になります。</li>
+        <li><b>写真を片付ける</b>：「現場の管理」から。その現場の写真をバックアップに書き出してから、写真のデータだけ消します（チェック・メモの記録は残ります）。写真を見る時は、そのバックアップを設定から戻します。</li>
+        <li>上司への知らせ（休工・再開・完工・報告なしの週）は、報告と同じBoxに小さなファイルで送ります。</li>
       </ol>
     </div>
     <div class="card helpCard">
       <div class="helpStep">データについて</div>
       <ul class="helpList">
-        <li>写真とマニュアルは、このiPhoneの中だけに保存されます。機種変更に備えて、設定の「バックアップ」で書き出しておけます。</li>
-        <li>容量が気になったら、報告タブの「過去の報告」から、送った写真を削除してください。</li>
+        <li>写真とマニュアルは、このiPhoneの中だけに保存されます。機種変更や故障に備えて、設定の「バックアップ」で<b>写真も含めて</b>書き出しておいてください。</li>
+        <li>使っている容量は、設定の「保存容量」で現場ごとに見られます。写真1枚は約0.35MBです。</li>
+        <li>上司からの返信は、ホームの「やること」か設定の「上司からの返信」から取り込みます。</li>
       </ul>
     </div>
   </div>
@@ -473,10 +489,10 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="libraryInput" accept="image/*" multiple hidden>
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
-<input type="file" id="restoreInput" accept="application/json,.json" hidden>
+<input type="file" id="restoreInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=54"></script>
+<script src="app.js?v=56"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -145,8 +145,8 @@ function buildData(reports, replies, statuses = []) {
   data.replies = new Map();
   const valid = reports.filter((r) => r && r.kind === "genba-photo-report" && r.period).sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
   koujiBySiteId = new Map();
-  valid.forEach((r) => {
-    if (r.site_id && normKouji(r.kouji_no)) koujiBySiteId.set(r.site_id, normKouji(r.kouji_no));
+  [...valid, ...statuses].forEach((r) => {
+    if (r && r.site_id && normKouji(r.kouji_no)) koujiBySiteId.set(r.site_id, normKouji(r.kouji_no));
   });
   const latest = new Map();
   valid.forEach((r) => {
@@ -208,13 +208,26 @@ function buildData(reports, replies, statuses = []) {
   data.sites.forEach((s) => s.reports.sort((a, b) => (a.period.end < b.period.end ? 1 : a.period.end > b.period.end ? -1 : a.sent_at < b.sent_at ? 1 : -1)));
   data.people.forEach((p) => p.reports.sort((a, b) => (a.sent_at < b.sent_at ? 1 : -1)));
   (replies || []).forEach(addReplyToData);
-  // 完工の知らせ（現場ナビで「完工を上司に知らせて完了にする」）。いちばん新しいものを使う
+  // 現場ナビからの知らせ（完工・進行中に戻す・休工・再開・アプリ外／報告なしの週）を時刻順に当てはめる。
+  // 報告の中の休工の印（paused）も、その報告の時点の状態として使う
+  data.sites.forEach((site) => {
+    const lastRep = site.reports.reduce((a, r) => (!a || r.sent_at > a.sent_at ? r : a), null);
+    if (lastRep && lastRep.paused) site.pausedAt = lastRep.sent_at;
+  });
   statuses
-    .filter((x) => x && x.status === "completed")
+    .filter((x) => x && x.status && x.at)
     .sort((a, b) => (a.at < b.at ? -1 : 1))
     .forEach((x) => {
       const site = data.sites.get(siteKeyOf(x));
-      if (site) site.completedAt = x.at;
+      if (!site) return;
+      if (x.status === "completed") site.completedAt = x.at;
+      else if (x.status === "active") site.completedAt = null;
+      else if (x.status === "paused") site.pausedAt = x.at;
+      else if (x.status === "resumed") site.pausedAt = null;
+      else if (x.status === "week") (site.otherWeeks = site.otherWeeks || []).push({ week: x.week, kind: x.week_kind, memo: x.memo || "", at: x.at, personKey: personKeyOf(x) });
+      // 知らせを送ったのも「報告をした」動きとして扱う
+      const p = data.people.get(personKeyOf(x));
+      if (p) p.lastNoticeAt = !p.lastNoticeAt || x.at > p.lastNoticeAt ? x.at : p.lastNoticeAt;
     });
   updateNavBadge();
 }
@@ -266,12 +279,15 @@ function personStats(p) {
   const otherAt = p.reports.flatMap((r) => (r.other_weeks || []).map((w) => w.at)).filter(Boolean).sort().pop();
   const weekPhotos = p.reports.filter((r) => daysAgo(r.sent_at) <= 6).reduce((s, r) => s + (r.photos || []).length, 0);
   const open = [...data.notes.values()].filter((n) => n.personKey === p.key && noteStatus(n) === "open").length;
-  const lastAt = [last && last.sent_at, otherAt].filter(Boolean).sort().pop();
+  const lastAt = [last && last.sent_at, otherAt, p.lastNoticeAt].filter(Boolean).sort().pop();
   const lastDays = lastAt ? daysAgo(lastAt) : null;
-  const active = [...p.sites].some((k) => !(data.sites.get(k) || {}).completedAt);
+  const active = [...p.sites].some((k) => {
+    const s = data.sites.get(k) || {};
+    return !s.completedAt && !s.pausedAt;
+  });
   const late = active && (lastDays == null || lastDays >= LATE_DAYS);
   const state = open ? "need" : late ? "late" : "ok"; // 表示はいちばん急ぐもの。絞り込みは need / late を別々に見る
-  return { last, lastDays, weekPhotos, open, late, state };
+  return { last, lastAt, lastDays, weekPhotos, open, late, state };
 }
 const PERSON_STATE = { need: { label: "対応が必要", cls: "danger" }, late: { label: "報告の遅れ", cls: "warn" }, ok: { label: "順調", cls: "ok" } };
 
@@ -684,11 +700,11 @@ function personCard({ p, st }) {
   const ps = PERSON_STATE[st.state];
   return (
     `<button class="personCard" data-person="${esc(p.key)}"><div class="pcHead">${avatar(p.name)}<div class="pcName"><div><b>${esc(p.name)}</b><span class="stBadge ${ps.cls}">${ps.label}</span></div>` +
-    `<div class="pcSites">担当現場${sites.map((s) => `<span class="tag${s.completedAt ? " done" : ""}">${esc(s.name)}${s.completedAt ? "（完工）" : ""}</span>`).join("")}</div></div>${icon("chevron", 20)}</div>` +
+    `<div class="pcSites">担当現場${sites.map((s) => `<span class="tag${s.completedAt ? " done" : ""}">${esc(s.name)}${s.completedAt ? "（完工）" : s.pausedAt ? "（休工中）" : ""}</span>`).join("")}</div></div>${icon("chevron", 20)}</div>` +
     `<div class="pcStats"><div class="stat${st.open ? " alert" : ""}"><span class="statLabel">${icon("chat", 16)}未回答</span><span><b>${st.open}</b>件</span></div>` +
     `<div class="stat"><span class="statLabel">${icon("photo", 16)}今週の写真</span><span><b>${st.weekPhotos}</b>枚</span></div>` +
-    `<div class="stat"><span class="statLabel">${icon("calendar", 16)}最終報告</span><span class="lastRep">${st.last ? fmtMD(st.last.sent_at) : "－"}</span>` +
-    `<span class="ago${st.lastDays != null && st.lastDays >= LATE_DAYS - 1 ? " late" : ""}">${st.last ? agoLabel(st.last.sent_at) : ""}</span></div></div></button>`
+    `<div class="stat"><span class="statLabel">${icon("calendar", 16)}最終報告</span><span class="lastRep">${st.lastAt ? fmtMD(st.lastAt) : "－"}</span>` +
+    `<span class="ago${st.late && st.lastDays != null && st.lastDays >= LATE_DAYS - 1 ? " late" : ""}">${st.lastAt ? agoLabel(st.lastAt) : ""}</span></div></div></button>`
   );
 }
 
@@ -857,12 +873,12 @@ function renderSites() {
       const sites = [...p.sites].map((k) => data.sites.get(k));
       return (
         `<div class="card personBlock"><button class="pbHead" data-person="${esc(p.key)}">${avatar(p.name, 44)}<b>${esc(p.name)}</b><span class="stBadge ${ps.cls}">${ps.label}</span>` +
-        `<span class="pbMeta">未回答 ${st.open}件・最終報告 ${st.last ? fmtMD(st.last.sent_at) : "－"}</span>${icon("chevron", 18)}</button>` +
+        `<span class="pbMeta">未回答 ${st.open}件・最終報告 ${st.lastAt ? fmtMD(st.lastAt) : "－"}</span>${icon("chevron", 18)}</button>` +
         `<div class="siteRows">${sites
           .map((s) => {
             const last = s.reports[0];
             const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
-            return `<button class="siteRow${s.completedAt ? " done" : ""}" data-site="${esc(s.key)}">${icon("building", 18)}<b>${esc(s.name)}${s.completedAt ? ` <span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : ""}</b><span>報告 ${s.reports.length}回</span><span>最終 ${last ? fmtMD(last.period.end) + "まで" : "－"}</span>${open ? `<span class="sBadge open">未回答 ${open}</span>` : "<span></span>"}${icon("chevron", 16)}</button>`;
+            return `<button class="siteRow${s.completedAt ? " done" : ""}" data-site="${esc(s.key)}">${icon("building", 18)}<b>${esc(s.name)}${s.completedAt ? ` <span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? ` <span class="tag">休工中</span>` : ""}</b><span>報告 ${s.reports.length}回</span><span>最終 ${last ? fmtMD(last.period.end) + "まで" : "－"}</span>${open ? `<span class="sBadge open">未回答 ${open}</span>` : "<span></span>"}${icon("chevron", 16)}</button>`;
           })
           .join("")}</div></div>`
       );
@@ -931,7 +947,7 @@ function renderSite(key) {
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
     `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
-    `<h1 class="heroTitle">${esc(s.name)}の報告${s.completedAt ? ` <span class="doneBadge">完工 ${fmtMD(s.completedAt)}</span>` : ""}</h1>` +
+    `<h1 class="heroTitle">${esc(s.name)}の報告${s.completedAt ? ` <span class="doneBadge">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? ` <span class="doneBadge paused">休工中（${fmtMD(s.pausedAt)}〜）</span>` : ""}</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
   html +=
     `<div class="card siteSummary"><div class="ssCell">${avatar(s.personName, 56)}<div><div class="ssLabel">担当監督${s.persons.size > 1 ? `（${s.persons.size}人）` : ""}</div>` +
@@ -943,7 +959,7 @@ function renderSite(key) {
     `<div class="ssSub">${last ? `${agoLabel(last.sent_at)}に届きました` : ""}</div></div></div>` +
     `<button class="ssCell ssAlert${open.length ? "" : " zero"}" ${open.length ? `data-note="${esc(open[0].id)}"` : ""}>${icon("chat", 30)}<div><div class="ssLabel">未回答の疑問・要望</div><div class="ssValue big"><b>${open.length}</b>件</div></div>${open.length ? icon("chevron", 18) : ""}</button></div>`;
 
-  html += `<div class="secHead"><div><h2>工程の進捗</h2><div class="sub">${s.persons.size > 1 ? "担当者のうち誰かが確認したチェックを、現場全体の進み具合として数えています。" : "6つの工程のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。"}</div></div></div>`;
+  html += `<div class="secHead"><div><h2>段階ごとの進み具合</h2><div class="sub">${s.persons.size > 1 ? "担当者のうち誰かが確認したチェックを、現場全体の進み具合として数えています。" : "6つの段階のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。"}</div></div></div>`;
   html += prog
     ? `<div class="progRow">${prog
         .map((g) => {
@@ -1073,6 +1089,9 @@ function route() {
 function applyTheme(t) {
   if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
   else document.documentElement.removeAttribute("data-theme");
+  const dark = t === "dark" || (t !== "light" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#1c2320" : "#f7f5ef");
 }
 
 async function init() {
