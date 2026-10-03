@@ -49,33 +49,7 @@
   --tap-min: 48px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #111613;
-    --color-surface: #1a211d;
-    --color-surface-sub: #232b26;
-    --color-text: #e9eee9;
-    --color-heading: #cfe6da;
-    --color-text-sub: #a8b3ab;
-    --color-text-muted: #7a857d;
-    --color-border: #2c3530;
-    --color-primary: #3f9b76;
-    --color-primary-dark: #2f7e5f;
-    --color-primary-text: #ffffff;
-    --color-primary-soft: #1d3329;
-    --color-wood: #c99a5f;
-    --color-wood-soft: #33291b;
-    --color-wood-text: #e8c48f;
-    --color-sky: #1b2a33;
-    --color-warning-soft: #3a2e14;
-    --color-warning-text: #f0c46a;
-    --color-ok-soft: #1c3223;
-    --color-ok-text: #8fd6a4;
-    --color-danger: #ec6b62;
-    --color-danger-soft: #3a1d1b;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-}
+
 
 /* ---------- 基本 ---------- */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -208,9 +182,7 @@ svg { flex: none; }
 .heroWave { position: absolute; z-index: 3; left: 0; right: 0; bottom: -4px; width: 100%; height: 68px; display: block; }
 .heroWave path { fill: var(--color-bg); }
 .hero::after { content: ""; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 8px; background: var(--color-bg); }
-@media (prefers-color-scheme: dark) {
-  .heroSky { display: none; }
-}
+
 
 .groupGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-sm); }
 .groupCard {
@@ -233,7 +205,7 @@ svg { flex: none; }
 .reportCardIcon { width: 52px; height: auto; flex: none; }
 .reportCardWood { position: absolute; right: -8%; top: 50%; transform: translateY(-50%); width: 62%; height: auto; pointer-events: none; opacity: 0.9; }
 .reportCardText, .reportCardIcon { position: relative; z-index: 1; }
-@media (prefers-color-scheme: dark) { .reportCardWood { display: none; } }
+
 .reportCardPhotos { z-index: 1; position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 36%; max-width: 150px; height: auto; pointer-events: none; }
 .reportCardText, .bannerText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reportCardTitle { font-size: var(--fs-xl); font-weight: 800; color: var(--color-heading); }
@@ -400,9 +372,7 @@ svg { flex: none; }
 .aboutBrand { display: flex; align-items: center; gap: var(--space-md); margin: var(--space-sm) 0; }
 .aboutBrand .brandLogo .mark { height: 36px; }
 .aboutBrand .brandLogo .wordmark { height: 22px; }
-@media (prefers-color-scheme: dark) {
-  .brandLogo img { filter: invert(1); }
-}
+
 
 /* ---------- 工程の検索 ---------- */
 .searchBox { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: 50px; padding: 0 var(--space-lg); border-radius: 25px; border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); color: var(--color-text-muted); font-size: var(--fs-md); text-align: left; }
@@ -712,12 +682,12 @@ svg { flex: none; }
 .siteBoard { position: relative; background: var(--color-surface); }
 .siteBoard .boardBg { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); object-fit: cover; }
 .siteBoard .boardImg { position: relative; width: 86%; height: auto; object-fit: contain; align-self: flex-end; margin-bottom: 4px; }
-@media (prefers-color-scheme: dark) { .siteBoard .boardBg { opacity: 0.35; } }
+
 /* 報告期間の欄：骨組みの絵を右に薄く */
 .periodBar.withArt { position: relative; overflow: hidden; min-height: 52px; }
 .periodBar.withArt > span { position: relative; z-index: 1; }
 .periodArt { position: absolute; right: 18%; bottom: -26px; height: 170%; opacity: 0.32; pointer-events: none; -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); }
-@media (prefers-color-scheme: dark) { .periodArt { opacity: 0.18; } }
+
 
 /* ---------- 気づき・疑問メモ ---------- */
 .memoSection { display: flex; flex-direction: column; gap: var(--space-sm); padding-top: var(--space-sm); border-top: 1px dashed var(--color-border); }
@@ -779,9 +749,7 @@ svg { flex: none; }
 .pageHeroBtn { position: absolute; z-index: 2; top: calc(env(safe-area-inset-top) + 10px); right: var(--space-sm); }
 .pageHeroTitle { position: relative; z-index: 1; margin: 0 0 var(--space-sm); font-size: 30px; font-weight: 800; color: var(--color-heading); letter-spacing: 0.04em; }
 .pageHeroSub { position: relative; z-index: 1; font-size: var(--fs-md); line-height: 1.8; color: var(--color-text-sub); }
-@media (prefers-color-scheme: dark) {
-  .pageHeroArt { opacity: 0.25; }
-}
+
 .manualBody { padding-top: 0; }
 .manualBody .groupArt { height: 84px; margin-top: var(--space-sm); }
 .manualBody .groupArt img { max-height: 84px; }
@@ -923,7 +891,7 @@ svg { flex: none; }
 .rhWood { position: absolute; right: 0; top: 18px; width: 100%; opacity: 0.85; }
 .rhPhotos { position: absolute; right: 8%; top: 4px; width: 46%; }
 .rhIcon { position: absolute; right: 44%; top: 56px; width: 25%; }
-@media (prefers-color-scheme: dark) { .rhWood { display: none; } }
+
 
 /* 読み込めない写真 */
 img.imgBroken { visibility: hidden; }
@@ -1034,3 +1002,76 @@ img.imgBroken { visibility: hidden; }
 .kindOpt small { font-size: var(--fs-xs); color: var(--color-text-sub); }
 .kindOpt.primary { border-color: var(--color-primary); background: var(--color-primary-soft); }
 .kindOpt:disabled { opacity: 0.5; }
+
+/* ==========================================================
+   ダーク表示（端末の設定、または設定画面の「表示の色」でダークを選んだ時）
+   ========================================================== */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #1c2320;
+    --color-surface: #27302b;
+    --color-surface-sub: #313b35;
+    --color-text: #edf2ee;
+    --color-heading: #dcefe4;
+    --color-text-sub: #bcc7bf;
+    --color-text-muted: #98a49b;
+    --color-border: #44504a;
+    --color-primary: #55b98f;
+    --color-primary-dark: #3f9b76;
+    --color-primary-text: #10241b;
+    --color-primary-soft: #26413a;
+    --color-wood: #d3a46a;
+    --color-wood-soft: #403425;
+    --color-wood-text: #f0cf9c;
+    --color-sky: #263843;
+    --color-warning-soft: #44371c;
+    --color-warning-text: #f5cf7c;
+    --color-ok-soft: #233d2c;
+    --color-ok-text: #9fe0b2;
+    --color-danger: #f07a71;
+    --color-danger-soft: #472624;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35); }
+  :root:not([data-theme="light"]) .heroSky { display: none; }
+  :root:not([data-theme="light"]) .reportCardWood { display: none; }
+  :root:not([data-theme="light"]) .brandLogo img { filter: invert(1); }
+  :root:not([data-theme="light"]) .siteBoard .boardBg { opacity: 0.35; }
+  :root:not([data-theme="light"]) .periodArt { opacity: 0.18; }
+  :root:not([data-theme="light"]) .pageHeroArt { opacity: 0.25; }
+  :root:not([data-theme="light"]) .rhWood { display: none; }
+}
+:root[data-theme="dark"] {
+    --color-bg: #1c2320;
+    --color-surface: #27302b;
+    --color-surface-sub: #313b35;
+    --color-text: #edf2ee;
+    --color-heading: #dcefe4;
+    --color-text-sub: #bcc7bf;
+    --color-text-muted: #98a49b;
+    --color-border: #44504a;
+    --color-primary: #55b98f;
+    --color-primary-dark: #3f9b76;
+    --color-primary-text: #10241b;
+    --color-primary-soft: #26413a;
+    --color-wood: #d3a46a;
+    --color-wood-soft: #403425;
+    --color-wood-text: #f0cf9c;
+    --color-sky: #263843;
+    --color-warning-soft: #44371c;
+    --color-warning-text: #f5cf7c;
+    --color-ok-soft: #233d2c;
+    --color-ok-text: #9fe0b2;
+    --color-danger: #f07a71;
+    --color-danger-soft: #472624;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35); }
+:root[data-theme="dark"] .heroSky { display: none; }
+:root[data-theme="dark"] .reportCardWood { display: none; }
+:root[data-theme="dark"] .brandLogo img { filter: invert(1); }
+:root[data-theme="dark"] .siteBoard .boardBg { opacity: 0.35; }
+:root[data-theme="dark"] .periodArt { opacity: 0.18; }
+:root[data-theme="dark"] .pageHeroArt { opacity: 0.25; }
+:root[data-theme="dark"] .rhWood { display: none; }
+
+/* 表示の色の切り替え */
+.themeSeg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 14px; background: var(--color-surface-sub); }
+.themeSeg button { min-height: 42px; border: none; border-radius: 10px; background: none; font-size: var(--fs-sm); font-weight: 700; color: var(--color-text-sub); }
+.themeSeg button.on { background: var(--color-surface); color: var(--color-heading); box-shadow: var(--shadow-card); }

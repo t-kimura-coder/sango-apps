@@ -8,10 +8,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="現場ナビ">
 <meta name="theme-color" content="#f7f5ef">
+<script>
+// 表示の色（端末に合わせる／ライト／ダーク）。画面が出る前に決めて、白→黒のちらつきを防ぐ
+try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=52">
+<link rel="stylesheet" href="style.css?v=53">
 </head>
 <body>
 
@@ -315,6 +319,15 @@
       </div>
     </div>
     <div class="card">
+      <div class="cardTitle">表示の色</div>
+      <div id="themeSeg" class="themeSeg">
+        <button type="button" data-theme-set="auto">端末と同じ</button>
+        <button type="button" data-theme-set="light">ライト</button>
+        <button type="button" data-theme-set="dark">ダーク</button>
+      </div>
+      <div class="mutedText">「端末と同じ」は、iPhoneの「画面表示と明るさ」の設定に合わせて切り替わります。</div>
+    </div>
+    <div class="card">
       <div class="cardTitle">使い方の案内</div>
       <label class="checkOpt"><input type="checkbox" id="tourAlwaysChk">起動するたびに案内を表示する</label>
       <div class="btnRow settingsBtns"><button id="tourAgainBtn" class="btn btnSecondary">案内をもう一度見る</button></div>
@@ -464,6 +477,6 @@
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=53"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>

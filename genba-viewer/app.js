@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1035,8 +1035,18 @@ function renderSettings() {
     `<button class="btn btnOutline" data-act="demo">サンプルデータで見る</button></div>` +
     (canPickFolder ? "" : `<p class="warn">このブラウザではフォルダに書き込めません。Edge か Chrome で開くと、返信をフォルダに直接書き出せます。</p>`) +
     `</div>` +
+    `<div class="card setCard"><h2>表示の色</h2><div class="themeSeg">${[["auto", "端末と同じ"], ["light", "ライト"], ["dark", "ダーク"]]
+      .map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${(getLS("theme") || "auto") === k ? "on" : ""}">${l}</button>`)
+      .join("")}</div><p class="sub">「端末と同じ」は、Windows の「個人用設定 → 色」に合わせて切り替わります。</p></div>` +
     `<div class="card setCard"><h2>アプリとして使う</h2><p class="sub">Edge / Chrome のアドレスバー右端の「アプリをインストール」から入れると、スタートメニューやタスクバーから開けます。</p></div>` +
     `<div class="mutedText">${esc(APP_NAME)} ver.${APP_VERSION}</div>`;
+  main.querySelectorAll("[data-theme-set]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setLS("theme", b.dataset.themeSet === "auto" ? "" : b.dataset.themeSet);
+      applyTheme(b.dataset.themeSet);
+      main.querySelectorAll("[data-theme-set]").forEach((x) => x.classList.toggle("on", x === b));
+    })
+  );
   $("myName").addEventListener("change", (e) => {
     setLS("name", e.target.value.trim());
     toast("名前を保存しました");
@@ -1060,7 +1070,13 @@ function route() {
   if (!$("drawer").hidden && drawerNoteId && !data.notes.has(drawerNoteId)) closeDrawer();
 }
 
+function applyTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+}
+
 async function init() {
+  applyTheme(getLS("theme") || "auto");
   document.title = APP_NAME;
   $("appName").textContent = APP_NAME;
   document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon, 22)));

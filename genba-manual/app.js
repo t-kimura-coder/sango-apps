@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "設定に「表示の色」を付けました（端末と同じ／ライト／ダーク）。ダークの色も見やすく作り直しました" },
   { date: "2026-10-03", type: "feature", text: "「報告済みにする」を押すと、「アプリから送った」「アプリ外で報告した」「今週は報告なし」から選べるようにしました" },
   { date: "2026-10-03", type: "feature", text: "報告タブの週の欄に「アプリ外で報告済み」「今週は報告なし」を付けました（別の方法で報告した週・自分は担当しない週など）。現場の管理に「写真を片付ける」を付けました（その現場の写真をバックアップに書き出してから、写真データだけ消します。チェック・メモの記録は残ります）" },
   { date: "2026-10-03", type: "feature", text: "現場を完工にする時に、確認と完工日の記録をするようにしました。「完工を上司に知らせて完了」を選ぶと、Boxに完工の知らせが届き、見守りで完工済みと分かります。設定と現場の管理で、現場ごとに使っている容量が見られます" },
@@ -4732,7 +4733,27 @@ async function checkPhotos() {
   toast(`読み込めない写真 ${bad.length}枚を消しました`);
 }
 
+/* ---------- 表示の色（端末と同じ／ライト／ダーク） ---------- */
+const THEME_KEY = "genba-photo-theme";
+function applyTheme(t) {
+  const root = document.documentElement;
+  if (t === "light" || t === "dark") root.setAttribute("data-theme", t);
+  else root.removeAttribute("data-theme");
+  const dark = t === "dark" || (t !== "light" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#1c2320" : "#f7f5ef");
+  document.querySelectorAll("[data-theme-set]").forEach((b) => b.classList.toggle("on", b.dataset.themeSet === (t || "auto")));
+}
+
 function init() {
+  applyTheme(getSetting(THEME_KEY) || "auto");
+  document.querySelectorAll("[data-theme-set]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setSetting(THEME_KEY, b.dataset.themeSet === "auto" ? "" : b.dataset.themeSet);
+      applyTheme(b.dataset.themeSet);
+    })
+  );
+  if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(getSetting(THEME_KEY) || "auto"));
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
   $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
   $("reportPastBackBtn").innerHTML = icon(ICONS.back, 26);

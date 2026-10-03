@@ -27,28 +27,7 @@
   --side-w: 220px;
   --head-h: 72px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: #111613;
-    --color-surface: #1a211d;
-    --color-surface-sub: #232b26;
-    --color-text: #e9eee9;
-    --color-heading: #cfe6da;
-    --color-text-sub: #a8b3ab;
-    --color-text-muted: #8a958d;
-    --color-border: #2c3530;
-    --color-primary: #3f9b76;
-    --color-primary-soft: #1d3329;
-    --color-wood-soft: #33291b;
-    --color-wood-text: #e8c48f;
-    --color-warning-soft: #3a2e14;
-    --color-warning-text: #f0c46a;
-    --color-ok-soft: #1c3223;
-    --color-ok-text: #8fd6a4;
-    --color-danger: #ec6b62;
-    --color-danger-soft: #3a1d1b;
-  }
-}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-base); font-size: 15px; line-height: 1.6; }
@@ -131,9 +110,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .pageHead { padding: 32px 0 18px; }
 .pageHead h1 { font-size: 34px; letter-spacing: 0.04em; }
 .pageHead .sub { margin: 8px 0 0; max-width: 720px; }
-@media (prefers-color-scheme: dark) {
-  .heroSky { display: none; }
-}
+
 
 /* ---------- ホーム ---------- */
 .homeTop { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 16px; }
@@ -326,9 +303,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .pageHead.withArt { position: relative; min-height: 200px; padding-right: 420px; }
 .pageArt { position: absolute; right: 0; bottom: 0; width: 400px; max-width: 40%; pointer-events: none; }
 .siteBg { position: absolute; z-index: 0; top: 0; right: -28px; width: 78%; max-width: 1100px; pointer-events: none; }
-@media (prefers-color-scheme: dark) {
-  .siteBg { opacity: 0.25; }
-}
+
 @media (max-width: 1100px) {
   .pageHead.withArt { padding-right: 0; }
   .pageArt { display: none; }
@@ -343,9 +318,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .pageHead.withArt h1, .pageHead.withArt .sub { position: relative; z-index: 2; }
 .pageBg { position: absolute; z-index: 0; top: 0; right: 0; width: 72%; max-width: 1000px; pointer-events: none; opacity: 0.85; }
 .pageArt { z-index: 1; right: 28px; }
-@media (prefers-color-scheme: dark) {
-  .pageBg { opacity: 0.2; }
-}
+
 @media (max-width: 1100px) {
   .pageHead.withArt { padding-right: 28px; }
   .pageBg { width: 100%; opacity: 0.4; }
@@ -382,3 +355,68 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .tag.done { background: var(--color-ok-soft); color: var(--color-ok-text); }
 .siteRow.done { opacity: 0.7; }
 .doneBadge { display: inline-block; vertical-align: middle; padding: 2px 12px; border-radius: 10px; background: var(--color-ok-soft); color: var(--color-ok-text); font-size: 16px; font-weight: 800; letter-spacing: 0; }
+
+/* ==========================================================
+   ダーク表示（端末の設定、または設定画面の「表示の色」でダークを選んだ時）
+   ========================================================== */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #1c2320;
+    --color-surface: #27302b;
+    --color-surface-sub: #313b35;
+    --color-text: #edf2ee;
+    --color-heading: #dcefe4;
+    --color-text-sub: #bcc7bf;
+    --color-text-muted: #98a49b;
+    --color-border: #44504a;
+    --color-primary: #55b98f;
+    --color-primary-dark: #3f9b76;
+    --color-primary-text: #10241b;
+    --color-primary-soft: #26413a;
+    --color-wood: #d3a46a;
+    --color-wood-soft: #403425;
+    --color-wood-text: #f0cf9c;
+    --color-sky: #263843;
+    --color-warning-soft: #44371c;
+    --color-warning-text: #f5cf7c;
+    --color-ok-soft: #233d2c;
+    --color-ok-text: #9fe0b2;
+    --color-danger: #f07a71;
+    --color-danger-soft: #472624;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35); }
+  :root:not([data-theme="light"]) .heroSky { display: none; }
+  :root:not([data-theme="light"]) .siteBg { opacity: 0.25; }
+  :root:not([data-theme="light"]) .pageBg { opacity: 0.2; }
+}
+:root[data-theme="dark"] {
+    --color-bg: #1c2320;
+    --color-surface: #27302b;
+    --color-surface-sub: #313b35;
+    --color-text: #edf2ee;
+    --color-heading: #dcefe4;
+    --color-text-sub: #bcc7bf;
+    --color-text-muted: #98a49b;
+    --color-border: #44504a;
+    --color-primary: #55b98f;
+    --color-primary-dark: #3f9b76;
+    --color-primary-text: #10241b;
+    --color-primary-soft: #26413a;
+    --color-wood: #d3a46a;
+    --color-wood-soft: #403425;
+    --color-wood-text: #f0cf9c;
+    --color-sky: #263843;
+    --color-warning-soft: #44371c;
+    --color-warning-text: #f5cf7c;
+    --color-ok-soft: #233d2c;
+    --color-ok-text: #9fe0b2;
+    --color-danger: #f07a71;
+    --color-danger-soft: #472624;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35); }
+:root[data-theme="dark"] .heroSky { display: none; }
+:root[data-theme="dark"] .siteBg { opacity: 0.25; }
+:root[data-theme="dark"] .pageBg { opacity: 0.2; }
+
+/* 表示の色の切り替え */
+.themeSeg { display: inline-grid; grid-template-columns: repeat(3, auto); gap: 4px; padding: 4px; border-radius: 12px; background: var(--color-surface-sub); }
+.themeSeg button { min-height: 40px; padding: 0 16px; border: none; border-radius: 9px; background: none; font-weight: 700; color: var(--color-text-sub); }
+.themeSeg button.on { background: var(--color-surface); color: var(--color-heading); box-shadow: var(--shadow-card); }

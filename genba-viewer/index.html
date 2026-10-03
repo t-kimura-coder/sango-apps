@@ -4,11 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f7f5ef">
+<script>
+// 表示の色（端末に合わせる／ライト／ダーク）。画面が出る前に決めて、白→黒のちらつきを防ぐ
+try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
 <title>現場ナビ 見守り</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -58,6 +62,6 @@
 <input id="folderInput" type="file" webkitdirectory multiple hidden>
 
 <script src="demo.js?v=2"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
