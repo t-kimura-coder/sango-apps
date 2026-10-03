@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 60;
+const APP_VERSION = 61;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "fix", text: "チェックを付けた後に「なし」にすると、チェックが付いたまま灰色になっていたのを直しました（なしにするとチェックは外れます）" },
   { date: "2026-10-03", type: "feature", text: "チェックが全部済んだ工程に「✓ 完了」が付くようにしました（工程ページ・段階のカード）。写真要の一覧も、全部撮れた工程に「✓ 撮影済み」が出ます" },
   { date: "2026-10-03", type: "feature", text: "チェックポイントごとに「なし」（この現場には無いチェック）を付けられるようにしました。灰色になり、進み具合・写真要の数から外れます" },
   { date: "2026-10-03", type: "feature", text: "長い現場名は、途中で切らずに2行まで折り返して表示するようにしました（2行に入らない時は少し小さくします）" },
@@ -1766,6 +1767,8 @@ async function toggleNaCheck(it, key) {
   rec.naChecks = rec.naChecks || {};
   const on = isNaCheck(rec, key);
   rec.naChecks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY), ...(on ? { off: true } : {}) };
+  // 該当なしにしたら付けていたチェックは外す（戻しても付け直さない）
+  if (!on && rec.marks) delete rec.marks[key];
   await saveCheckRec(rec);
 }
 
