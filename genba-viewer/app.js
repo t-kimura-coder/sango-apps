@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -137,7 +137,7 @@ function personKeyOf(r) {
   return r.sender_id || "name:" + (r.sender || "（名前なし）");
 }
 
-function buildData(reports, replies) {
+function buildData(reports, replies, statuses = []) {
   data.reports = [];
   data.sites = new Map();
   data.people = new Map();
@@ -208,6 +208,14 @@ function buildData(reports, replies) {
   data.sites.forEach((s) => s.reports.sort((a, b) => (a.period.end < b.period.end ? 1 : a.period.end > b.period.end ? -1 : a.sent_at < b.sent_at ? 1 : -1)));
   data.people.forEach((p) => p.reports.sort((a, b) => (a.sent_at < b.sent_at ? 1 : -1)));
   (replies || []).forEach(addReplyToData);
+  // 完工の知らせ（現場ナビで「完工を上司に知らせて完了にする」）。いちばん新しいものを使う
+  statuses
+    .filter((x) => x && x.status === "completed")
+    .sort((a, b) => (a.at < b.at ? -1 : 1))
+    .forEach((x) => {
+      const site = data.sites.get(siteKeyOf(x));
+      if (site) site.completedAt = x.at;
+    });
   updateNavBadge();
 }
 
@@ -257,7 +265,8 @@ function personStats(p) {
   const weekPhotos = p.reports.filter((r) => daysAgo(r.sent_at) <= 6).reduce((s, r) => s + (r.photos || []).length, 0);
   const open = [...data.notes.values()].filter((n) => n.personKey === p.key && noteStatus(n) === "open").length;
   const lastDays = last ? daysAgo(last.sent_at) : null;
-  const late = lastDays == null || lastDays >= LATE_DAYS;
+  const active = [...p.sites].some((k) => !(data.sites.get(k) || {}).completedAt);
+  const late = active && (lastDays == null || lastDays >= LATE_DAYS);
   const state = open ? "need" : late ? "late" : "ok"; // 表示はいちばん急ぐもの。絞り込みは need / late を別々に見る
   return { last, lastDays, weekPhotos, open, late, state };
 }
@@ -373,6 +382,7 @@ async function loadFromHandle() {
   try {
     const reports = [];
     const replies = [];
+    const statuses = [];
     data.photoFiles = new Map();
     await clearUrlCache();
     let jsonCount = 0;
@@ -385,12 +395,13 @@ async function loadFromHandle() {
           const j = JSON.parse(await (await f.handle.getFile()).text());
           if (j.kind === "genba-photo-report") reports.push(j);
           else if (j.kind === "genba-reply") replies.push(j);
+          else if (j.kind === "genba-site-status") statuses.push(j);
         } catch (e) {
           console.warn("読めないJSON", f.path, e);
         }
       }
     }
-    buildData(reports, replies);
+    buildData(reports, replies, statuses);
     data.source = { name: dirHandle.name, at: new Date().toISOString(), reports: data.reports.length, photos: data.photoFiles.size, writable: true };
     toast(`報告 ${data.reports.length}件・写真 ${data.photoFiles.size}枚を読み込みました`);
   } catch (e) {
@@ -411,6 +422,7 @@ async function onFolderInput(e) {
   showLoading("報告フォルダを読んでいます...");
   const reports = [];
   const replies = [];
+  const statuses = [];
   data.photoFiles = new Map();
   await clearUrlCache();
   for (const f of files) {
@@ -421,11 +433,12 @@ async function onFolderInput(e) {
         const j = JSON.parse(await f.text());
         if (j.kind === "genba-photo-report") reports.push(j);
         else if (j.kind === "genba-reply") replies.push(j);
+          else if (j.kind === "genba-site-status") statuses.push(j);
       } catch (err) {}
     }
   }
   demoMode = false;
-  buildData(reports, replies);
+  buildData(reports, replies, statuses);
   data.source = { name: (files[0].webkitRelativePath || "").split("/")[0] || "フォルダ", at: new Date().toISOString(), reports: data.reports.length, photos: data.photoFiles.size, writable: false };
   hideLoading();
   renderSource();
@@ -668,7 +681,7 @@ function personCard({ p, st }) {
   const ps = PERSON_STATE[st.state];
   return (
     `<button class="personCard" data-person="${esc(p.key)}"><div class="pcHead">${avatar(p.name)}<div class="pcName"><div><b>${esc(p.name)}</b><span class="stBadge ${ps.cls}">${ps.label}</span></div>` +
-    `<div class="pcSites">担当現場${sites.map((s) => `<span class="tag">${esc(s.name)}</span>`).join("")}</div></div>${icon("chevron", 20)}</div>` +
+    `<div class="pcSites">担当現場${sites.map((s) => `<span class="tag${s.completedAt ? " done" : ""}">${esc(s.name)}${s.completedAt ? "（完工）" : ""}</span>`).join("")}</div></div>${icon("chevron", 20)}</div>` +
     `<div class="pcStats"><div class="stat${st.open ? " alert" : ""}"><span class="statLabel">${icon("chat", 16)}未回答</span><span><b>${st.open}</b>件</span></div>` +
     `<div class="stat"><span class="statLabel">${icon("photo", 16)}今週の写真</span><span><b>${st.weekPhotos}</b>枚</span></div>` +
     `<div class="stat"><span class="statLabel">${icon("calendar", 16)}最終報告</span><span class="lastRep">${st.last ? fmtMD(st.last.sent_at) : "－"}</span>` +
@@ -846,7 +859,7 @@ function renderSites() {
           .map((s) => {
             const last = s.reports[0];
             const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
-            return `<button class="siteRow" data-site="${esc(s.key)}">${icon("building", 18)}<b>${esc(s.name)}</b><span>報告 ${s.reports.length}回</span><span>最終 ${last ? fmtMD(last.period.end) + "まで" : "－"}</span>${open ? `<span class="sBadge open">未回答 ${open}</span>` : "<span></span>"}${icon("chevron", 16)}</button>`;
+            return `<button class="siteRow${s.completedAt ? " done" : ""}" data-site="${esc(s.key)}">${icon("building", 18)}<b>${esc(s.name)}${s.completedAt ? ` <span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : ""}</b><span>報告 ${s.reports.length}回</span><span>最終 ${last ? fmtMD(last.period.end) + "まで" : "－"}</span>${open ? `<span class="sBadge open">未回答 ${open}</span>` : "<span></span>"}${icon("chevron", 16)}</button>`;
           })
           .join("")}</div></div>`
       );
@@ -915,7 +928,7 @@ function renderSite(key) {
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
     `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
-    `<h1 class="heroTitle">${esc(s.name)}の報告</h1>` +
+    `<h1 class="heroTitle">${esc(s.name)}の報告${s.completedAt ? ` <span class="doneBadge">完工 ${fmtMD(s.completedAt)}</span>` : ""}</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
   html +=
     `<div class="card siteSummary"><div class="ssCell">${avatar(s.personName, 56)}<div><div class="ssLabel">担当監督${s.persons.size > 1 ? `（${s.persons.size}人）` : ""}</div>` +

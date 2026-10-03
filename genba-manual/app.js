@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "現場を完工にする時に、確認と完工日の記録をするようにしました。「完工を上司に知らせて完了」を選ぶと、Boxに完工の知らせが届き、見守りで完工済みと分かります。設定と現場の管理で、現場ごとに使っている容量が見られます" },
   { date: "2026-10-03", type: "feature", text: "現場を「休工」にできるようにしました（ホームの今の現場のカードから）。休工中は報告の遅れに数えず、ホームでは薄く表示します。工程マニュアルの「この現場ではこの項目はない」を、項目名の右の「該当なし」に移し、工程タブから「写真要の一覧」を開けるようにしました" },
   { date: "2026-10-03", type: "feature", text: "報告の期間を「週（月〜土）」で表示するようにしました。報告は金曜から翌週の月曜まで（遅くとも火曜）。月・火曜は、先週の報告がまだなら先週の分が出ます。報告が遅れている週があると、ホームの「やること」に出ます" },
   { date: "2026-10-03", type: "feature", text: "「写真要の一覧」を追加しました。マニュアルで写真が必要なチェックを工程順に並べ、撮った・まだ・撮り忘れが一目で分かります（写真タブの「写真要の品質写真」、ホームの「撮り忘れ」から）。この現場では撮らなくてよいものは「不要」にすると、数から外れます" },
@@ -891,6 +892,78 @@ async function saveCover(siteId, file) {
   await dbPut("meta", { key: "cover:" + siteId, blob, thumb, updatedAt: new Date().toISOString() });
 }
 
+/* ---------- 完工 ----------
+   完工にすると、ホーム・やること・今の現場の切り替えから外れる（写真・記録は残る）。
+   上司の見守りに完工を知らせる時は、小さな「完工の知らせ」(genba-site-status) を報告と同じ Box に送る */
+function openCompleteSheet(site, photos) {
+  const left = unreported(photos || []).filter((p) => !isRecordPhoto(p)).length;
+  const email = getBoxEmail();
+  const at = new Date().toISOString();
+  const status = {
+    kind: "genba-site-status",
+    schema: 1,
+    status: "completed",
+    at,
+    app_version: APP_VERSION,
+    sender: getSetting(USER_NAME_KEY),
+    sender_id: deviceId(),
+    site: site.name,
+    site_id: site.id,
+    kouji_no: site.koujiNo || "",
+    members: site.members || [],
+  };
+  const name = safeFileName(`完工_${getSetting(USER_NAME_KEY) || "名前なし"}_${site.name}_${todayKey()}.json`);
+  const file = new File([JSON.stringify(status, null, 2)], name, { type: "application/json" });
+  const finish = async () => {
+    site.archived = true;
+    site.completedAt = todayKey();
+    await dbPut("sites", site);
+    toast(`「${site.name}」を完工にしました`);
+    await refreshSites();
+    if (currentView === "siteManageView") renderSiteManage();
+    else rerenderCurrentView();
+  };
+  openSheet("完工にする", (body, close) => {
+    const note = document.createElement("div");
+    note.className = "mutedText";
+    note.textContent = `「${site.name}」を完工にします。ホームと「今の現場」の切り替えから外れます（写真・チェックの記録は残り、現場の管理から「進行中に戻す」で戻せます）。`;
+    body.appendChild(note);
+    if (left) {
+      const w = document.createElement("div");
+      w.className = "warnText";
+      w.textContent = `まだ報告していない報告写真が${left}枚あります。必要なら、先に報告タブから送ってください。`;
+      body.appendChild(w);
+    }
+    body.appendChild(
+      sheetButton("完工を上司に知らせて完了にする", "btnPrimary btnLarge", async () => {
+        if (!email) {
+          alert("設定で、Boxのアップロード用メールアドレスを登録してください。");
+          return;
+        }
+        if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+        if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+          alert("この端末では共有機能が使えないため送れません。「知らせずに完了にする」を選んでください。");
+          return;
+        }
+        try {
+          await navigator.share({ files: [file], title: name }); // タップの中ですぐ呼ぶ（iPhone）
+        } catch (e) {
+          return;
+        }
+        close();
+        await finish();
+      })
+    );
+    body.appendChild(
+      sheetButton("知らせずに完了にする", "btnSecondary", async () => {
+        close();
+        await finish();
+      })
+    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
 async function editSiteInfo(site) {
   const res = await editSiteSheet(site);
   if (!res) return;
@@ -1161,9 +1234,9 @@ async function renderSiteManage() {
     card.className = "siteCard manageCard";
     card.innerHTML =
       `<div class="siteCardHead"><span class="siteName">${esc(site.name)}</span>` +
-      (site.id === currentSiteId ? '<span class="badge badgeOk">今の現場</span>' : site.archived ? '<span class="badge badgeMuted">完了</span>' : "") +
-      `</div><div class="siteMeta">${site.koujiNo ? `工事番号 ${esc(site.koujiNo)} ・ ` : '<span class="warnInline">工事番号なし</span> ・ '}担当 ${esc((site.members || []).join("・") || "未登録")}</div>` +
-      `<div class="siteMeta">登録 ${fmtDate(toDateKey(new Date(site.createdAt)))} ・ 写真 ${photos.length}枚</div>` +
+      (site.id === currentSiteId ? '<span class="badge badgeOk">今の現場</span>' : site.archived ? '<span class="badge badgeMuted">完工</span>' : "") +
+      `</div>${site.archived && site.completedAt ? `<div class="siteMeta">完工 ${fmtDate(site.completedAt)}</div>` : ""}<div class="siteMeta">${site.koujiNo ? `工事番号 ${esc(site.koujiNo)} ・ ` : '<span class="warnInline">工事番号なし</span> ・ '}担当 ${esc((site.members || []).join("・") || "未登録")}</div>` +
+      `<div class="siteMeta">登録 ${fmtDate(toDateKey(new Date(site.createdAt)))} ・ 写真 ${photos.length}枚（約${(photos.reduce((t, p) => t + (p.blob ? p.blob.size : 0) + (p.thumb ? p.thumb.size : 0), 0) / 1048576).toFixed(1)}MB）</div>` +
       `<div class="manageBtns"></div>`;
     const btns = card.querySelector(".manageBtns");
     const add = (label, cls, fn) => {
@@ -1188,12 +1261,18 @@ async function renderSiteManage() {
       await togglePause(site);
       renderSiteManage();
     });
-    add(site.archived ? "進行中に戻す" : "完了にする", "btnSecondary", async () => {
-      site.archived = !site.archived;
-      await dbPut("sites", site);
-      toast(site.archived ? "完了した現場にしました" : "進行中に戻しました");
-      await refreshSites();
-      renderSiteManage();
+    add(site.archived ? "進行中に戻す" : "完工にする", "btnSecondary", async () => {
+      if (site.archived) {
+        if (!confirm(`「${site.name}」を進行中に戻しますか？`)) return;
+        site.archived = false;
+        delete site.completedAt;
+        await dbPut("sites", site);
+        toast("進行中に戻しました");
+        await refreshSites();
+        renderSiteManage();
+        return;
+      }
+      openCompleteSheet(site, photos);
     });
     add("削除", "btnDanger", async () => {
       if (!confirm(`「${site.name}」と写真${photos.length}枚・チェックの記録をすべて削除します。元に戻せません。よろしいですか？`)) return;
@@ -3521,16 +3600,32 @@ async function renderSettings() {
   $("importManualBtn").textContent = manualMeta ? "新しい版を取り込む" : "マニュアルを取り込む";
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
-  let text = `保存中の写真：${photos.length}枚`;
+  const sites = await getSites();
+  const pages = await dbGetAll("manualPages");
+  const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+  const bySite = {};
+  photos.forEach((p) => {
+    const s = (bySite[p.siteId] = bySite[p.siteId] || { n: 0, bytes: 0 });
+    s.n++;
+    s.bytes += (p.blob ? p.blob.size : 0) + (p.thumb ? p.thumb.size : 0);
+  });
+  const photoBytes = Object.values(bySite).reduce((t, s) => t + s.bytes, 0);
+  const manualBytes = pages.reduce((t, p) => t + (p.blob ? p.blob.size : 0), 0);
+  let html = `<div class="stoRow total"><span>写真 ${photos.length}枚</span><b>${mb(photoBytes)}MB</b></div>`;
+  sites
+    .filter((x) => bySite[x.id])
+    .sort((a, b) => bySite[b.id].bytes - bySite[a.id].bytes)
+    .forEach((x) => {
+      html += `<div class="stoRow"><span>${esc(x.name)}${x.archived ? '<span class="badge badgeMuted">完工</span>' : ""}　${bySite[x.id].n}枚</span><b>${mb(bySite[x.id].bytes)}MB</b></div>`;
+    });
+  html += `<div class="stoRow total"><span>マニュアル（${pages.length}ページ）</span><b>${mb(manualBytes)}MB</b></div>`;
   if (navigator.storage && navigator.storage.estimate) {
     const est = await navigator.storage.estimate();
-    text += ` ・ 使用量 約${Math.round((est.usage || 0) / 1024 / 1024)}MB`;
+    html += `<div class="stoRow total"><span>アプリ全体（見積もり）</span><b>${mb(est.usage || 0)}MB</b></div>`;
   }
-  if (navigator.storage && navigator.storage.persisted) {
-    const persisted = await navigator.storage.persisted();
-    text += persisted ? "（自動削除の対象外）" : "";
-  }
-  info.textContent = text;
+  if (navigator.storage && navigator.storage.persisted && (await navigator.storage.persisted())) html += `<div class="hint">自動削除の対象外になっています</div>`;
+  html += `<div class="hint">写真1枚は約0.3〜0.4MB（撮った写真を縮めて保存しています）。</div>`;
+  info.innerHTML = html;
 }
 
 /* ---------- 会社ロゴ ---------- */

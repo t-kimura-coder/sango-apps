@@ -377,3 +377,8 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .pgPre small { font-weight: 400; font-size: 12px; color: var(--color-text-muted); }
 
 .noReply { grid-column: 1 / -1; padding: 10px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning-text); font-size: 14px; }
+
+/* 完工 */
+.tag.done { background: var(--color-ok-soft); color: var(--color-ok-text); }
+.siteRow.done { opacity: 0.7; }
+.doneBadge { display: inline-block; vertical-align: middle; padding: 2px 12px; border-radius: 10px; background: var(--color-ok-soft); color: var(--color-ok-text); font-size: 16px; font-weight: 800; letter-spacing: 0; }

@@ -1016,3 +1016,9 @@ img.imgBroken { visibility: hidden; }
 .dashSiteMain.paused { background: var(--color-surface-sub); }
 .dashSiteRow.paused { background: var(--color-surface-sub); box-shadow: none; }
 .dashSiteRow.paused .dsName .pill { opacity: 1; }
+
+/* 容量 */
+.stoRow { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0 4px 12px; font-size: var(--fs-sm); color: var(--color-text-sub); border-bottom: 1px dashed var(--color-border); }
+.stoRow.total { padding-left: 0; color: var(--color-heading); font-weight: 700; }
+.stoRow b { white-space: nowrap; color: var(--color-heading); }
+.stoRow .badge { margin-left: 4px; }
