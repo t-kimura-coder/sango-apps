@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 59;
+const APP_VERSION = 60;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "チェックが全部済んだ工程に「✓ 完了」が付くようにしました（工程ページ・段階のカード）。写真要の一覧も、全部撮れた工程に「✓ 撮影済み」が出ます" },
   { date: "2026-10-03", type: "feature", text: "チェックポイントごとに「なし」（この現場には無いチェック）を付けられるようにしました。灰色になり、進み具合・写真要の数から外れます" },
   { date: "2026-10-03", type: "feature", text: "長い現場名は、途中で切らずに2行まで折り返して表示するようにしました（2行に入らない時は少し小さくします）" },
   { date: "2026-10-03", type: "feature", text: "報告の工程ページに「全部選ぶ」を付け、写真を指で横になぞるとまとめて選べるようにしました（写真タブも同じ）。品質写真のカメラから「撮影不要」も選べます。使い方のページと最初の案内を、今の画面に合わせて書き直しました" },
@@ -2543,9 +2544,21 @@ async function buildCheckSummary(siteId, start, end) {
         at: n.at,
         by: n.by || "",
       }));
-    if (!checked.length && !na && !notes.length) continue;
+    const naChecks = Object.entries(rec.naChecks || {})
+      .filter(([, v]) => !v.off && inPeriod(v.at))
+      .map(([key, v]) => {
+        const def = checkDefOf(it, key);
+        return { id: def && def.id ? def.id : "", text: def ? def.text : key.split("|").slice(1).join("|"), at: v.at, by: v.by || "" };
+      });
     const live = ((it.text && it.text.checks) || []).filter((c) => !isNaCheck(rec, checkKey("checks", c)));
     const total = live.length;
+    // この期間にチェックが全部そろった（最後のチェック・該当なしがこの期間）
+    let completedAt = "";
+    if (!rec.na && total && live.every((c) => rec.marks && rec.marks[checkKey("checks", c)])) {
+      const last = [...live.map((c) => rec.marks[checkKey("checks", c)].at), ...naChecks.map((x) => x.at)].sort().pop();
+      if (inPeriod(last)) completedAt = last;
+    }
+    if (!checked.length && !na && !notes.length && !naChecks.length) continue;
     out.push({
       item_id: it.id,
       item_no: it.no,
@@ -2555,6 +2568,8 @@ async function buildCheckSummary(siteId, start, end) {
       checks_done: live.filter((c) => rec.marks && rec.marks[checkKey("checks", c)]).length,
       checks_na: ((it.text && it.text.checks) || []).length - total,
       not_applicable: !!rec.na,
+      completed_at: completedAt,
+      na_checks: naChecks,
       checked,
       notes,
     });
@@ -2620,7 +2635,7 @@ async function sendToBox() {
   await loadSiteChecks();
   const progress = GROUPS.map((g, i) => {
     const pr = groupProgress(g, siteCheckRecs, siteRecordPhotos);
-    return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
+    return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
   });
 
   openSheet("Boxへ送信", (body, close) => {
@@ -2894,7 +2909,7 @@ function guideHtml(p, opts = { report: true, record: true }) {
 
 // 大分類ごとの進み具合（今の現場のチェックと品質写真。該当なしにした項目は数えない）
 function groupProgress(g, recs, recPhotos) {
-  const out = { checks: 0, checksDone: 0, photos: 0, photosDone: 0 };
+  const out = { checks: 0, checksDone: 0, checksNa: 0, photos: 0, photosDone: 0 };
   if (!manualMeta || (!recs && !currentSiteId)) return out;
   recs = recs || siteCheckRecs;
   recPhotos = recPhotos || siteRecordPhotos;
@@ -2905,7 +2920,7 @@ function groupProgress(g, recs, recPhotos) {
       if (rec && rec.na) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const key = checkKey("checks", c);
-        if (isNaCheck(rec, key)) return;
+        if (isNaCheck(rec, key)) return void out.checksNa++;
         out.checks++;
         if (rec && rec.marks[key]) out.checksDone++;
         if (c.photo === "要" && !photoSkipped(rec, key)) {
@@ -2931,7 +2946,8 @@ function renderGroupGrid(container, withProgress = false) {
       (pre
         ? `<span class="groupProg"><span class="preLabel">導入前</span></span>`
         : pr && pr.checks
-        ? `<span class="groupProg"><span>チェック <b>${pr.checksDone}</b>/${pr.checks}</span>` +
+        ? `<span class="groupProg">` +
+          (pr.checksDone >= pr.checks ? `<span class="groupDone">${icon(ICONS.check, 12, 3.4)}完了</span>` : `<span>チェック <b>${pr.checksDone}</b>/${pr.checks}</span>`) +
           (pr.photos ? `<span><span class="kindLabel record">品質</span><b>${pr.photosDone}</b>/${pr.photos}</span>` : "") +
           `</span>`
         : "") +
@@ -3003,9 +3019,32 @@ function checkRecOf(itemId) {
 
 function itemProgress(it) {
   const rec = checkRecOf(it.id);
-  const checks = ((it.text && it.text.checks) || []).filter((c) => !isNaCheck(rec, checkKey("checks", c)));
+  const all = (it.text && it.text.checks) || [];
+  const checks = all.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
   const done = checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
-  return { done, total: checks.length, na: rec.na };
+  // チェックを全部「なし」にした項目は、項目ごと該当なしと同じ扱い（完了とは分ける）
+  return { done, total: checks.length, na: rec.na || (all.length > 0 && checks.length === 0) };
+}
+// チェックが全部済んだか（写真は別に数える）
+function itemDone(it) {
+  const pr = itemProgress(it);
+  return !pr.na && pr.total > 0 && pr.done >= pr.total;
+}
+// 工程ページの「3/7」。全部済んだら「✓ 完了」
+function checkProgHtml(it) {
+  const pr = itemProgress(it);
+  if (pr.na && !checkRecOf(it.id).na) return "すべて該当なし";
+  return itemDone(it) ? `${icon(ICONS.check, 14, 3)}完了` : `${pr.done}/${pr.total}`;
+}
+function setCheckProg(it) {
+  const prog = $("checkProgress");
+  if (!prog) return;
+  prog.innerHTML = checkProgHtml(it);
+  prog.classList.toggle("complete", itemDone(it));
+}
+// チェックを付けて全部済んだ瞬間に知らせる
+function toastIfCompleted(it, wasDone) {
+  if (!wasDone && itemDone(it)) toast(`「${it.name}」のチェックが完了しました`);
 }
 
 // itemId を指定すると、その項目を開いた状態で表示する
@@ -3058,10 +3097,13 @@ function renderItemStrip(scrollToActive = true) {
     }
     lastCat = it.cat;
     const pr = itemProgress(it);
+    const fin = itemDone(it);
     const b = document.createElement("button");
-    b.className =
-      "itemChip" + (i === currentItemIdx ? " active" : "") + (pr.na ? " na" : "") + (!pr.na && pr.total && pr.done === pr.total ? " done" : "");
-    b.innerHTML = (it.no ? `<span class="itemChipNo">${esc(it.no)}</span>` : "") + `<span class="itemChipName">${esc(it.name)}</span>`;
+    b.className = "itemChip" + (i === currentItemIdx ? " active" : "") + (pr.na ? " na" : "") + (fin ? " done" : "");
+    b.innerHTML =
+      (it.no ? `<span class="itemChipNo">${esc(it.no)}</span>` : "") +
+      `<span class="itemChipName">${esc(it.name)}</span>` +
+      (fin ? `<span class="chipDone" aria-label="完了">${icon(ICONS.check, 12, 3.4)}</span>` : "");
     b.addEventListener("click", async () => {
       currentItemIdx = i;
       renderItemStrip();
@@ -3135,11 +3177,9 @@ async function renderItem() {
     if (!tx) {
       html += `<div class="emptyNote">このマニュアルには文章データが入っていません。設定から最新版のマニュアルを取り込み直すと、ポイントやチェックポイントが表示されます。</div>`;
     } else {
-      const liveChecks = tx.checks.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
-      const done = liveChecks.filter((c) => rec.marks[checkKey("checks", c)]).length;
       html +=
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
-        (tx.checks.length ? `<span id="checkProgress">${done}/${liveChecks.length}</span>` : "") +
+        (tx.checks.length ? `<span id="checkProgress"${itemDone(it) ? ' class="complete"' : ""}>${checkProgHtml(it)}</span>` : "") +
         `<button class="miniBtn" data-go="docs">原本を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
       html += tx.checks.length
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
@@ -3365,9 +3405,11 @@ function bindCheckRow(row, it) {
   const naBtn = row.querySelector("[data-nacheck]");
   if (naBtn)
     naBtn.addEventListener("click", async () => {
+      const wasDone = itemDone(it);
       await toggleNaCheck(it, key);
       renderItemStrip(false);
       refreshCheckRow(it, key);
+      toastIfCompleted(it, wasDone);
     });
   const skip = row.querySelector("[data-skip]");
   if (skip)
@@ -3388,12 +3430,7 @@ function refreshCheckRow(it, key) {
   const fresh = tmp.firstElementChild;
   row.replaceWith(fresh);
   bindCheckRow(fresh, it);
-  const prog = $("checkProgress");
-  if (prog && it.text) {
-    const rec = checkRecOf(it.id);
-    const live = it.text.checks.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
-    prog.textContent = `${live.filter((c) => rec.marks[checkKey("checks", c)]).length}/${live.length}`;
-  }
+  if (it.text) setCheckProg(it);
 }
 
 // 品質写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
@@ -3518,11 +3555,13 @@ async function saveCheckRec(rec) {
 async function toggleMark(it, key) {
   if (!currentSiteId) return;
   const rec = checkRecOf(it.id);
+  const wasDone = itemDone(it);
   if (rec.marks[key]) delete rec.marks[key];
   else rec.marks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
   await saveCheckRec(rec);
   renderItemStrip(false);
   refreshCheckRow(it, key);
+  toastIfCompleted(it, wasDone);
 }
 
 async function toggleNa(it) {
@@ -4879,8 +4918,13 @@ async function renderRequired(keepScroll) {
   const nSkip = rows.filter((r) => r.status === "skip").length;
   const nOut = rows.filter((r) => r.status === "na" || r.status === "pre").length;
   const nMissing = rows.filter((r) => r.status === "todo" && r.started).length;
+  // 1枚以上撮っていて、撮るものが残っていない（残りは不要）＝撮影済み
+  const photoDone = (rs) => rs.some((r) => r.status === "done") && !rs.some((r) => r.status === "todo");
+  const allDone = live.length > 0 && done === live.length;
   sum.innerHTML =
-    `<div class="reqSum"><div class="reqSumMain"><span class="kindLabel record">品質写真</span><b>${done}</b>/${live.length}<span class="statPct">${pct}%</span></div>` +
+    `<div class="reqSum${allDone ? " complete" : ""}"><div class="reqSumMain"><span class="kindLabel record">品質写真</span><b>${done}</b>/${live.length}` +
+    (allDone ? `<span class="statPct done">${icon(ICONS.check, 14, 3)}すべて撮影済み</span>` : `<span class="statPct">${pct}%</span>`) +
+    `</div>` +
     `<span class="statBar"><span style="width:${pct}%"></span></span>` +
     `<div class="reqSumSub">撮り忘れ ${nMissing}件・不要にした ${nSkip}件${nOut ? `・該当なし／導入前 ${nOut}件` : ""}</div></div>`;
   chips.innerHTML = "";
@@ -4911,7 +4955,10 @@ async function renderRequired(keepScroll) {
     if (r.g !== lastG) {
       const h = document.createElement("div");
       h.className = "reqGroup";
-      h.innerHTML = `${groupArt(r.g, 28)}<span>${esc(r.g.name)}</span><small>${esc(r.g.sub)}</small>`;
+      const gDone = photoDone(rows.filter((x) => x.g === r.g));
+      h.innerHTML =
+        `${groupArt(r.g, 28)}<span>${esc(r.g.name)}</span><small>${esc(r.g.sub)}</small>` +
+        (gDone ? `<span class="reqDone">${icon(ICONS.check, 12, 3.4)}撮影済み</span>` : "");
       list.appendChild(h);
       lastG = r.g;
       lastIt = null;
@@ -4921,7 +4968,11 @@ async function renderRequired(keepScroll) {
       box.className = "reqItem";
       const head = document.createElement("button");
       head.className = "reqItemHead";
-      head.innerHTML = `${r.it.no ? `<span class="itemChipNo">${esc(r.it.no)}</span>` : ""}<span>${esc(r.it.name)}</span>${icon(ICONS.chevron, 16)}`;
+      const iDone = photoDone(rows.filter((x) => x.it === r.it));
+      head.innerHTML =
+        `${r.it.no ? `<span class="itemChipNo">${esc(r.it.no)}</span>` : ""}<span>${esc(r.it.name)}</span>` +
+        (iDone ? `<span class="reqDone">${icon(ICONS.check, 12, 3.4)}撮影済み</span>` : "") +
+        icon(ICONS.chevron, 16);
       const it = r.it;
       head.addEventListener("click", () => {
         currentMTab = "check";

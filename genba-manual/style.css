@@ -1117,3 +1117,15 @@ img.imgBroken { visibility: hidden; }
 .checkRow.naC .checkText { text-decoration: line-through; }
 .checkRow.naC .checkMeta { display: inline-block; width: 100%; }
 .naCLabel { font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-muted); text-decoration: none; display: inline-block; }
+
+/* 完了の表示 */
+#checkProgress.complete, .groupDone, .reqDone, .statPct.done { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; white-space: nowrap; }
+.groupDone { font-size: 11px; }
+#checkProgress.complete { padding: 2px 6px; gap: 2px; }
+.secHead .secRight:has(#checkProgress.complete) { gap: 4px; }
+.secHead .secRight:has(#checkProgress.complete) .miniBtn { padding: 0 10px; }
+.secHead .secRight:has(#checkProgress.complete) .miniBtn svg { display: none; }
+.reqDone { margin-left: auto; font-size: var(--fs-xs); }
+.reqDone + svg { margin-left: 4px; }
+.reqGroup .reqDone { font-size: 11px; }
+.chipDone { flex: none; width: 20px; height: 20px; border-radius: 10px; background: var(--color-ok-text); color: #fff; display: inline-flex; align-items: center; justify-content: center; margin-left: -2px; }

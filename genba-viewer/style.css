@@ -426,3 +426,12 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 :root { color-scheme: light; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
 :root[data-theme="dark"] { color-scheme: dark; }
+
+/* 完了した工程・該当なしにしたチェック */
+.pgNa { font-size: 11px; color: var(--color-text-muted); margin-top: -2px; }
+.tlDone { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--color-ok-soft, #e3f1e8); color: var(--color-ok-text, #1f6b43); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.tlDoneHead { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.tlNa { margin-top: 8px; font-size: 13px; color: var(--color-text-sub); }
+.tlNa summary { cursor: pointer; font-weight: 700; }
+.tlNa ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.tlNa small { margin-left: 6px; color: var(--color-text-muted); }

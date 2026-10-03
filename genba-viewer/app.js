@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -919,6 +919,7 @@ function siteProgress(s) {
     group: g.group,
     before_start: !!g.before_start && per.every((p) => (p.prog.find((x) => x.group === g.group) || {}).before_start), // 誰か一人でも記録していれば出す
     checks_total: g.checks_total,
+    checks_na: g.checks_na || 0,
     checks_done: Math.min(g.checks_total, Math.max(done[g.group] ? done[g.group].size : 0, ...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).checks_done || 0))),
     photos_total: g.photos_total,
     photos_done: Math.max(...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).photos_done || 0)),
@@ -971,6 +972,7 @@ function renderSite(key) {
           return (
             `<div class="progCard"><div class="pgHead"><img src="art/${GROUP_ART[g.group] || "g1"}.webp" alt=""><b>${esc(g.group)}</b></div>` +
             `<div class="pgBar"><span style="width:${pc}%"></span></div><div class="pgNum">チェック ${pc}%<small>${g.checks_done}/${g.checks_total}</small></div>` +
+            (g.checks_na ? `<div class="pgNa">この現場で該当なし ${g.checks_na}件を除く</div>` : "") +
             `<div class="pgBar photo"><span style="width:${pp}%"></span></div><div class="pgNum">品質写真 ${pp}%<small>${g.photos_done}/${g.photos_total}</small></div>` +
             `<div class="pgState ${state[0]}">${state[1]}</div></div>`
           );
@@ -1003,6 +1005,8 @@ function renderSite(key) {
       const rec = photos.filter((x) => x.kind === "record");
       const checked = (r.checks || []).reduce((t, c) => t + (c.checked || []).length, 0);
       const notes = (r.checks || []).flatMap((c) => (c.notes || []).map((n) => ({ n, c })));
+      const completed = (r.checks || []).filter((c) => c.completed_at);
+      const naChecks = (r.checks || []).flatMap((c) => (c.na_checks || []).map((x) => ({ x, c })));
       const thumbs = photos.slice(0, 4);
       return (
         `<div class="tlItem"><div class="tlDot"></div><div class="card tlCard"><div class="tlDate"><b>${fmtMD(r.period.start)} 〜<br>${fmtMD(r.period.end)}</b>` +
@@ -1015,6 +1019,14 @@ function renderSite(key) {
         `<div class="tlChecks"><div class="tlLabel">チェック</div><div class="tlStat">${icon("check", 18)}期間中に付けたチェック <b>${checked}</b>件</div>` +
         `<div class="tlStat">${icon("camera", 18)}品質写真 <b>${rec.length}</b>枚</div>` +
         `<div class="tlStat">${icon("list", 18)}${esc((r.processes || []).map((x) => shortProc(x.name)).join("・") || "－")}</div>` +
+        (completed.length
+          ? `<div class="tlDone"><span class="tlDoneHead">${icon("check", 16)}チェックが完了した工程 <b>${completed.length}</b>件</span><span>${completed.map((c) => esc(c.item)).join("・")}</span></div>`
+          : "") +
+        (naChecks.length
+          ? `<details class="tlNa"><summary>この現場では該当なしにしたチェック <b>${naChecks.length}</b>件</summary><ul>${naChecks
+              .map(({ x, c }) => `<li><b>${esc(c.item)}</b>：${esc(x.text)}<small>${x.by ? esc(x.by) + "・" : ""}${fmtMD(x.at)}</small></li>`)
+              .join("")}</ul></details>`
+          : "") +
         (r.memo ? `<div class="tlMemo">${esc(r.memo)}</div>` : "") +
         `</div><div class="tlNotes"><div class="tlLabel">気づき・疑問・職人さんの要望</div>${
           notes.length
