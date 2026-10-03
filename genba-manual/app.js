@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "「写真要の一覧」を追加しました。マニュアルで写真が必要なチェックを工程順に並べ、撮った・まだ・撮り忘れが一目で分かります（写真タブの「写真要の品質写真」、ホームの「撮り忘れ」から）。この現場では撮らなくてよいものは「不要」にすると、数から外れます" },
   { date: "2026-10-02", type: "fix", text: "写真が「？」になって見えなくなる不具合の原因を直しました（写真の画像と、送る・報告済みなどの印を別々に保存するようにしました）。使っている途中でアプリが勝手に読み込み直されることも無くなりました（新しい版はホームに戻った時に切り替わります）" },
   { date: "2026-10-02", type: "fix", text: "報告を送った日の後から付けたチェックやメモが、次の報告に入らないことがある不具合を直しました" },
   { date: "2026-10-02", type: "feature", text: "写真タブに見出しの絵を付けました（工程・報告タブとそろえました）" },
@@ -561,6 +562,7 @@ const VIEW_TABS = {
   manualView: "manual",
   groupView: "manual",
   albumView: "photos",
+  requiredView: "photos",
   shotView: "report",
   reportView: "report",
   reportProcView: "report",
@@ -1057,6 +1059,7 @@ function rerenderCurrentView() {
     dashView: renderDash,
     manualView: renderManual,
     albumView: renderAlbum,
+    requiredView: () => renderRequired(true),
     reportView: renderReport,
     reportProcView: renderReportProc,
     reportPastView: goReport,
@@ -1315,16 +1318,23 @@ function goAlbum() {
 }
 
 // 写真要のチェックのうち、品質写真が撮れている数（該当なしにした工程は数えない）
+// 「この現場では撮影不要」にした写真要のチェック（チェック記録の noPhoto に、いつ・誰がを残す）
+function photoSkipped(rec, key) {
+  return !!(rec && rec.noPhoto && rec.noPhoto[key]);
+}
+
 async function recordCoverage(siteId) {
   if (!manualMeta) return null;
   const recs = Object.fromEntries((await dbGetAll("checks", "siteId", siteId)).map((r) => [r.itemId, r]));
   const photos = (await getSitePhotos(siteId)).filter(isRecordPhoto);
+  const site = (await getSites()).find((x) => x.id === siteId);
+  const preCats = new Set(GROUPS.slice(0, (site && site.startGroup) || 0).flatMap((g) => g.cats));
   let total = 0;
   let done = 0;
   manualMeta.items.forEach((it) => {
-    if (recs[it.id] && recs[it.id].na) return;
+    if ((recs[it.id] && recs[it.id].na) || preCats.has(it.cat)) return;
     ((it.text && it.text.checks) || []).forEach((c) => {
-      if (c.photo !== "要") return;
+      if (c.photo !== "要" || photoSkipped(recs[it.id], checkKey("checks", c))) return;
       total++;
       if (photos.some((p) => p.itemId === it.id && p.checkKey === checkKey("checks", c))) done++;
     });
@@ -1359,9 +1369,10 @@ async function renderAlbum() {
     `<div class="statBox"><span class="kindLabel record">品質</span><b>${nRecord}</b>枚</div>` +
     `<div class="statBox"><span class="kindLabel report">報告</span><b>${nReport}</b>枚</div>` +
     (cov
-      ? `<div class="statBox wide"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span><span class="statPct">${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%</span></div>`
+      ? `<button class="statBox wide statLink" id="albumReqBtn"><span>写真要の品質写真</span><b>${cov.done}</b>/${cov.total}<span class="statBar"><span style="width:${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%"></span></span><span class="statPct">${cov.total ? Math.round((cov.done / cov.total) * 100) : 0}%</span><span class="statGo">一覧${icon(ICONS.chevron, 14)}</span></button>`
       : "");
 
+  if ($("albumReqBtn")) $("albumReqBtn").addEventListener("click", () => openRequired("todo"));
   const kinds = $("albumKinds");
   kinds.innerHTML = "";
   [["all", "すべて"], ["record", "品質写真"], ["report", "報告写真"]].forEach(([k, label]) => {
@@ -2327,7 +2338,7 @@ function groupProgress(g, recs, recPhotos) {
         const key = checkKey("checks", c);
         out.checks++;
         if (rec && rec.marks[key]) out.checksDone++;
-        if (c.photo === "要") {
+        if (c.photo === "要" && !photoSkipped(rec, key)) {
           out.photos++;
           if (recPhotos[`${it.id}|${key}`]) out.photosDone++;
         }
@@ -2657,7 +2668,9 @@ function checkRowHtml(sec, c, rec, it) {
   const disabled = !currentSiteId || rec.na;
   // 「写真要」のチェックには品質写真のカメラ。撮る前は灰色、撮ったら写真が出る
   let cam = "";
-  if (c.photo === "要") {
+  if (c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && photoSkipped(rec, key)) {
+    cam = `<button class="checkCam skip" data-skip="1" aria-label="撮影不要を解除">不要</button>`;
+  } else if (c.photo === "要") {
     const ph = siteRecordPhotos[`${it.id}|${key}`];
     cam = ph
       ? `<button class="checkCam has" data-cam="1" aria-label="品質写真を見る"><img src="${blobUrl("manual", ph.thumb)}" alt=""></button>`
@@ -2756,6 +2769,13 @@ function bindCheckRow(row, it) {
   row.querySelector(".checkMain").addEventListener("click", () => toggleMark(it, key));
   const cam = row.querySelector("[data-cam]");
   if (cam) cam.addEventListener("click", () => onCheckCamera(it, key));
+  const skip = row.querySelector("[data-skip]");
+  if (skip)
+    skip.addEventListener("click", async () => {
+      if (!confirm("「撮影不要」を解除して、品質写真を撮るようにしますか？")) return;
+      await toggleNoPhoto(it, key);
+      refreshCheckRow(it, key);
+    });
 }
 
 // 1行だけ描き直す（全体を描き直すと画面の位置がずれるため）
@@ -2812,6 +2832,7 @@ function onCheckCamera(it, key) {
         await dbDeleteMany("photos", [ph.id]);
         delete siteRecordPhotos[`${it.id}|${key}`];
         refreshCheckRow(it, key);
+        if (currentView === "requiredView") renderRequired(true);
         toast("品質写真を削除しました");
       },
     },
@@ -2848,6 +2869,7 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
       refreshCheckRow(it, t.checkKey);
     }
     toast(autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました");
+    if (currentView === "requiredView") renderRequired(true);
   } catch (e) {
     console.error(e);
     alert("写真を保存できませんでした。もう一度撮影してください。");
@@ -3471,7 +3493,8 @@ async function siteSummary(site) {
       const rec = recs[it.id];
       if (preCats.has(it.cat) || !rec || rec.na || !Object.keys(rec.marks || {}).length) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
-        if (c.photo === "要" && !recPhotos[`${it.id}|${checkKey("checks", c)}`]) missing.push(it);
+        const k = checkKey("checks", c);
+        if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k)) missing.push(it);
       });
     });
   const cands = unreported(photos);
@@ -3607,7 +3630,7 @@ async function renderDash() {
       icon: ICONS.camera,
       cls: "blue",
       html: `撮り忘れの品質写真 <b class="em">${curSum.missing.length}件</b>`,
-      go: () => openGroup(groupOfProcess(curSum.missing[0].cat).id, curSum.missing[0].id),
+      go: () => openRequired("missing"),
     });
   if (!unread.length) todo.push({ icon: ICONS.reply, cls: "muted", html: `上司からの返信を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
   const todoBox = $("dashTodo");
@@ -3911,7 +3934,8 @@ async function onRestorePicked() {
         });
         const notes = [...byId.values()];
         const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
-        return Object.assign({}, cur, { marks, notes }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
+        const noPhoto = Object.assign({}, r.noPhoto || {}, cur.noPhoto || {});
+        return Object.assign({}, cur, { marks, notes, noPhoto }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
       });
       await dbPutMany("checks", merged);
       added.checks = merged.length;
@@ -4108,6 +4132,157 @@ function goManual() {
   showView("manualView");
 }
 
+/* ---------- 写真要の一覧（マニュアルで写真が必要なチェックを、工程順に） ----------
+   「マニュアルのどこの写真が無かったか」をすぐ確かめる画面。この現場では撮らなくてよいものは「不要」にでき、
+   不要にしたものは品質写真の数（写真タブ・ホーム・工程の進み具合・報告の進み具合）から外れる */
+let requiredFilter = "todo";
+let requiredFrom = "albumView";
+const REQ_FILTERS = [
+  ["todo", "まだ"],
+  ["missing", "撮り忘れ"],
+  ["done", "撮影済み"],
+  ["skip", "不要"],
+  ["all", "すべて"],
+];
+
+function openRequired(filter) {
+  requiredFrom = currentView === "dashView" ? "dashView" : "albumView";
+  if (filter) requiredFilter = filter;
+  showView("requiredView");
+  window.scrollTo(0, 0);
+  renderRequired();
+}
+
+async function toggleNoPhoto(it, key) {
+  const rec = checkRecOf(it.id);
+  rec.noPhoto = rec.noPhoto || {};
+  if (rec.noPhoto[key]) delete rec.noPhoto[key];
+  else rec.noPhoto[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
+  await saveCheckRec(rec);
+}
+
+async function renderRequired(keepScroll) {
+  const y = window.scrollY;
+  const site = await refreshSites();
+  await loadSiteChecks();
+  releaseUrls("required");
+  const sum = $("requiredSummary");
+  const chips = $("requiredChips");
+  const list = $("requiredList");
+  list.innerHTML = "";
+  if (!site || !manualMeta) {
+    sum.innerHTML = "";
+    chips.innerHTML = "";
+    list.innerHTML = `<div class="emptyState"><div class="emptyText">${site ? "設定からマニュアルを取り込むと、写真要の一覧が出ます。" : "上の「今の現場」から現場を登録すると、写真要の一覧が出ます。"}</div></div>`;
+    return;
+  }
+  const start = site.startGroup || 0;
+  const rows = [];
+  GROUPS.forEach((g, gi) =>
+    g.cats.forEach((cat) =>
+      allManualItems()
+        .filter((it) => it.cat === cat)
+        .forEach((it) =>
+          ((it.text && it.text.checks) || []).forEach((c) => {
+            if (c.photo !== "要") return;
+            const key = checkKey("checks", c);
+            const rec = siteCheckRecs[it.id];
+            const ph = siteRecordPhotos[`${it.id}|${key}`];
+            const started = !!(rec && Object.keys(rec.marks || {}).length);
+            const status = gi < start ? "pre" : rec && rec.na ? "na" : ph ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
+            rows.push({ g, it, c, key, ph, status, started });
+          })
+        )
+    )
+  );
+  const live = rows.filter((r) => r.status === "done" || r.status === "todo");
+  const done = live.filter((r) => r.status === "done").length;
+  const pct = live.length ? Math.round((done / live.length) * 100) : 0;
+  const nSkip = rows.filter((r) => r.status === "skip").length;
+  const nOut = rows.filter((r) => r.status === "na" || r.status === "pre").length;
+  const nMissing = rows.filter((r) => r.status === "todo" && r.started).length;
+  sum.innerHTML =
+    `<div class="reqSum"><div class="reqSumMain"><span class="kindLabel record">品質写真</span><b>${done}</b>/${live.length}<span class="statPct">${pct}%</span></div>` +
+    `<span class="statBar"><span style="width:${pct}%"></span></span>` +
+    `<div class="reqSumSub">撮り忘れ ${nMissing}件・不要にした ${nSkip}件${nOut ? `・該当なし／導入前 ${nOut}件` : ""}</div></div>`;
+  chips.innerHTML = "";
+  const count = (f) =>
+    f === "all" ? rows.length : f === "missing" ? nMissing : rows.filter((r) => r.status === f).length;
+  REQ_FILTERS.forEach(([f, label]) => {
+    const b = document.createElement("button");
+    b.className = "reqChip" + (requiredFilter === f ? " on" : "");
+    b.innerHTML = `${label}<span>${count(f)}</span>`;
+    b.addEventListener("click", () => {
+      requiredFilter = f;
+      renderRequired();
+    });
+    chips.appendChild(b);
+  });
+  const shown = rows.filter((r) =>
+    requiredFilter === "all" ? true : requiredFilter === "missing" ? r.status === "todo" && r.started : r.status === requiredFilter
+  );
+  if (!shown.length) {
+    list.innerHTML = `<div class="emptyState"><div class="emptyText">${requiredFilter === "missing" ? "撮り忘れはありません。" : "該当する写真はありません。"}</div></div>`;
+    return;
+  }
+  // 6工程 → 項目 の順に並べる
+  let lastG = null;
+  let lastIt = null;
+  let box = null;
+  shown.forEach((r) => {
+    if (r.g !== lastG) {
+      const h = document.createElement("div");
+      h.className = "reqGroup";
+      h.innerHTML = `${groupArt(r.g, 28)}<span>${esc(r.g.name)}</span><small>${esc(r.g.sub)}</small>`;
+      list.appendChild(h);
+      lastG = r.g;
+      lastIt = null;
+    }
+    if (r.it !== lastIt) {
+      box = document.createElement("div");
+      box.className = "reqItem";
+      const head = document.createElement("button");
+      head.className = "reqItemHead";
+      head.innerHTML = `${r.it.no ? `<span class="itemChipNo">${esc(r.it.no)}</span>` : ""}<span>${esc(r.it.name)}</span>${icon(ICONS.chevron, 16)}`;
+      const it = r.it;
+      head.addEventListener("click", () => {
+        currentMTab = "check";
+        openGroup(groupOfProcess(it.cat).id, it.id);
+      });
+      box.appendChild(head);
+      list.appendChild(box);
+      lastIt = r.it;
+    }
+    const row = document.createElement("div");
+    row.className = "reqRow " + r.status;
+    const camHtml =
+      r.status === "done"
+        ? `<img src="${blobUrl("required", r.ph.thumb)}" alt="">`
+        : r.status === "todo"
+        ? icon(ICONS.camera, 22)
+        : "";
+    const label = { pre: "導入前", na: "該当なし", skip: "不要", todo: r.started ? "撮り忘れ" : "", done: "" }[r.status];
+    row.innerHTML =
+      `<button class="reqCam ${r.status}" ${r.status === "done" || r.status === "todo" ? "" : "disabled"} aria-label="品質写真">${camHtml}</button>` +
+      `<span class="reqText">${esc(r.c.text)}${label ? `<span class="reqLabel ${r.status}${r.status === "todo" ? " miss" : ""}">${label}</span>` : ""}</span>` +
+      (r.status === "todo" || r.status === "skip"
+        ? `<button class="reqSkip${r.status === "skip" ? " on" : ""}">${r.status === "skip" ? "不要を解除" : "撮影不要"}</button>`
+        : "");
+    // カメラ・写真のボタンはタップの中でそのまま開く（iPhone）
+    const cam = row.querySelector(".reqCam");
+    if (r.status === "done" || r.status === "todo") cam.addEventListener("click", () => onCheckCamera(r.it, r.key));
+    const sk = row.querySelector(".reqSkip");
+    if (sk)
+      sk.addEventListener("click", async () => {
+        await toggleNoPhoto(r.it, r.key);
+        toast(r.status === "skip" ? "撮影不要を解除しました" : "この現場では撮影不要にしました（数から外れます）");
+        renderRequired(true);
+      });
+    box.appendChild(row);
+  });
+  if (keepScroll) window.scrollTo(0, y);
+}
+
 /* ---------- 写真が読み込めない時 ----------
    iPhone では、保存した写真のデータが読めなくなることがまれにある（「？」の画像になる）。
    そのままだと何が起きたか分からないので、代わりに「読み込めません」と出し、設定の「写真の点検」で数を確かめられるようにする */
@@ -4170,6 +4345,8 @@ function init() {
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
   $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
   $("reportPastBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("requiredBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("requiredBackBtn").addEventListener("click", () => (requiredFrom === "dashView" ? goDash() : goAlbum()));
   $("groupBackBtn").innerHTML = icon(ICONS.back, 26);
   $("settingsBackBtn").innerHTML = icon(ICONS.back, 26);
   document.querySelectorAll(".settingsBtn").forEach((b) => {

@@ -945,3 +945,44 @@ img.imgBroken { visibility: hidden; }
 .noteBadge { flex: none; white-space: nowrap; }
 .noteMeta { min-width: 0; }
 .noteStatus { flex: none; white-space: nowrap; }
+
+/* 報告タブ：「工程を追加」を見つけやすく */
+#reportBody > .btnDashed { min-height: 52px; background: var(--color-primary-soft); border: 1.5px dashed var(--color-primary); color: var(--color-primary); font-weight: 800; font-size: var(--fs-md); }
+/* 写真タブ：写真要の品質写真 → 一覧 */
+.statLink { width: 100%; text-align: left; cursor: pointer; border-color: var(--color-primary); }
+.statGo { display: inline-flex; align-items: center; margin-left: 6px; font-size: var(--fs-xs); font-weight: 800; color: var(--color-primary); }
+/* 写真要の一覧 */
+.reqSum { padding: var(--space-md); border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 6px; }
+.reqSumMain { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-md); color: var(--color-text-sub); }
+.reqSumMain b { font-size: 26px; color: var(--color-heading); }
+.reqSumMain .statPct { margin-left: auto; font-size: var(--fs-lg); }
+.reqSum .statBar { display: block; height: 8px; border-radius: 4px; background: var(--color-surface-sub); overflow: hidden; }
+.reqSum .statBar span { display: block; height: 100%; background: var(--color-primary); }
+.reqSumSub { font-size: var(--fs-xs); color: var(--color-text-sub); }
+.reqChips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.reqChip { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-sm); font-weight: 700; color: var(--color-text-sub); }
+.reqChip span { font-size: var(--fs-xs); color: var(--color-text-muted); }
+.reqChip.on { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
+.reqChip.on span { color: var(--color-primary-text); }
+.reqList { display: flex; flex-direction: column; gap: var(--space-sm); }
+.reqGroup { display: flex; align-items: center; gap: 8px; margin-top: var(--space-md); font-size: var(--fs-lg); font-weight: 800; color: var(--color-heading); }
+.reqGroup img { width: 36px; height: 28px; object-fit: contain; }
+.reqGroup small { font-size: var(--fs-xs); font-weight: 500; color: var(--color-text-sub); }
+.reqItem { border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); overflow: hidden; }
+.reqItemHead { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 4px var(--space-md); border: none; border-bottom: 1px solid var(--color-border); background: var(--color-surface-sub); text-align: left; font-size: var(--fs-sm); font-weight: 800; color: var(--color-heading); }
+.reqItemHead .itemChipNo { min-width: 30px; height: 30px; }
+.reqItemHead svg { margin-left: auto; color: var(--color-text-muted); }
+.reqRow { display: flex; align-items: center; gap: var(--space-sm); padding: 8px var(--space-md); border-bottom: 1px dashed var(--color-border); }
+.reqRow:last-child { border-bottom: none; }
+.reqCam { flex: none; width: 56px; height: 46px; padding: 0; border-radius: 10px; border: 1.5px dashed var(--color-text-muted); background: var(--color-surface-sub); color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.reqCam.done { border: 2px solid var(--color-primary); }
+.reqCam img { width: 100%; height: 100%; object-fit: cover; }
+.reqText { flex: 1; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; }
+.reqLabel { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-size: 11px; font-weight: 800; background: var(--color-surface-sub); color: var(--color-text-muted); }
+.reqLabel.miss { background: var(--color-danger-soft); color: var(--color-danger); }
+.reqSkip { flex: none; min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-sub); }
+.reqSkip.on { border-color: var(--color-primary); color: var(--color-primary); }
+.reqRow.skip, .reqRow.na, .reqRow.pre { opacity: 0.5; }
+.reqRow.skip .reqText { text-decoration: line-through; }
+/* 工程マニュアルのチェック行：撮影不要 */
+.checkCam.skip { border-style: solid; background: var(--color-surface-sub); color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 800; }
