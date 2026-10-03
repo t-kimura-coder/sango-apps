@@ -1109,3 +1109,11 @@ img.imgBroken { visibility: hidden; }
 .siteBar { min-height: 44px; padding-top: 6px; padding-bottom: 6px; }
 .fitShrink { font-size: 0.86em !important; }
 .dashSiteMain .dsName.fitShrink { font-size: var(--fs-lg) !important; }
+
+/* チェックごとの該当なし */
+.naCheckBtn { flex: none; align-self: center; min-width: 44px; min-height: 36px; padding: 0 8px; border-radius: 18px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 700; }
+.naCheckBtn.on { border-color: var(--color-text-sub); color: var(--color-text-sub); }
+.checkRow.naC .checkMain { opacity: 0.45; }
+.checkRow.naC .checkText { text-decoration: line-through; }
+.checkRow.naC .checkMeta { display: inline-block; width: 100%; }
+.naCLabel { font-size: var(--fs-xs); font-weight: 700; color: var(--color-text-muted); text-decoration: none; display: inline-block; }

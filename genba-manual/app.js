@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 58;
+const APP_VERSION = 59;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "チェックポイントごとに「なし」（この現場には無いチェック）を付けられるようにしました。灰色になり、進み具合・写真要の数から外れます" },
   { date: "2026-10-03", type: "feature", text: "長い現場名は、途中で切らずに2行まで折り返して表示するようにしました（2行に入らない時は少し小さくします）" },
   { date: "2026-10-03", type: "feature", text: "報告の工程ページに「全部選ぶ」を付け、写真を指で横になぞるとまとめて選べるようにしました（写真タブも同じ）。品質写真のカメラから「撮影不要」も選べます。使い方のページと最初の案内を、今の画面に合わせて書き直しました" },
   { date: "2026-10-03", type: "fix", text: "報告済みにするのは「送る写真」に選んで送った写真だけになりました（選ばなかった写真は次の報告に残ります）。送信のあとの日付の画面はなくなりました。休工・再開・完工・報告なしの週は、その場で上司（見守り）に知らせられるようにしました" },
@@ -1754,6 +1755,19 @@ function goAlbum() {
 
 // 写真要のチェックのうち、品質写真が撮れている数（該当なしにした工程は数えない）
 // 「この現場では撮影不要」にした写真要のチェック（チェック記録の noPhoto に、いつ・誰がを残す）
+// チェックごとの該当なし（項目はあるが、このチェックはこの現場に無い）。rec.naChecks[key] = { at, by, off? }
+function isNaCheck(rec, key) {
+  const v = rec && rec.naChecks && rec.naChecks[key];
+  return !!(v && !v.off);
+}
+async function toggleNaCheck(it, key) {
+  const rec = checkRecOf(it.id);
+  rec.naChecks = rec.naChecks || {};
+  const on = isNaCheck(rec, key);
+  rec.naChecks[key] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY), ...(on ? { off: true } : {}) };
+  await saveCheckRec(rec);
+}
+
 function photoSkipped(rec, key) {
   const v = rec && rec.noPhoto && rec.noPhoto[key];
   return !!(v && !v.off);
@@ -1770,7 +1784,7 @@ async function recordCoverage(siteId) {
   manualMeta.items.forEach((it) => {
     if ((recs[it.id] && recs[it.id].na) || preCats.has(it.cat)) return;
     ((it.text && it.text.checks) || []).forEach((c) => {
-      if (c.photo !== "要" || photoSkipped(recs[it.id], checkKey("checks", c))) return;
+      if (c.photo !== "要" || photoSkipped(recs[it.id], checkKey("checks", c)) || isNaCheck(recs[it.id], checkKey("checks", c))) return;
       total++;
       if (photos.some((p) => p.itemId === it.id && p.checkKey === checkKey("checks", c))) done++;
     });
@@ -2530,14 +2544,16 @@ async function buildCheckSummary(siteId, start, end) {
         by: n.by || "",
       }));
     if (!checked.length && !na && !notes.length) continue;
-    const total = ((it.text && it.text.checks) || []).length;
+    const live = ((it.text && it.text.checks) || []).filter((c) => !isNaCheck(rec, checkKey("checks", c)));
+    const total = live.length;
     out.push({
       item_id: it.id,
       item_no: it.no,
       item: it.name,
       process: processOf(it.cat).name,
       checks_total: total,
-      checks_done: ((it.text && it.text.checks) || []).filter((c) => rec.marks && rec.marks[checkKey("checks", c)]).length,
+      checks_done: live.filter((c) => rec.marks && rec.marks[checkKey("checks", c)]).length,
+      checks_na: ((it.text && it.text.checks) || []).length - total,
       not_applicable: !!rec.na,
       checked,
       notes,
@@ -2889,6 +2905,7 @@ function groupProgress(g, recs, recPhotos) {
       if (rec && rec.na) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const key = checkKey("checks", c);
+        if (isNaCheck(rec, key)) return;
         out.checks++;
         if (rec && rec.marks[key]) out.checksDone++;
         if (c.photo === "要" && !photoSkipped(rec, key)) {
@@ -2985,8 +3002,8 @@ function checkRecOf(itemId) {
 }
 
 function itemProgress(it) {
-  const checks = (it.text && it.text.checks) || [];
   const rec = checkRecOf(it.id);
+  const checks = ((it.text && it.text.checks) || []).filter((c) => !isNaCheck(rec, checkKey("checks", c)));
   const done = checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
   return { done, total: checks.length, na: rec.na };
 }
@@ -3118,10 +3135,11 @@ async function renderItem() {
     if (!tx) {
       html += `<div class="emptyNote">このマニュアルには文章データが入っていません。設定から最新版のマニュアルを取り込み直すと、ポイントやチェックポイントが表示されます。</div>`;
     } else {
-      const done = tx.checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
+      const liveChecks = tx.checks.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
+      const done = liveChecks.filter((c) => rec.marks[checkKey("checks", c)]).length;
       html +=
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
-        (tx.checks.length ? `<span id="checkProgress">${done}/${tx.checks.length}</span>` : "") +
+        (tx.checks.length ? `<span id="checkProgress">${done}/${liveChecks.length}</span>` : "") +
         `<button class="miniBtn" data-go="docs">原本を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
       html += tx.checks.length
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
@@ -3235,10 +3253,13 @@ function lineHtml(x) {
 function checkRowHtml(sec, c, rec, it) {
   const key = checkKey(sec, c);
   const mark = rec.marks[key];
-  const disabled = !currentSiteId || rec.na;
+  const naC = isNaCheck(rec, key);
+  const disabled = !currentSiteId || rec.na || naC;
   // 「写真要」のチェックには品質写真のカメラ。撮る前は灰色、撮ったら写真が出る
   let cam = "";
-  if (c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && photoSkipped(rec, key)) {
+  if (naC) {
+    cam = "";
+  } else if (c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && photoSkipped(rec, key)) {
     cam = `<button class="checkCam skip" data-skip="1" aria-label="撮影不要を解除">不要</button>`;
   } else if (c.photo === "要") {
     const ph = siteRecordPhotos[`${it.id}|${key}`];
@@ -3252,9 +3273,11 @@ function checkRowHtml(sec, c, rec, it) {
     mark ? `<span class="checkBy">${esc(fmtDateTime(mark.at))}${mark.by ? " " + esc(mark.by) : ""}</span>` : "",
   ].join("");
   return (
-    `<div class="checkRow${mark ? " on" : ""}" data-key="${esc(key)}">` +
+    `<div class="checkRow${mark ? " on" : ""}${naC ? " naC" : ""}" data-key="${esc(key)}">` +
     `<button class="checkMain"${disabled ? " disabled" : ""}><span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
-    `<span class="checkText">${esc(c.text)}${meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>` +
+    `<span class="checkText">${esc(c.text)}${naC ? `<span class="checkMeta"><span class="naCLabel">この現場では該当なし</span></span>` : meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>` +
+    // その現場に無いチェックを外すボタン（項目ごと無い時は、項目名の右の「該当なし」）
+    (currentSiteId && !rec.na && sec === "checks" ? `<button class="naCheckBtn${naC ? " on" : ""}" data-nacheck="1" aria-label="${naC ? "該当なしを戻す" : "このチェックは該当なし"}">${naC ? "戻す" : "なし"}</button>` : "") +
     cam +
     `</div>`
   );
@@ -3339,6 +3362,13 @@ function bindCheckRow(row, it) {
   row.querySelector(".checkMain").addEventListener("click", () => toggleMark(it, key));
   const cam = row.querySelector("[data-cam]");
   if (cam) cam.addEventListener("click", () => onCheckCamera(it, key));
+  const naBtn = row.querySelector("[data-nacheck]");
+  if (naBtn)
+    naBtn.addEventListener("click", async () => {
+      await toggleNaCheck(it, key);
+      renderItemStrip(false);
+      refreshCheckRow(it, key);
+    });
   const skip = row.querySelector("[data-skip]");
   if (skip)
     skip.addEventListener("click", async () => {
@@ -3361,7 +3391,8 @@ function refreshCheckRow(it, key) {
   const prog = $("checkProgress");
   if (prog && it.text) {
     const rec = checkRecOf(it.id);
-    prog.textContent = `${it.text.checks.filter((c) => rec.marks[checkKey("checks", c)]).length}/${it.text.checks.length}`;
+    const live = it.text.checks.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
+    prog.textContent = `${live.filter((c) => rec.marks[checkKey("checks", c)]).length}/${live.length}`;
   }
 }
 
@@ -4088,7 +4119,7 @@ async function siteSummary(site) {
       if (preCats.has(it.cat) || !rec || rec.na || !Object.keys(rec.marks || {}).length) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const k = checkKey("checks", c);
-        if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k)) missing.push(it);
+        if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k) && !isNaCheck(rec, k)) missing.push(it);
       });
     });
   const week = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
@@ -4260,8 +4291,9 @@ async function renderDash() {
   const isDone = (it) => {
     const rec = siteCheckRecs[it.id];
     if (rec && rec.na) return true;
-    const cs = (it.text && it.text.checks) || [];
-    return !!rec && cs.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
+    const all = (it.text && it.text.checks) || [];
+    const cs = all.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
+    return !!rec && all.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
   };
   const preCats = new Set(GROUPS.slice(0, (current && current.startGroup) || 0).flatMap((g) => g.cats));
   const next = all.slice(from).find((it) => !preCats.has(it.cat) && !isDone(it));
@@ -4556,12 +4588,16 @@ async function restoreFromFile(file, quiet) {
         });
         const notes = [...byId.values()];
         const naFromBackup = r.na && (!cur.naAt || (r.naAt && r.naAt > cur.naAt));
+        const naChecks = Object.assign({}, cur.naChecks || {});
+        Object.entries(r.naChecks || {}).forEach(([k, v]) => {
+          if (!naChecks[k] || (v.at || "") > (naChecks[k].at || "")) naChecks[k] = v;
+        });
         // 撮影不要：同じチェックなら新しく変えた方を使う
         const noPhoto = Object.assign({}, cur.noPhoto || {});
         Object.entries(r.noPhoto || {}).forEach(([k, v]) => {
           if (!noPhoto[k] || (v.at || "") > (noPhoto[k].at || "")) noPhoto[k] = v;
         });
-        return Object.assign({}, cur, { marks, notes, noPhoto }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
+        return Object.assign({}, cur, { marks, notes, noPhoto, naChecks }, naFromBackup ? { na: r.na, naAt: r.naAt, naBy: r.naBy } : {});
       });
       await dbPutMany("checks", merged);
       added.checks = merged.length;
@@ -4831,7 +4867,7 @@ async function renderRequired(keepScroll) {
             const rec = siteCheckRecs[it.id];
             const ph = siteRecordPhotos[`${it.id}|${key}`];
             const started = !!(rec && Object.keys(rec.marks || {}).length);
-            const status = gi < start ? "pre" : rec && rec.na ? "na" : ph ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
+            const status = gi < start ? "pre" : (rec && rec.na) || isNaCheck(rec, key) ? "na" : ph ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
             rows.push({ g, it, c, key, ph, status, started });
           })
         )
