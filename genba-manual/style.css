@@ -1098,3 +1098,14 @@ img.imgBroken { visibility: hidden; }
 .pageHeroBtn { width: 38px; top: calc(env(safe-area-inset-top) + 14px); right: var(--space-sm); }
 /* 写真タブの絵：右端のカメラが切れないよう左へ寄せる */
 #albumView .pageHeroArt { right: 0; width: 88%; }
+
+/* 現場名：長い名前は2行まで折り返す。2行に収まらない時だけ少し小さくする（fitNames） */
+.dsName, .siteBar b, .manageCard .siteName {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: normal; word-break: break-all; line-height: 1.3;
+}
+.dsName .redDot { display: inline-block; vertical-align: middle; margin-left: 6px; }
+.dsName .pill { vertical-align: middle; margin-left: 6px; }
+.siteBar { min-height: 44px; padding-top: 6px; padding-bottom: 6px; }
+.fitShrink { font-size: 0.86em !important; }
+.dashSiteMain .dsName.fitShrink { font-size: var(--fs-lg) !important; }

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 56;
+const APP_VERSION = 58;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "長い現場名は、途中で切らずに2行まで折り返して表示するようにしました（2行に入らない時は少し小さくします）" },
   { date: "2026-10-03", type: "feature", text: "報告の工程ページに「全部選ぶ」を付け、写真を指で横になぞるとまとめて選べるようにしました（写真タブも同じ）。品質写真のカメラから「撮影不要」も選べます。使い方のページと最初の案内を、今の画面に合わせて書き直しました" },
   { date: "2026-10-03", type: "fix", text: "報告済みにするのは「送る写真」に選んで送った写真だけになりました（選ばなかった写真は次の報告に残ります）。送信のあとの日付の画面はなくなりました。休工・再開・完工・報告なしの週は、その場で上司（見守り）に知らせられるようにしました" },
   { date: "2026-10-03", type: "feature", text: "設定に「表示の色」を付けました（端末と同じ／ライト／ダーク）。ダークの色も見やすく作り直しました" },
@@ -683,6 +684,7 @@ let currentView = "dashView";
 let viewBeforeSettings = "dashView";
 function showView(id) {
   setTimeout(maybeApplyUpdate, 500);
+  setTimeout(fitNames, 80); // 画面が見えてから長い現場名の大きさを合わせる（見えていない間は測れないため）
   currentView = id;
   Object.keys(VIEW_TABS).forEach((v) => ($(v).hidden = v !== id));
   $("tabBar").hidden = id === "shotView";
@@ -826,6 +828,18 @@ async function setCurrentSite(id) {
   rerenderCurrentView();
 }
 
+// 長い現場名：2行に収まらない時だけ文字を少し小さくする
+function fitNames() {
+  setTimeout(() =>
+    document.querySelectorAll(".dsName, .siteBar b, .manageCard .siteName").forEach((el) => {
+      if (!el.offsetParent) return; // 見えていない画面は測れないので、見えた時にもう一度
+      el.classList.remove("fitShrink");
+      if (el.scrollHeight > el.clientHeight + 2) el.classList.add("fitShrink");
+    }),
+    0
+  );
+}
+
 function renderSiteBars() {
   const site = currentSite();
   document.querySelectorAll(".curSiteBar").forEach((bar) => {
@@ -834,6 +848,7 @@ function renderSiteBars() {
       `${icon(ICONS.building, 18)}<span>今の現場</span><b>${site ? esc(site.name) : "現場が未登録"}</b>` +
       `<span class="siteSwitch">切替${icon(ICONS.chevron, 14)}</span>`;
   });
+  fitNames();
 }
 
 function openSiteSwitcher() {
@@ -1494,6 +1509,7 @@ async function renderSiteManage() {
     });
     list.appendChild(card);
   }
+  fitNames();
 }
 
 /* ---------- 写真のマス目（アルバム・報告で共通） ---------- */
@@ -4261,6 +4277,7 @@ async function renderDash() {
     b.addEventListener("click", () => openGroup(groupOfProcess(x.it.cat).id, x.it.id));
     nextBox.appendChild(b);
   });
+  fitNames();
 }
 
 function goDash() {
