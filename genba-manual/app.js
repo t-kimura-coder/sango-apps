@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "「報告済みにする」を押すと、「アプリから送った」「アプリ外で報告した」「今週は報告なし」から選べるようにしました" },
   { date: "2026-10-03", type: "feature", text: "報告タブの週の欄に「アプリ外で報告済み」「今週は報告なし」を付けました（別の方法で報告した週・自分は担当しない週など）。現場の管理に「写真を片付ける」を付けました（その現場の写真をバックアップに書き出してから、写真データだけ消します。チェック・メモの記録は残ります）" },
   { date: "2026-10-03", type: "feature", text: "現場を完工にする時に、確認と完工日の記録をするようにしました。「完工を上司に知らせて完了」を選ぶと、Boxに完工の知らせが届き、見守りで完工済みと分かります。設定と現場の管理で、現場ごとに使っている容量が見られます" },
   { date: "2026-10-03", type: "feature", text: "現場を「休工」にできるようにしました（ホームの今の現場のカードから）。休工中は報告の遅れに数えず、ホームでは薄く表示します。工程マニュアルの「この現場ではこの項目はない」を、項目名の右の「該当なし」に移し、工程タブから「写真要の一覧」を開けるようにしました" },
@@ -2005,13 +2006,10 @@ async function renderReport() {
   const older = cands.filter((p) => !isRecordPhoto(p) && p.dateKey < wk.mon).length;
   let html =
     `<div class="periodBar withArt">${reportWeekHtml(wk)}</div>` +
-    (wk.state !== "done" && wk.state !== "paused"
-      ? `<div class="weekOps"><button class="miniBtn" data-weekop="external">アプリ外で報告済み</button><button class="miniBtn" data-weekop="skip">今週は報告なし</button></div>`
-      : "") +
+
     (older ? `<div class="hint">${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。</div>` : "") +
     `<div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
   body.innerHTML = html;
-  body.querySelectorAll("[data-weekop]").forEach((b) => b.addEventListener("click", () => markWeekOther(site, wk, b.dataset.weekop, cands)));
   const list = document.createElement("div");
   list.className = "processCards";
   const pids = [...new Set([...site.processes, ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
@@ -2529,6 +2527,31 @@ async function cancelWeekOther(r) {
   await dbDeleteMany("reports", [r.id]);
   toast("取り消しました");
   renderReport();
+}
+
+// 「報告済みにする」ボタン：どう報告したかを3つから選ぶ（Boxへ送信した後の確認からは markReported に直接進む）
+async function chooseReportedKind() {
+  const site = currentSite();
+  if (!site) return;
+  const cands = unreported(await getSitePhotos(site.id));
+  const wk = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
+  openSheet(`報告済みにする（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}）`, (body, close) => {
+    const opt = (title, sub, cls, fn, disabled) => {
+      const b = document.createElement("button");
+      b.className = "kindOpt " + cls;
+      b.disabled = !!disabled;
+      b.innerHTML = `<b>${title}</b><small>${sub}</small>`;
+      b.addEventListener("click", () => {
+        close();
+        fn();
+      });
+      body.appendChild(b);
+    };
+    opt("アプリから送った", cands.length ? `Boxへ送信した報告。まだ報告していない写真 ${cands.length}枚を報告済みにします` : "まだ報告していない写真がありません", "primary", () => markReported(""), !cands.length);
+    opt("アプリ外で報告した", "別のメールなどで報告した週として記録します", "", () => markWeekOther(site, wk, "external", cands));
+    opt("今週は報告なし", "自分は担当しない・工事が無かった週など。遅れに数えません", "", () => markWeekOther(site, wk, "skip", cands));
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
 }
 
 async function markReported(memo = "") {
@@ -4807,7 +4830,7 @@ function init() {
     tourIdx++;
     renderTourStep();
   });
-  $("markReportedBtn").addEventListener("click", markReported);
+  $("markReportedBtn").addEventListener("click", chooseReportedKind);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   document.querySelector(".sheetBackdrop").addEventListener("click", () => {
     const f = sheetDismiss;
