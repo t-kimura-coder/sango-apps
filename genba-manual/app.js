@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 50;
+const APP_VERSION = 52;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "報告タブの週の欄に「アプリ外で報告済み」「今週は報告なし」を付けました（別の方法で報告した週・自分は担当しない週など）。現場の管理に「写真を片付ける」を付けました（その現場の写真をバックアップに書き出してから、写真データだけ消します。チェック・メモの記録は残ります）" },
   { date: "2026-10-03", type: "feature", text: "現場を完工にする時に、確認と完工日の記録をするようにしました。「完工を上司に知らせて完了」を選ぶと、Boxに完工の知らせが届き、見守りで完工済みと分かります。設定と現場の管理で、現場ごとに使っている容量が見られます" },
   { date: "2026-10-03", type: "feature", text: "現場を「休工」にできるようにしました（ホームの今の現場のカードから）。休工中は報告の遅れに数えず、ホームでは薄く表示します。工程マニュアルの「この現場ではこの項目はない」を、項目名の右の「該当なし」に移し、工程タブから「写真要の一覧」を開けるようにしました" },
   { date: "2026-10-03", type: "feature", text: "報告の期間を「週（月〜土）」で表示するようにしました。報告は金曜から翌週の月曜まで（遅くとも火曜）。月・火曜は、先週の報告がまだなら先週の分が出ます。報告が遅れている週があると、ホームの「やること」に出ます" },
@@ -456,7 +457,8 @@ async function togglePause(site) {
 
 function reportWeek(site, reports, today = todayKey()) {
   const done = (reports || []).map((r) => (r.createdAt ? toDateKey(new Date(r.createdAt)) : r.end)).filter(Boolean);
-  const isReported = (mon) => done.some((k) => k >= addDays(mon, 4) && k <= addDays(mon, 10));
+  const tagged = new Set((reports || []).map((r) => r.week).filter(Boolean)); // どの週の報告か（報告済みにした時に記録）
+  const isReported = (mon) => tagged.has(mon) || done.some((k) => k >= addDays(mon, 4) && k <= addDays(mon, 10));
   const thisMon = weekMon(today);
   const prevMon = addDays(thisMon, -7);
   const startMon = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
@@ -464,6 +466,9 @@ function reportWeek(site, reports, today = todayKey()) {
   if (daysBetween(thisMon, today) <= 1 && prevMon >= startMon && !isReported(prevMon)) mon = prevMon;
   const w = { mon, sat: addDays(mon, 5), fri: addDays(mon, 4), due: addDays(mon, 7), late: addDays(mon, 8), isPrev: mon !== thisMon };
   w.state = isReported(mon) ? "done" : pausedOn(site, w.fri <= today ? w.fri : today) ? "paused" : today < w.fri ? "before" : today <= w.due ? "open" : today <= w.late ? "late" : "over";
+  const rec = (reports || []).find((r) => r.week === mon);
+  w.doneKind = rec ? rec.kind || "" : "";
+  w.doneMemo = rec ? rec.memo || "" : "";
   // 期限（火曜）を過ぎても報告していない週の数（現場を登録した週より前と、休工していた週は数えない）
   w.missed = 0;
   for (let m = addDays(mon, -7); m >= startMon && w.missed < 8 && !isReported(m); m = addDays(m, -7)) {
@@ -474,7 +479,7 @@ function reportWeek(site, reports, today = todayKey()) {
 function reportWeekHtml(w) {
   const title = w.isPrev ? "先週の報告" : "今週の報告";
   const sub = {
-    done: "報告済み",
+    done: w.doneKind === "skip" ? `報告なし${w.doneMemo ? "（" + esc(w.doneMemo) + "）" : ""}` : w.doneKind === "external" ? "アプリ外で報告済み" : "報告済み",
     before: `報告は ${fmtDate(w.fri)}〜${fmtDate(w.due)}`,
     open: `報告は ${fmtDate(w.due)}まで（遅くとも ${fmtDate(w.late)}）`,
     late: `今日 ${fmtDate(w.late)} が期限です`,
@@ -612,7 +617,11 @@ function esc(s) {
 
 // 画面ごとに作ったサムネイルURLを、次に描き直すときにまとめて解放する
 const urlBuckets = {};
+const STORED_IMG =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"><rect width="120" height="90" fill="#f1eee6"/><text x="60" y="44" font-size="12" text-anchor="middle" fill="#6b736c" font-family="sans-serif">バックアップ</text><text x="60" y="60" font-size="12" text-anchor="middle" fill="#6b736c" font-family="sans-serif">済み</text></svg>');
 function blobUrl(bucket, blob) {
+  if (!blob) return STORED_IMG;
   const url = URL.createObjectURL(blob);
   (urlBuckets[bucket] = urlBuckets[bucket] || []).push(url);
   return url;
@@ -720,6 +729,10 @@ function askText(title, initial, okLabel) {
 // actions: [{label, cls, onClick}]。onClick が false を返したら閉じない（確認でキャンセルした時など）
 // ボタンの処理はタップの中で同期的に呼ぶ（撮り直しでカメラを開けるように）
 function openPhotoViewer(blob, actions = []) {
+  if (!blob) {
+    toast("この写真は片付け済みです（バックアップから戻すと見られます）");
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const box = $("lightbox");
   const close = () => {
@@ -890,6 +903,84 @@ async function saveCover(siteId, file) {
   const blob = await downscaleImage(file, 1600, 0.82);
   const thumb = await downscaleImage(file, 480, 0.75);
   await dbPut("meta", { key: "cover:" + siteId, blob, thumb, updatedAt: new Date().toISOString() });
+}
+
+/* ---------- 写真の片付け（現場単位） ----------
+   その現場の写真・チェック・報告の記録をバックアップ（JSON）に書き出してから、アプリの中の写真データ（画像）だけ消す。
+   どのチェックの写真を撮ったか・チェック・メモの記録は残る（写真は「バックアップ済み」の絵になる）。
+   バックアップから戻すと、画像が元に戻る */
+async function cleanupSitePhotos(site, stored) {
+  const mb = (stored.reduce((t, p) => t + p.blob.size + (p.thumb ? p.thumb.size : 0), 0) / 1048576).toFixed(1);
+  const ok = confirm(
+    `「${site.name}」の写真 ${stored.length}枚（約${mb}MB）を片付けます。\n\n` +
+      "・写真のデータは、すべてバックアップ（JSONファイル）に書き出してから、このiPhoneの中から消えます\n" +
+      "・チェック・メモ・報告の記録と、どのチェックの写真を撮ったかは残ります\n" +
+      "・写真を見るには、バックアップから戻す必要があります。バックアップを保存しないと写真は戻せません\n" +
+      (site.archived ? "" : "\n※この現場はまだ完工していません。\n") +
+      "\nバックアップを作りますか？"
+  );
+  if (!ok) return;
+  setProcessing(true, "バックアップを作成中...");
+  let file;
+  let skippedPhotos = 0;
+  try {
+    ({ file, skippedPhotos } = await buildBackupFile({ sites: true, checks: true, photos: true }, site));
+  } catch (e) {
+    console.error(e);
+    alert("バックアップを作成できませんでした。片付けは行っていません。");
+    return;
+  } finally {
+    setProcessing(false);
+  }
+  const sizeMb = (file.size / 1048576).toFixed(1);
+  openSheet("写真を片付ける", (body, close) => {
+    const info = document.createElement("div");
+    info.className = "summaryBox";
+    info.innerHTML = `ファイル：${esc(file.name)}<br>大きさ：約${sizeMb}MB（写真 ${stored.length - skippedPhotos}枚）`;
+    body.appendChild(info);
+    const how = document.createElement("div");
+    how.className = "warnText";
+    how.textContent = "共有画面で「ファイルに保存」を選び、Boxアプリのフォルダ（または iPhone の中）に保存してください。保存できたら、写真のデータを消します。";
+    body.appendChild(how);
+    if (skippedPhotos) {
+      const w = document.createElement("div");
+      w.className = "warnText";
+      w.textContent = `読み込めない写真が${skippedPhotos}枚あり、バックアップに入りませんでした（その写真も消えます）。`;
+      body.appendChild(w);
+    }
+    body.appendChild(
+      sheetButton("バックアップを保存する", "btnPrimary btnLarge", async () => {
+        if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+          alert("この端末では共有機能が使えないため保存できません。片付けは行っていません。");
+          return;
+        }
+        try {
+          await navigator.share({ files: [file], title: file.name }); // タップの中ですぐ呼ぶ（iPhone）
+        } catch (e) {
+          return; // キャンセル：何も消さない
+        }
+        if (!confirm(`バックアップを保存できましたか？\n\nOK を押すと、「${site.name}」の写真データ ${stored.length}枚をこのiPhoneから消します。\n写真を見るには、今保存したバックアップから戻す必要があります。`)) {
+          toast("写真は消していません");
+          return;
+        }
+        close();
+        const now = new Date().toISOString();
+        const metas = stored.map(({ blob, thumb, ...m }) => ({ ...m, imageRemoved: true, removedAt: now, backupName: file.name }));
+        await dbPutMany("photos", metas); // 画像を持たない情報だけ書く
+        const db = await dbPromise;
+        await new Promise((res, rej) => {
+          const tx = db.transaction("images", "readwrite");
+          stored.forEach((p) => tx.objectStore("images").delete(p.id));
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej(tx.error);
+        });
+        await loadSiteChecks();
+        toast(`写真を片付けました（約${mb}MB 空きました）`);
+        if (currentView === "siteManageView") renderSiteManage();
+      })
+    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
 }
 
 /* ---------- 完工 ----------
@@ -1274,6 +1365,8 @@ async function renderSiteManage() {
       }
       openCompleteSheet(site, photos);
     });
+    const stored = photos.filter((p) => p.blob && !p.imageRemoved);
+    if (stored.length) add(`写真を片付ける（約${(stored.reduce((t, p) => t + p.blob.size + (p.thumb ? p.thumb.size : 0), 0) / 1048576).toFixed(0)}MB）`, "btnSecondary", () => cleanupSitePhotos(site, stored));
     add("削除", "btnDanger", async () => {
       if (!confirm(`「${site.name}」と写真${photos.length}枚・チェックの記録をすべて削除します。元に戻せません。よろしいですか？`)) return;
       const reports = await dbGetAll("reports", "siteId", site.id);
@@ -1420,7 +1513,7 @@ function safeFileName(s) {
 
 // 写真を工程順・撮影順に並べ、書き出し用のファイル名を付ける
 function photoFiles(site, photos) {
-  const sorted = [...photos].sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
+  const sorted = photos.filter((p) => p.blob).sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
   const counters = {};
   return sorted.map((p) => {
     const short = processOf(p.processId).short;
@@ -1912,9 +2005,13 @@ async function renderReport() {
   const older = cands.filter((p) => !isRecordPhoto(p) && p.dateKey < wk.mon).length;
   let html =
     `<div class="periodBar withArt">${reportWeekHtml(wk)}</div>` +
+    (wk.state !== "done" && wk.state !== "paused"
+      ? `<div class="weekOps"><button class="miniBtn" data-weekop="external">アプリ外で報告済み</button><button class="miniBtn" data-weekop="skip">今週は報告なし</button></div>`
+      : "") +
     (older ? `<div class="hint">${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。</div>` : "") +
     `<div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
   body.innerHTML = html;
+  body.querySelectorAll("[data-weekop]").forEach((b) => b.addEventListener("click", () => markWeekOther(site, wk, b.dataset.weekop, cands)));
   const list = document.createElement("div");
   list.className = "processCards";
   const pids = [...new Set([...site.processes, ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
@@ -1960,8 +2057,10 @@ async function renderReport() {
       const n = all.filter((ph) => ph.reportId === r.id).length;
       const row = document.createElement("button");
       row.className = "pastReportRow";
-      row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${n ? n + "枚" : "写真削除済み"}</span>`;
-      row.addEventListener("click", () => openReportPast(r.id));
+      const kindLabel = r.kind === "external" ? "アプリ外で報告" : r.kind === "skip" ? `報告なし${r.memo ? "（" + esc(r.memo) + "）" : ""}` : "";
+      row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${kindLabel ? `<span class="kindTag">${kindLabel}</span>` : ""}${n ? n + "枚" : kindLabel ? "" : "写真削除済み"}</span>`;
+      // アプリ外・報告なしで写真の無い記録は、押すと取り消せる
+      row.addEventListener("click", () => (r.kind && !n ? cancelWeekOther(r) : openReportPast(r.id)));
       past.appendChild(row);
     });
     body.appendChild(past);
@@ -2330,6 +2429,9 @@ async function sendToBox() {
           kouji_no: site.koujiNo || "",
           start_group: GROUPS[site.startGroup || 0].name,
           paused: isPaused(site),
+          other_weeks: (await dbGetAll("reports", "siteId", site.id))
+            .filter((r) => r.kind && r.week >= addDays(todayKey(), -70))
+            .map((r) => ({ week: r.week, kind: r.kind, memo: r.memo || "", at: r.createdAt })),
           pauses: site.pauses || [],
           members: site.members || [],
           period: { start, end },
@@ -2373,6 +2475,62 @@ async function sendToBox() {
   });
 }
 
+/* ---------- アプリ外で報告した週・報告しない週 ----------
+   写真を別の方法で送った週や、自分は担当しない週（もう一人が報告する等）を「済み」にして、未送信・遅れに出さない */
+function markWeekOther(site, wk, kind, cands) {
+  const photosLeft = cands.filter((p) => p.dateKey <= wk.sat);
+  openSheet(kind === "external" ? "アプリ外で報告済みにする" : "今週は報告なしにする", (body, close) => {
+    const note = document.createElement("div");
+    note.className = "mutedText";
+    note.textContent =
+      kind === "external"
+        ? `${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の報告を、アプリの外（別のメールなど）で済ませた週として記録します。`
+        : `${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}は、この現場の報告をしない週として記録します（遅れに数えません）。`;
+    body.appendChild(note);
+    let chk = null;
+    if (kind === "external" && photosLeft.length) {
+      const l = document.createElement("label");
+      l.className = "checkOpt";
+      l.innerHTML = `<input type="checkbox" checked> まだ報告していない写真${photosLeft.length}枚も報告済みにする`;
+      chk = l.querySelector("input");
+      body.appendChild(l);
+    }
+    const lab = document.createElement("label");
+    lab.className = "fieldLabel";
+    lab.textContent = kind === "external" ? "メモ（任意）：どう報告したか" : "理由（任意）：例「先輩が報告」「工事なし」";
+    const memo = document.createElement("input");
+    memo.className = "sheetInput";
+    body.appendChild(lab);
+    body.appendChild(memo);
+    body.appendChild(
+      sheetButton("記録する", "btnPrimary btnLarge", async () => {
+        const report = { id: newId(), siteId: site.id, start: wk.mon, end: wk.sat, createdAt: new Date().toISOString(), memo: memo.value.trim(), week: wk.mon, kind };
+        await dbPut("reports", report);
+        if (chk && chk.checked) {
+          photosLeft.forEach((p) => {
+            p.reportId = report.id;
+            p.sendPick = false;
+          });
+          await dbPutMany("photos", photosLeft);
+          site.lastReportEnd = wk.sat;
+          await dbPut("sites", site);
+        }
+        close();
+        toast(kind === "external" ? "アプリ外で報告済みにしました" : "今週は報告なしにしました");
+        renderReport();
+      })
+    );
+    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  });
+}
+
+async function cancelWeekOther(r) {
+  if (!confirm(`${fmtDate(r.start)}〜${fmtDate(r.end)}の「${r.kind === "external" ? "アプリ外で報告" : "報告なし"}」を取り消しますか？`)) return;
+  await dbDeleteMany("reports", [r.id]);
+  toast("取り消しました");
+  renderReport();
+}
+
 async function markReported(memo = "") {
   if (typeof memo !== "string") memo = ""; // ボタンから呼ばれた時はイベントが入るので捨てる
   const site = currentSite();
@@ -2402,7 +2560,8 @@ async function markReported(memo = "") {
           toast(`${fmtDate(start)}以降の日付を選んでください`);
           return;
         }
-        const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo };
+        const wk = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
+        const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon };
         const targets = cands.filter((p) => p.dateKey <= end);
         targets.forEach((p) => {
           p.reportId = report.id;
@@ -3971,15 +4130,12 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function exportBackup() {
-  const opts = { sites: $("bkSites").checked, checks: $("bkChecks").checked, photos: $("bkPhotos").checked };
-  if (!opts.sites && !opts.checks && !opts.photos) {
-    toast("書き出すものを1つ以上選んでください");
-    return;
-  }
-  setProcessing(true, "バックアップを作成中...");
+// バックアップのファイルを作る。onlySite を渡すと、その現場の分だけ（写真の片付けで使う）
+async function buildBackupFile(opts, onlySite) {
+  const inSite = (x) => !onlySite || x.siteId === onlySite.id;
   let file;
-  try {
+  var skippedPhotos = 0;
+  {
     const head = {
       kind: BACKUP_KIND,
       schema: 1,
@@ -3988,9 +4144,10 @@ async function exportBackup() {
       user: getSetting(USER_NAME_KEY),
       include: opts,
     };
+    if (onlySite) head.site_only = { id: onlySite.id, name: onlySite.name };
     if (opts.sites) {
-      head.sites = await dbGetAll("sites");
-      head.reports = await dbGetAll("reports");
+      head.sites = (await dbGetAll("sites")).filter((x) => !onlySite || x.id === onlySite.id);
+      head.reports = (await dbGetAll("reports")).filter(inSite);
       head.covers = [];
       for (const st of head.sites) {
         const c = await getCover(st.id);
@@ -3998,12 +4155,11 @@ async function exportBackup() {
       }
       head.settings = { userName: getSetting(USER_NAME_KEY), boxEmail: getSetting(BOX_EMAIL_KEY), manualSite: getSetting(CURRENT_SITE_KEY) };
     }
-    if (opts.checks) head.checks = await dbGetAll("checks");
+    if (opts.checks) head.checks = (await dbGetAll("checks")).filter(inSite);
     // 写真は1枚ずつ文字にして並べる（全体を1つの巨大な文字列にするとiPhoneのメモリが足りなくなるため）
     const parts = [JSON.stringify(head).slice(0, -1), ',"photos":['];
-    var skippedPhotos = 0;
     if (opts.photos) {
-      const photos = await dbGetAll("photos");
+      const photos = (await dbGetAll("photos")).filter((p) => inSite(p) && !p.imageRemoved);
       let written = 0;
       for (let i = 0; i < photos.length; i++) {
         if (i % 10 === 0) setProcessing(true, `写真を書き出し中... ${i} / ${photos.length}`);
@@ -4018,8 +4174,27 @@ async function exportBackup() {
       }
     }
     parts.push("]}");
-    const name = safeFileName(`現場ナビ_バックアップ_${todayKey()}${opts.photos ? "_写真あり" : ""}_${getSetting(USER_NAME_KEY) || "未登録"}.json`);
+    const name = safeFileName(
+      onlySite
+        ? `現場ナビ_写真の片付け_${onlySite.name}_${todayKey()}_${getSetting(USER_NAME_KEY) || "未登録"}.json`
+        : `現場ナビ_バックアップ_${todayKey()}${opts.photos ? "_写真あり" : ""}_${getSetting(USER_NAME_KEY) || "未登録"}.json`
+    );
     file = new File(parts, name, { type: "application/json" });
+  }
+  return { file, skippedPhotos };
+}
+
+async function exportBackup() {
+  const opts = { sites: $("bkSites").checked, checks: $("bkChecks").checked, photos: $("bkPhotos").checked };
+  if (!opts.sites && !opts.checks && !opts.photos) {
+    toast("書き出すものを1つ以上選んでください");
+    return;
+  }
+  setProcessing(true, "バックアップを作成中...");
+  let file;
+  let skippedPhotos = 0;
+  try {
+    ({ file, skippedPhotos } = await buildBackupFile(opts));
   } catch (e) {
     console.error(e);
     alert("バックアップを作成できませんでした。写真を含めない形で試してください。");
@@ -4027,7 +4202,7 @@ async function exportBackup() {
   } finally {
     setProcessing(false);
   }
-  if (typeof skippedPhotos !== "undefined" && skippedPhotos) alert(`読み込めない写真が${skippedPhotos}枚あったため、その写真はバックアップに入れませんでした（設定の「写真の点検」で確認できます）。`);
+  if (skippedPhotos) alert(`読み込めない写真が${skippedPhotos}枚あったため、その写真はバックアップに入れませんでした（設定の「写真の点検」で確認できます）。`);
   const sizeMb = (file.size / 1024 / 1024).toFixed(1);
   openSheet("バックアップを書き出す", (body, close) => {
     const info = document.createElement("div");
@@ -4131,12 +4306,14 @@ async function onRestorePicked() {
       added.checks = merged.length;
     }
     if (data.photos && data.photos.length) {
-      const exist = new Set((await dbGetAll("photos")).map((p) => p.id));
+      const current = await dbGetAll("photos");
+      const removed = new Set(current.filter((p) => p.imageRemoved).map((p) => p.id)); // 片付け済み（画像だけ戻す）
+      const exist = new Set(current.filter((p) => !p.imageRemoved).map((p) => p.id));
       const siteIds = new Set((await dbGetAll("sites")).map((x) => x.id));
       const reportIds = new Set((await dbGetAll("reports")).map((x) => x.id));
       // 現場が無い写真は見えなくなるので入れない（写真だけのバックアップを別の端末に戻した時など）
-      const fresh = data.photos.filter((p) => !exist.has(p.id) && siteIds.has(p.siteId));
-      added.skipped = data.photos.filter((p) => !exist.has(p.id) && !siteIds.has(p.siteId)).length;
+      const fresh = data.photos.filter((p) => !exist.has(p.id) && siteIds.has(p.siteId) && p.blob);
+      added.skipped = data.photos.filter((p) => !exist.has(p.id) && !removed.has(p.id) && !siteIds.has(p.siteId)).length;
       fresh.forEach((p) => {
         if (p.reportId && !reportIds.has(p.reportId)) p.reportId = null;
       });
@@ -4510,6 +4687,7 @@ async function checkPhotos() {
     const all = await dbGetAll("photos");
     total = all.length;
     for (const p of all) {
+      if (p.imageRemoved) continue;
       const ok = (await canReadBlob(p.blob)) && (await canReadBlob(p.thumb));
       if (!ok) bad.push(p);
     }

@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -262,9 +262,12 @@ function openQuestions() {
 
 function personStats(p) {
   const last = p.reports[0];
+  // アプリ外で報告した週・報告なしの週も、最後に報告した日として扱う
+  const otherAt = p.reports.flatMap((r) => (r.other_weeks || []).map((w) => w.at)).filter(Boolean).sort().pop();
   const weekPhotos = p.reports.filter((r) => daysAgo(r.sent_at) <= 6).reduce((s, r) => s + (r.photos || []).length, 0);
   const open = [...data.notes.values()].filter((n) => n.personKey === p.key && noteStatus(n) === "open").length;
-  const lastDays = last ? daysAgo(last.sent_at) : null;
+  const lastAt = [last && last.sent_at, otherAt].filter(Boolean).sort().pop();
+  const lastDays = lastAt ? daysAgo(lastAt) : null;
   const active = [...p.sites].some((k) => !(data.sites.get(k) || {}).completedAt);
   const late = active && (lastDays == null || lastDays >= LATE_DAYS);
   const state = open ? "need" : late ? "late" : "ok"; // 表示はいちばん急ぐもの。絞り込みは need / late を別々に見る
