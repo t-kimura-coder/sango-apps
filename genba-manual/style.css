@@ -986,3 +986,10 @@ img.imgBroken { visibility: hidden; }
 .reqRow.skip .reqText { text-decoration: line-through; }
 /* 工程マニュアルのチェック行：撮影不要 */
 .checkCam.skip { border-style: solid; background: var(--color-surface-sub); color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 800; }
+
+/* 報告の週：期間の下に、報告の期限など */
+.periodBar.withArt { flex-wrap: wrap; row-gap: 2px; }
+.periodSub { flex-basis: 100%; padding-left: 28px; font-size: var(--fs-xs); color: var(--color-text-sub); }
+.periodSub .em { color: var(--color-danger); }
+.badgeOk { background: var(--color-ok-soft); color: var(--color-ok-text); }
+.badgeDanger { background: var(--color-danger-soft); color: var(--color-danger); }

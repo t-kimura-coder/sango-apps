@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-03", type: "feature", text: "報告の期間を「週（月〜土）」で表示するようにしました。報告は金曜から翌週の月曜まで（遅くとも火曜）。月・火曜は、先週の報告がまだなら先週の分が出ます。報告が遅れている週があると、ホームの「やること」に出ます" },
   { date: "2026-10-03", type: "feature", text: "「写真要の一覧」を追加しました。マニュアルで写真が必要なチェックを工程順に並べ、撮った・まだ・撮り忘れが一目で分かります（写真タブの「写真要の品質写真」、ホームの「撮り忘れ」から）。この現場では撮らなくてよいものは「不要」にすると、数から外れます" },
   { date: "2026-10-02", type: "fix", text: "写真が「？」になって見えなくなる不具合の原因を直しました（写真の画像と、送る・報告済みなどの印を別々に保存するようにしました）。使っている途中でアプリが勝手に読み込み直されることも無くなりました（新しい版はホームに戻った時に切り替わります）" },
   { date: "2026-10-02", type: "fix", text: "報告を送った日の後から付けたチェックやメモが、次の報告に入らないことがある不具合を直しました" },
@@ -419,6 +420,44 @@ function periodStart(site, currentPhotos) {
     if (!isRecordPhoto(p) && p.dateKey < start) start = p.dateKey;
   });
   return start;
+}
+
+/* ---------- 報告の週 ----------
+   工事は月〜土を1週とし（日曜は終わった週の続き）、その週の報告は金曜から翌週の月曜まで（遅くとも火曜）に送る。
+   月・火曜は、先週の報告がまだなら先週を対象にする。週の報告は「その週の金曜以降、次の週の金曜より前に報告済みにした」ことで済みとする */
+function weekMon(key) {
+  return addDays(key, -((keyToDate(key).getDay() + 6) % 7));
+}
+function reportWeek(site, reports, today = todayKey()) {
+  const done = (reports || []).map((r) => (r.createdAt ? toDateKey(new Date(r.createdAt)) : r.end)).filter(Boolean);
+  const isReported = (mon) => done.some((k) => k >= addDays(mon, 4) && k <= addDays(mon, 10));
+  const thisMon = weekMon(today);
+  const prevMon = addDays(thisMon, -7);
+  const startMon = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
+  let mon = thisMon;
+  if (daysBetween(thisMon, today) <= 1 && prevMon >= startMon && !isReported(prevMon)) mon = prevMon;
+  const w = { mon, sat: addDays(mon, 5), fri: addDays(mon, 4), due: addDays(mon, 7), late: addDays(mon, 8), isPrev: mon !== thisMon };
+  w.state = isReported(mon) ? "done" : today < w.fri ? "before" : today <= w.due ? "open" : today <= w.late ? "late" : "over";
+  // 期限（火曜）を過ぎても報告していない週の数（現場を登録した週より前は数えない）
+  w.missed = 0;
+  for (let m = addDays(mon, -7); m >= startMon && w.missed < 8 && !isReported(m); m = addDays(m, -7)) w.missed++;
+  return w;
+}
+function reportWeekHtml(w) {
+  const title = w.isPrev ? "先週の報告" : "今週の報告";
+  const sub = {
+    done: "報告済み",
+    before: `報告は ${fmtDate(w.fri)}〜${fmtDate(w.due)}`,
+    open: `報告は ${fmtDate(w.due)}まで（遅くとも ${fmtDate(w.late)}）`,
+    late: `今日 ${fmtDate(w.late)} が期限です`,
+    over: "期限を過ぎています",
+  }[w.state];
+  const badge = { done: '<span class="badge badgeOk">済</span>', open: '<span class="badge badgeWarning">報告日</span>', late: '<span class="badge badgeDanger">期限</span>', over: '<span class="badge badgeDanger">遅れ</span>' }[w.state] || "";
+  return (
+    `<img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">${title}</span>` +
+    `<span class="periodValue">${fmtDate(w.mon)}〜${fmtDate(w.sat)}</span>${badge}` +
+    `<span class="periodSub">${sub}${w.missed ? `<b class="em">　ほかに未報告の週が${w.missed}週あります</b>` : ""}</span>`
+  );
 }
 
 function periodLabel(start) {
@@ -1757,13 +1796,13 @@ async function renderReport() {
   }
   const cands = unreported(all);
   const picks = cands.filter((p) => p.sendPick);
-  const { text, weeks } = periodLabel(periodStart(site, cands));
-  const weekday = new Date().getDay();
-  const due = (weekday === 5 || weekday === 6) && cands.length > 0;
+  const wk = reportWeek(site, reports);
+  // 対象の週より前に撮った、まだ報告していない報告写真があれば知らせる
+  const older = cands.filter((p) => !isRecordPhoto(p) && p.dateKey < wk.mon).length;
   let html =
-    `<div class="periodBar withArt"><img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span><span class="periodValue">${text}</span>` +
-    (due ? '<span class="badge badgeWarning">報告日</span>' : weeks >= 2 ? `<span class="badge badgeMuted">${weeks}週分</span>` : "") +
-    `</div><div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
+    `<div class="periodBar withArt">${reportWeekHtml(wk)}</div>` +
+    (older ? `<div class="hint">${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。</div>` : "") +
+    `<div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
   body.innerHTML = html;
   const list = document.createElement("div");
   list.className = "processCards";
@@ -1897,9 +1936,7 @@ async function renderReportProc() {
   const cands = unreported(all);
   const list = cands.filter((ph) => ph.processId === reportProcId).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
   $("reportProcPeriodBar").className = "periodBar withArt";
-  $("reportProcPeriodBar").innerHTML =
-    `<img class="periodArt" src="hero-frame.webp?v=1" alt=""><span class="periodIcon">${icon(ICONS.calendar, 20)}</span><span class="periodLabel">今回の報告期間</span>` +
-    `<span class="periodValue">${periodLabel(periodStart(site, cands)).text}</span>`;
+  $("reportProcPeriodBar").innerHTML = reportWeekHtml(reportWeek(site, await dbGetAll("reports", "siteId", site.id)));
   $("reportProcCard").innerHTML =
     `<span class="procHeroArt">${groupArt(g, 44)}</span>` +
     `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
@@ -2099,8 +2136,10 @@ async function sendToBox() {
     return;
   }
   const entries = photoFiles(site, picks);
-  const start = periodStart(site, cands);
-  const end = todayKey();
+  const wk = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
+  const pStart = periodStart(site, cands);
+  const start = pStart < wk.mon ? pStart : wk.mon;
+  const end = wk.sat;
   const procIds = new Set(cands.map((p) => p.processId));
   site.processes.forEach((id) => procIds.add(id));
   const processes = [...procIds]
@@ -3497,16 +3536,13 @@ async function siteSummary(site) {
         if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k)) missing.push(it);
       });
     });
-  const cands = unreported(photos);
-  const wd = new Date().getDay();
-  const reportDue = (wd === 5 || wd === 6) && cands.length > 0;
-  // 前回の報告（なければ現場の登録日）から2週間以上たった現場。報告日（金・土）の行と重ならないようにする
-  const unreportedDays = daysBetween(periodStart(site, cands), todayKey()) + 1;
-  const overdue = !reportDue && unreportedDays >= 15;
+  const week = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
+  const reportDue = week.state === "open" || week.state === "late";
+  const overdue = week.missed > 0;
   const unread = Object.values(recs).reduce((n, r) => n + (r.notes || []).reduce((m, x) => m + (x.replies || []).filter((y) => !y.readAt).length, 0), 0);
   const cover = await getCover(site.id);
   return {
-    cover, site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, overdue, unreportedDays, unread, recs };
+    cover, site, groups, cur, pct: total.c ? Math.round((total.d / total.c) * 100) : 0, missing, reportDue, overdue, week, unread, recs };
 }
 
 function siteThumbHtml(sm) {
@@ -3605,7 +3641,10 @@ async function renderDash() {
     todo.push({
       img: "art/report-icon.webp?v=1",
       cls: "wood",
-      html: `今日は報告日：<b class="em">未送信</b>${sites.length > 1 ? `<small>${esc(x.site.name)}</small>` : ""}`,
+      html:
+        x.week.state === "late"
+          ? `報告の期限は<b class="em">今日</b>です（${x.week.isPrev ? "先週" : "今週"}の分）<small>${sites.length > 1 ? esc(x.site.name) + "・" : ""}${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`
+          : `${x.week.isPrev ? "先週" : "今週"}の報告：<b class="em">未送信</b>（${fmtDate(x.week.due)}まで）<small>${sites.length > 1 ? esc(x.site.name) + "・" : ""}${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`,
       go: async () => {
         if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
         goReport();
@@ -3618,7 +3657,7 @@ async function renderDash() {
       todo.push({
         img: "art/report-icon.webp?v=1",
         cls: "wood",
-        html: `報告が <b class="em">${Math.floor(x.unreportedDays / 7)}週間</b> ありません<small>${esc(x.site.name)}・前回から${x.unreportedDays}日</small>`,
+        html: `報告が <b class="em">${x.week.missed}週分</b> 遅れています<small>${esc(x.site.name)}</small>`,
         go: async () => {
           if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
           goReport();
