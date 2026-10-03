@@ -1090,3 +1090,11 @@ img.imgBroken { visibility: hidden; }
 /* 現場の管理：削除は離して置く */
 .manageDel { margin-top: var(--space-md); min-height: 40px; font-size: var(--fs-xs); align-self: flex-end; }
 .manageCard { display: flex; flex-direction: column; }
+
+/* 見出しの位置合わせ（2026-10-03） */
+/* 報告タブの見出しの高さを、工程・写真タブとそろえる（今の現場の欄が同じ高さに来るように） */
+.reportHero { min-height: calc(176px + env(safe-area-inset-top)); }
+/* 歯車：ホームと同じ位置・大きさにそろえる */
+.pageHeroBtn { width: 38px; top: calc(env(safe-area-inset-top) + 14px); right: var(--space-sm); }
+/* 写真タブの絵：右端のカメラが切れないよう左へ寄せる */
+#albumView .pageHeroArt { right: 0; width: 88%; }
