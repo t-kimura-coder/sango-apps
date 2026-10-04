@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "分類を押した画面を「何が起きたかを書く → 連絡先 → これまでの症例」の順にしました。「設備カテゴリ」は、建具・内装・外構なども含むため「分類」に変えました。" },
   { date: "2026-10-04", type: "feature", text: "設備を押すと、まず症例と写真、次に連絡先が出るようにしました。言葉も「症例」「報告」に統一し、保存したあとにそのまま報告できます。LINEで受けた報告を残す時の「報告した人」欄も付けました。" },
   { date: "2026-10-04", type: "feature", text: "LARCH（バックヤード）と外構の絵を入れました。" },
   { date: "2026-10-04", type: "feature", text: "ホームと建物ページに「困ったときは」の連絡先（本社・担当）を目立つ形で置きました。" },
@@ -213,7 +214,7 @@ function helpCard(compact) {
 /* ---------- ホーム ---------- */
 async function viewHome(main) {
   $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">設備サポート</span>`;
-  const hero = `<div class="homeHero"><div class="heroText"><h2>建物を選ぶ</h2><p>設備の連絡先確認と症例管理</p></div><img class="heroLand" src="art/hero.webp?v=${ART_V}" alt="" data-fb="x"></div>`;
+  const hero = `<div class="homeHero"><div class="heroText"><h2>建物を選ぶ</h2><p>連絡先の確認と症例の管理</p></div><img class="heroLand" src="art/hero.webp?v=${ART_V}" alt="" data-fb="x"></div>`;
   if (!master) {
     main.innerHTML = hero + `<div class="empty" style="margin-top:12px"><img class="emptyArt" src="art/empty-master.webp?v=${ART_V}" alt="" data-fb="x"><br>業者データがまだ入っていません。<br>本社から配られたマスターデータ（JSON）を取り込んでください。<br><button class="btn btnPrimary" id="goSettings">設定を開く</button></div>`;
     $("goSettings").onclick = () => go("#/settings");
@@ -247,9 +248,9 @@ async function viewBuilding(main, bid) {
   $("topTitle").textContent = b.name;
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid).sort((a, c) => c.createdAt - a.createdAt);
   main.innerHTML = `
-    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>設備の連絡先と症例</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
+    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>連絡先と症例</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
     ${helpCard(true)}
-    <div class="sectionHead"><h3>設備カテゴリ</h3><span class="rule"></span></div>
+    <div class="sectionHead"><h3>分類から探す</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
       const solo = e.companies.length === 1 && e.companies[0].phone ? e.companies[0] : null;
@@ -276,7 +277,7 @@ function contactHtml(bid, cid) {
       <div class="vSub">${co.contact ? "担当：" + esc(co.contact) : "担当者名は未登録"}</div>
       ${co.phone ? `<a class="callBtn big" href="${telHref(co.phone)}" data-name="${esc(co.name + (co.contact ? "（" + co.contact + "）" : ""))}" data-phone="${esc(co.phone)}">${icon("phone")}${esc(co.phone)}</a>` : `<span class="callBtn big off">電話番号は未登録</span>`}</div>`;
   });
-  if (!e.none && !e.companies.length) h += `<div class="empty">この設備の担当業者はまだ登録されていません。</div>`;
+  if (!e.none && !e.companies.length) h += `<div class="empty">この分類の担当業者はまだ登録されていません。</div>`;
   if (e.note) h += `<div class="vendorCard"><div class="vSub" style="margin:0">備考</div><ul class="noteList">${e.note.split("／").map((n) => `<li>${esc(n.trim())}</li>`).join("")}</ul></div>`;
   const help = master.help || {};
   (help.contacts || []).forEach((c) => {
@@ -284,7 +285,7 @@ function contactHtml(bid, cid) {
   });
   return h;
 }
-/* 設備ページ：①似た症例と写真 → ②連絡先 → ③症例を残して報告 */
+/* 設備ページ：①何が起きたかを書く → ②連絡先 → ③これまでの症例（履歴は下にたまる） */
 async function viewCategory(main, bid, cid) {
   const b = bById(bid), c = cById(cid);
   if (!b || !c) { go("#/home"); return; }
@@ -292,16 +293,22 @@ async function viewCategory(main, bid, cid) {
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid && r.categoryId === cid).sort((x, y) => y.createdAt - x.createdAt);
   main.innerHTML = `
     <div class="catHead"><div class="catIcon big">${catIconHtml(c)}</div><div><div class="catHeadName">${esc(c.label)}</div><div class="mutedText">${esc(b.name)}</div></div></div>
-    <div class="stepHead"><span class="stepNo">1</span><h3>この設備の症例</h3><span class="count">${recs.length}件</span></div>
-    <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例と写真です。</div>
-    <div class="recList" id="cRecs"></div>
+    <div class="stepHead"><span class="stepNo">1</span><h3>何が起きましたか？</h3></div>
+    <div class="formCard">
+      <textarea id="cWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい"></textarea>
+      <div class="mutedText" style="margin:6px 0 10px">LINEで受けた報告も、ここに書いて残せます。写真や対応は次の画面で付けられます。</div>
+      <button class="btn btnPrimary wide" id="cAdd">${icon("plus")}症例を書く</button>
+    </div>
     <div class="stepHead"><span class="stepNo">2</span><h3>連絡先</h3></div>
     ${contactHtml(bid, cid)}
-    <div class="stepHead"><span class="stepNo">3</span><h3>症例を残して報告</h3></div>
-    <div class="mutedText" style="margin:0 4px 8px">対応したら症例として残します。LINEで受けた報告の内容と写真も、ここに残せます。残したあと、管理者へ報告できます。</div>
-    <button class="btn btnPrimary wide" id="cAdd">${icon("plus")}症例を追加</button>`;
-  $("cAdd").onclick = () => go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`);
-  await fillRecList($("cRecs"), recs, "この設備の症例はまだありません。対応したら、下の「症例を追加」で残せます。");
+    <div class="stepHead"><span class="stepNo">3</span><h3>${esc(c.label)}の症例</h3><span class="count">${recs.length}件</span></div>
+    <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例と写真です。新しいものが上に並びます。</div>
+    <div class="recList" id="cRecs"></div>`;
+  $("cAdd").onclick = () => {
+    try { sessionStorage.setItem(P + "prefill", $("cWhat").value.trim()); } catch (e) {}
+    go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`);
+  };
+  await fillRecList($("cRecs"), recs, `${c.label}の症例はまだありません。上に書いて残すと、ここにたまっていきます。`);
 }
 /* 保存した直後に「管理者へ報告しますか？」 */
 function askReport(rec) {
@@ -350,6 +357,9 @@ async function fillRecList(box, recs, emptyText) {
 
 /* ---------- 症例の入力 ---------- */
 let form = null;
+function takePrefill() {
+  try { const v = sessionStorage.getItem(P + "prefill") || ""; sessionStorage.removeItem(P + "prefill"); return v; } catch (e) { return ""; }
+}
 async function viewForm(main, r) {
   const editId = r.q.get("id");
   if (!form || form.key !== location.hash) {
@@ -360,7 +370,7 @@ async function viewForm(main, r) {
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: (await dbGet("images", p.id)).blob, saved: true })));
       form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", photos: full, removed: [] };
     } else {
-      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: "", how: "", vendor: "", reporter: "", photos: [], removed: [] };
+      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
     }
   }
   $("topTitle").textContent = form.isNew ? "症例を入力" : "症例を編集";
@@ -368,7 +378,7 @@ async function viewForm(main, r) {
   const draw = () => {
     main.innerHTML = `
       <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() ? "" : " ph"}">${b() ? esc(b().name) : "選んでください"}</div></div>${icon("chevron")}</button>
-      <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">設備カテゴリ</div><div class="pickValue${c() ? "" : " ph"}">${c() ? esc(c().label) : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() ? "" : " ph"}">${c() ? esc(c().label) : "選んでください"}</div></div>${icon("chevron")}</button>
       <div class="formCard"><div class="fieldLabel">何が起きたか<span class="req">必須</span></div><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
       <div class="formCard"><div class="fieldLabel">どう対応したか<span class="opt">対応中なら空欄でOK</span></div><textarea id="fHow" maxlength="500" placeholder="例）業者へ連絡。トラップを清掃し、排水は改善。">${esc(form.how)}</textarea><div class="counter"><span id="cHow">${form.how.length}</span>/500</div></div>
       <div class="formCard"><div class="fieldLabel">写真<span class="opt">複数枚OK</span></div><div class="photoStrip" id="strip"></div></div>
@@ -405,7 +415,7 @@ async function viewForm(main, r) {
     body.innerHTML = `<div class="optList">${master.buildings.map((x) => `<button class="optBtn${x.id === form.buildingId ? " sel" : ""}" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>`;
     body.querySelectorAll(".optBtn").forEach((el) => (el.onclick = () => { if (form.buildingId !== el.dataset.id) form.vendor = ""; form.buildingId = el.dataset.id; close(); draw(); }));
   });
-  const pickCategory = () => openSheet("設備カテゴリを選ぶ", (body, close) => {
+  const pickCategory = () => openSheet("分類を選ぶ", (body, close) => {
     body.innerHTML = `<div class="catPickGrid">${master.categories.map((x) => `<button class="optBtn${x.id === form.categoryId ? " sel" : ""}" data-id="${esc(x.id)}"><span class="catIcon" style="width:36px;height:36px;font-size:16px">${catIconHtml(x)}</span>${esc(x.label)}</button>`).join("")}</div>`;
     body.querySelectorAll(".optBtn").forEach((el) => (el.onclick = () => { if (form.categoryId !== el.dataset.id) form.vendor = ""; form.categoryId = el.dataset.id; close(); draw(); }));
   });
@@ -422,7 +432,7 @@ async function viewForm(main, r) {
   async function saveForm(draft) {
     if (!draft) {
       if (!form.buildingId) return toast("建物を選んでください");
-      if (!form.categoryId) return toast("設備カテゴリを選んでください");
+      if (!form.categoryId) return toast("分類を選んでください");
       if (!form.what.trim()) return toast("「何が起きたか」を入力してください");
     } else if (!form.buildingId) return toast("下書きでも建物は選んでください");
     const rec = {
@@ -463,7 +473,7 @@ async function viewMine(main) {
   const unsent = all.filter((r) => !r.draft && !r.sentAt);
   main.innerHTML = `
     <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例です。他の人の症例は出ません。</div>
-    <div class="searchRow">${icon("search")}<input id="mQ" type="search" placeholder="建物・設備・内容で探す" value="${esc(mineQuery)}"></div>
+    <div class="searchRow">${icon("search")}<input id="mQ" type="search" placeholder="建物・分類・内容で探す" value="${esc(mineQuery)}"></div>
     <div class="chips">${[["all", "すべて"], ["unsent", "未報告"], ["draft", "下書き"]].map(([k, l]) => `<button class="chip${mineFilter === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
     ${unsent.length ? `<div class="sendBar"><button class="btn btnPrimary" id="sendAll">${icon("send")}未報告${unsent.length}件を管理者へ報告する</button></div>` : ""}
     <div class="recList" id="mList"></div>
@@ -492,7 +502,7 @@ async function viewDetail(main, id) {
   main.innerHTML = `
     <div class="formCard">
       <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}</div>
-      <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>設備カテゴリ</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
+      <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
@@ -529,7 +539,7 @@ async function sendRecords(list) {
     for (const p of ps) {
       n++;
       const blob = (await dbGet("images", p.id)).blob;
-      const name = safeName(`${r.buildingName}_${r.categoryName || "設備"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${n}.jpg`);
+      const name = safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${n}.jpg`);
       files.push(new File([blob], name, { type: "image/jpeg" }));
       bytes += blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
@@ -565,7 +575,7 @@ async function viewSettings(main) {
     <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
     <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
-      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、設備を押すと「①似た症例と写真 ②業者の連絡先」が出ます<br>3. 困ったら電話。対応したら「症例を追加」で、何があったか・どう対応したかを写真付きで残し、そのまま管理者へ報告<br>4. LINEで受けた報告の内容と写真も、同じ「症例を追加」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
+      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま管理者へ報告<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
   $("sName").onchange = (e) => { setSetting("name", e.target.value.trim()); toast("保存しました"); };
