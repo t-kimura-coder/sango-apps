@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -39,7 +39,7 @@ const fillIcons = (root) => root.querySelectorAll("[data-icon]").forEach((e) => 
 
 /* ---------- 状態 ---------- */
 const S = { records: [], admin: { kind: "sango-support-admin", schema: 1, items: {} }, photoGetters: new Map(), dirHandle: null, source: null, demo: false, writable: false };
-const F = { src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null };
+const F = { src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null, showHidden: false };
 let SUM = { period: "365" };
 
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), 3000); }
@@ -57,9 +57,10 @@ function norm(r, sender) {
 }
 const adm = (r) => {
   const it = S.admin.items[r.id] || {};
-  return { amount: it.amount !== undefined && it.amount !== null ? it.amount : r.amount0, cause: it.cause != null ? it.cause : r.cause0, memo: it.memo != null ? it.memo : r.memo0, status: it.status || (r.src === "past" ? "done" : ""), at: it.at || 0, by: it.by || "" };
+  return { amount: it.amount !== undefined && it.amount !== null ? it.amount : r.amount0, cause: it.cause != null ? it.cause : r.cause0, memo: it.memo != null ? it.memo : r.memo0, status: it.status || (r.src === "past" ? "done" : ""), at: it.at || 0, by: it.by || "", hidden: it.hidden === true };
 };
-const isTodo = (r) => r.src === "new" && adm(r).status !== "done";
+const isHidden = (r) => adm(r).hidden;
+const isTodo = (r) => r.src === "new" && !isHidden(r) && adm(r).status !== "done";
 const titleOf = (r) => (r.what.split(/\n/)[0] || "（内容なし）").slice(0, 40);
 
 async function ingest(entries) {
@@ -227,6 +228,7 @@ function filtered() {
   const now = Date.now();
   const days = F.period === "all" ? 0 : Number(F.period);
   let list = S.records.filter((r) => {
+    if (!F.showHidden && isHidden(r)) return false;
     if (F.src !== "all" && r.src !== F.src) return false;
     if (F.blds.size && !F.blds.has(r.buildingId)) return false;
     if (F.cats.size && !F.cats.has(r.categoryId)) return false;
@@ -284,7 +286,7 @@ function viewEmpty(main) {
 /* ---------- 左：絞り込み ---------- */
 function renderFilters() {
   const bs = new Map(), cs = new Map(), leaders = new Set();
-  S.records.forEach((r) => {
+  S.records.filter((r) => !isHidden(r)).forEach((r) => {
     if (r.buildingId) { const b = bs.get(r.buildingId) || { name: r.building, n: 0 }; b.n++; bs.set(r.buildingId, b); }
     if (r.categoryId) { const c = cs.get(r.categoryId) || { name: r.category, n: 0 }; c.n++; cs.set(r.categoryId, c); }
     if (r.sender) leaders.add(r.sender);
@@ -296,13 +298,15 @@ function renderFilters() {
     <div class="fGroup"><div class="fTitle">${icon("tool")}分類</div><div class="fGrid">${cl.map(([id, c]) => `<label class="fRow"><input type="checkbox" data-c="${esc(id)}" ${F.cats.has(id) ? "checked" : ""}><span class="fn">${esc(c.name)}</span></label>`).join("")}</div></div>
     <div class="fGroup"><div class="fTitle">${icon("user")}担当リーダー</div><select class="fSelect" id="fLeader"><option value="">すべて</option>${[...leaders].sort().map((l) => `<option ${F.leader === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
     <div class="fGroup"><div class="fTitle">${icon("cal")}期間</div><select class="fSelect" id="fPeriod">${[["all", "すべての期間"], ["30", "過去30日"], ["90", "過去3か月"], ["365", "過去1年"]].map(([v, l]) => `<option value="${v}" ${F.period === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <label class="fRow"><input type="checkbox" id="fTodo" ${F.todo ? "checked" : ""}><span class="fn"><b>未整理だけ</b></span></label>`;
+    <label class="fRow"><input type="checkbox" id="fTodo" ${F.todo ? "checked" : ""}><span class="fn"><b>未整理だけ</b></span></label>
+    ${S.records.some(isHidden) ? `<label class="fRow"><input type="checkbox" id="fHidden" ${F.showHidden ? "checked" : ""}><span class="fn">非表示の症例も表示（${S.records.filter(isHidden).length}件）</span></label>` : ""}`;
   const side = $("sideExtra");
   side.querySelectorAll("[data-b]").forEach((el) => (el.onchange = () => { el.checked ? F.blds.add(el.dataset.b) : F.blds.delete(el.dataset.b); renderListBody(); }));
   side.querySelectorAll("[data-c]").forEach((el) => (el.onchange = () => { el.checked ? F.cats.add(el.dataset.c) : F.cats.delete(el.dataset.c); renderListBody(); }));
   $("fLeader").onchange = (e) => { F.leader = e.target.value; renderListBody(); };
   $("fPeriod").onchange = (e) => { F.period = e.target.value; renderListBody(); };
   $("fTodo").onchange = (e) => { F.todo = e.target.checked; renderListBody(); };
+  const fh = $("fHidden"); if (fh) fh.onchange = (e) => { F.showHidden = e.target.checked; renderListBody(); };
 }
 
 /* ---------- 症例一覧 ---------- */
@@ -324,13 +328,13 @@ function viewList(main) {
   $("pvToggle").onclick = () => { setLS("pv", pvOn ? "0" : "1"); viewList(main); fillIcons(main); };
   renderListBody();
 }
-function stateChip(r) { return r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">整理済み</span>` : `<span class="chip todo">未整理</span>`; }
+function stateChip(r) { return isHidden(r) ? `<span class="chip hid">非表示</span>` : r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">整理済み</span>` : `<span class="chip todo">未整理</span>`; }
 function renderListBody() {
   const list = filtered();
   $("listCnt").textContent = `全 ${list.length} 件`;
   $("listEmpty").hidden = list.length > 0;
   if (!list.some((r) => r.id === F.sel)) F.sel = list.length ? list[0].id : null;
-  $("listBody").innerHTML = list.map((r) => `<tr class="row ${r.id === F.sel ? "sel" : ""}" data-id="${esc(r.id)}">
+  $("listBody").innerHTML = list.map((r) => `<tr class="row ${r.id === F.sel ? "sel" : ""}${isHidden(r) ? " isHidden" : ""}" data-id="${esc(r.id)}">
     <td class="cDate">${fmtDate(r.t)}<br>${fmtTime(r.t)}</td>
     <td><div class="cBld">${bldImg(r.buildingId)}<span>${esc(r.building)}</span></div></td>
     <td><span class="cCat">${catImg(r.categoryId)}${esc(r.category)}</span></td>
@@ -372,8 +376,8 @@ async function viewDetail(main, id) {
   const r = S.records.find((x) => x.id === id);
   if (!r) { location.hash = "#/list"; return; }
   const a = adm(r), edit = canEdit();
-  const sim = S.records.filter((x) => x.id !== r.id && x.buildingId === r.buildingId && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
-  const sim2 = sim.length ? sim : S.records.filter((x) => x.id !== r.id && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
+  const sim = S.records.filter((x) => !isHidden(x) && x.id !== r.id && x.buildingId === r.buildingId && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
+  const sim2 = sim.length ? sim : S.records.filter((x) => !isHidden(x) && x.id !== r.id && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
   main.innerHTML = `<div class="detailTop"><a class="backLink" href="#/list">← 一覧に戻る</a></div>
     <div class="detailLayout"><div>
       <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>
@@ -386,6 +390,7 @@ async function viewDetail(main, id) {
           <div><label>メモ</label><textarea id="eMemo" maxlength="500" ${edit ? "" : "disabled"}>${esc(a.memo)}</textarea></div></div>
         <div class="editBtns"><button class="btn primary" id="eDone" ${edit ? "" : "disabled"}>${a.status === "done" ? "整理済み（内容を保存）" : "整理済みにする"}</button>
           <button class="btn" id="eSave" ${edit ? "" : "disabled"}>保存</button>${a.status === "done" && r.src === "new" ? `<button class="btn" id="eUndo" ${edit ? "" : "disabled"}>未整理に戻す</button>` : ""}
+          <button class="btn" id="eHide" ${edit ? "" : "disabled"}>${a.hidden ? "非表示を解除する" : "この症例を非表示にする"}</button>
           <span class="note">${a.at ? `最終更新 ${fmtDate(a.at)} ${fmtTime(a.at)}${a.by ? "　" + esc(a.by) : ""}` : ""}</span></div></div>
     </div>
     <aside class="panel"><h3>似た症例</h3>${sim2.length ? sim2.map((x) => `<div class="simItem" data-id="${esc(x.id)}">${bldImg(x.buildingId)}<div class="t"><b>${esc(titleOf(x))}</b>${esc(x.building)}｜${esc(x.category)}｜${fmtDate(x.t)}</div>${stateChip(x)}</div>`).join("") : `<div class="note">同じ分類の症例はまだありません。</div>`}</aside></div>`;
@@ -400,6 +405,13 @@ async function viewDetail(main, id) {
     $("eSave").onclick = () => done(read());
     $("eDone").onclick = () => done({ ...read(), status: "done" });
     const u = $("eUndo"); if (u) u.onclick = () => done({ ...read(), status: "" });
+    $("eHide").onclick = async () => {
+      const hide = !a.hidden;
+      if (hide && !confirm("この症例を非表示にしますか？\n一覧・まとめ・CSVから隠れます（元のデータは消えません。あとで解除できます）。")) return;
+      if (!(await saveItem(r, { hidden: hide }))) return;
+      if (tok !== viewTok || route().name !== "r" || route().id !== id) return;
+      if (hide) location.hash = "#/list"; else { viewDetail(main, id); fillIcons(main); }
+    };
   }
   fillIcons(main);
   const grid = $("dPhotos");
@@ -413,7 +425,7 @@ async function viewDetail(main, id) {
 /* ---------- まとめ ---------- */
 function viewSummary(main) {
   const days = SUM.period === "all" ? 0 : Number(SUM.period), now = Date.now();
-  const list = S.records.filter((r) => !days || now - r.t <= days * 86400000);
+  const list = S.records.filter((r) => !isHidden(r) && (!days || now - r.t <= days * 86400000));
   const bs = new Map(), cs = new Map(), matrix = {}, vendors = new Map();
   list.forEach((r) => {
     if (r.buildingId) bs.set(r.buildingId, r.building);
@@ -428,7 +440,7 @@ function viewSummary(main) {
   const vList = [...vendors].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const months = [];
   for (let i = 11; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push({ y: d.getFullYear(), m: d.getMonth(), n: 0 }); }
-  S.records.forEach((r) => { const d = new Date(r.t); const m = months.find((x) => x.y === d.getFullYear() && x.m === d.getMonth()); if (m) m.n++; });
+  S.records.filter((r) => !isHidden(r)).forEach((r) => { const d = new Date(r.t); const m = months.find((x) => x.y === d.getFullYear() && x.m === d.getMonth()); if (m) m.n++; });
   const mx = Math.max(1, ...months.map((m) => m.n)), bmax = (arr) => Math.max(1, ...arr.map((x) => x[1]));
   const bars = (arr) => arr.map(([n, c]) => `<div class="barRow"><span>${esc(n)}</span><div class="bar"><i style="width:${(c / bmax(arr)) * 100}%"></i></div><b>${c}件</b></div>`).join("") || `<div class="note">データがありません</div>`;
   main.innerHTML = `<div class="listTop"><h2>まとめ</h2><span class="note">登録された症例を、建物・分類・業者・月ごとに集計しています。</span><span class="grow"></span>
@@ -458,11 +470,12 @@ function exportCsv(list) {
 
 /* ---------- 設定 ---------- */
 function viewSettings(main) {
-  const n = S.records.length, todo = S.records.filter(isTodo).length, past = S.records.filter((r) => r.src === "past").length;
+  const hiddenN = S.records.filter(isHidden).length;
+  const n = S.records.length - hiddenN, todo = S.records.filter(isTodo).length, past = S.records.filter((r) => r.src === "past" && !isHidden(r)).length;
   main.innerHTML = `<div class="settingBox"><div class="listTop"><h2>設定</h2></div>
     <div class="panel"><h3>症例のフォルダ</h3>
       <p class="note">リーダーが「報告」した症例（JSONと写真）が入っているフォルダ（Box Drive の受け取りフォルダ）を選びます。</p>
-      <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
+      <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
       <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
       ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>
     <div class="panel"><h3>編集モード</h3>

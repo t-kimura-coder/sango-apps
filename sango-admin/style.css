@@ -194,3 +194,7 @@ main { padding: 16px 18px 40px; min-width: 0; }
 .listLayout.noPv { grid-template-columns: minmax(0, 1fr); }
 .listLayout.noPv > aside { display: none; }
 @media (min-width: 1500px) { .cWhat span { max-width: none; } }
+
+/* 非表示の症例 */
+.chip.hid { background: #dcdcd3; color: #6b6f68; }
+.tbl tr.row.isHidden td { opacity: 0.5; }
