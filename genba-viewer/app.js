@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 16;
+const APP_VERSION = 18;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -14,6 +14,9 @@ const REPLY_DIR = "返信";
 const $ = (id) => document.getElementById(id);
 
 const ICONS = {
+  report: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/>',
+  back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  sort: '<path d="M7 4v16M3 8l4-4 4 4"/><path d="M17 20V4M13 16l4 4 4-4"/>',
   people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.8"/><path d="M16.5 14.6c2.6.2 4.4 2 5 5"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
@@ -442,25 +445,28 @@ function siteCard(s, ctx) {
   const open = notes.filter((n) => noteStatus(n) === "open");
   const latest = notes.filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1))[0];
   const wk = siteWeekState(s, ctx);
+  const late = !s.completedAt && !s.pausedAt && (wk.st === "miss" || wk.st === "due");
   const segs = (prog || []).map((g, i) => {
-    const st = g.before_start ? "pre" : g.checks_total && g.checks_done >= g.checks_total ? "done" : i === stage ? "cur" : g.checks_done ? "doing" : "";
-    return `<span class="scSeg ${st}" title="${esc(g.group)} ${g.before_start ? "導入前" : `${g.checks_done}/${g.checks_total}`}"><i></i><small>${esc(g.group)}</small></span>`;
+    const st = g.before_start ? "pre" : g.checks_total && g.checks_done >= g.checks_total ? "done" : i === stage ? "cur" : i < stage ? "done" : "";
+    const pct = g.checks_total ? Math.round((g.checks_done / g.checks_total) * 100) : 0;
+    return `<span class="scSeg ${st}" title="${esc(g.group)}：${g.before_start ? "導入前" : `チェック ${g.checks_done}/${g.checks_total}（${pct}%）`}"><i${st === "cur" ? ` style="--p:${Math.max(12, pct)}%"` : ""}></i><small>${esc(g.group)}</small></span>`;
   });
   return (
-    `<div class="siteCard${s.completedAt ? " fin" : s.pausedAt ? " paused" : ""}${open.length ? " hasOpen" : ""}" data-site="${esc(s.key)}" role="button" tabindex="0">` +
-    `<div class="scHead"><div class="scName"><b>${esc(s.name)}</b>${s.completedAt ? `<span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? `<span class="tag">休工中</span>` : ""}</div>` +
+    `<div class="siteCard${s.completedAt ? " fin" : s.pausedAt ? " paused" : ""}${open.length || late ? " alert" : ""}" data-site="${esc(s.key)}" role="button" tabindex="0">` +
+    `<div class="scHead"><b class="scTitle">${esc(s.name)}</b>${s.koujiNo ? `<span class="scNo">No.${esc(s.koujiNo)}</span>` : ""}` +
     `<span class="wk ${wk.st}" title="${esc(wk.title || "")}">${wk.label || "－"}</span></div>` +
-    `<div class="scPeople">${[...s.persons.values()].map((n) => `<span>${avatar(n, 22)}${esc(n)}</span>`).join("")}${s.koujiNo ? `<span class="mutedText">No.${esc(s.koujiNo)}</span>` : ""}</div>` +
+    `<div class="scPeople">${[...s.persons.values()].map((n) => `<span>${avatar(n, 22)}${esc(n)}</span>`).join("")}</div>` +
     (prog ? `<div class="scStages">${segs.join("")}</div>` : "") +
-    `<div class="scNow">${stage >= 0 && prog ? `今：<b>${esc(prog[stage].group)}</b>${curProc ? `（${esc(curProc)}）` : ""}` : "進み具合はまだ届いていません"}<span class="mutedText">${last ? `最終報告 ${fmtMD(last.sent_at)}` : ""}</span></div>` +
+    `<div class="scNow"><span>${stage >= 0 && prog ? `今：<b>${esc(prog[stage].group)}</b>${curProc ? `（${esc(curProc)}）` : ""}` : "進み具合はまだ届いていません"}</span><span>${last ? `最終報告 ${fmtMD(last.sent_at)}` : ""}</span></div>` +
     `<div class="scVoice">${
       latest
         ? `${typeBadge(latest.type)}${statusBadge(latest)}<span class="scVoiceText">${esc(headline(latest.text))}</span><span class="mutedText">${relTime(latest.at)}</span>`
-        : `<span class="mutedText">対応待ちの声はありません</span>`
-    }${open.length > 1 ? `<span class="sBadge open">未回答 ${open.length}</span>` : ""}</div></div>`
+        : `<span class="mutedText scVoiceText">対応待ちの声はありません</span>`
+    }${open.length ? `<span class="sBadge open">未回答 ${open.length}</span>` : ""}</div></div>`
   );
 }
 let siteFilter = "all";
+const SITE_SORTS = [["rec", "おすすめ順"], ["stage", "進み具合順"], ["old", "最終報告が古い順"], ["name", "現場名順"]];
 function siteSectionHtml() {
   const ctx = makeWeekCtx();
   const sites = [...data.sites.values()].filter(siteInScope).filter((s) => matchesQuery(s.name, ...s.persons.values()));
@@ -469,45 +475,62 @@ function siteSectionHtml() {
     const wk = siteWeekState(s, ctx).st.split(" ")[0];
     const rest = !!(s.completedAt || s.pausedAt);
     const late = !rest && (wk === "miss" || wk === "due");
-    return { s, open, wk, rest, late, rank: open ? 0 : late ? 1 : rest ? (s.completedAt ? 4 : 3) : 2 };
+    const stage = siteStage(siteProgress(s));
+    return { s, open, wk, rest, late, stage, last: (s.reports[0] || {}).sent_at || "", rank: open ? 0 : late ? 1 : rest ? (s.completedAt ? 4 : 3) : 2 };
   });
   const hit = (x, k) => k === "all" || (k === "open" ? x.open > 0 : k === "late" ? x.late || x.wk === "open" : x.rest);
   const chips = [["all", "すべて"], ["open", "未回答あり"], ["late", "今週の報告まだ"], ["rest", "休工・完工"]];
-  const shown = info.filter((x) => hit(x, siteFilter)).sort((a, b) => a.rank - b.rank || b.open - a.open || a.s.name.localeCompare(b.s.name, "ja"));
+  const sort = getLS("siteSort", "rec");
+  const cmp = {
+    rec: (a, b) => a.rank - b.rank || b.open - a.open || a.s.name.localeCompare(b.s.name, "ja"),
+    stage: (a, b) => (a.rest - b.rest) || b.stage - a.stage || a.s.name.localeCompare(b.s.name, "ja"),
+    old: (a, b) => (a.rest - b.rest) || (a.last < b.last ? -1 : a.last > b.last ? 1 : 0),
+    name: (a, b) => a.s.name.localeCompare(b.s.name, "ja"),
+  }[sort] || ((a, b) => a.rank - b.rank);
+  const shown = info.filter((x) => hit(x, siteFilter)).sort(cmp);
   return (
-    `<div class="secHead"><div><h2>現場の状況</h2><div class="sub">現場ごとの進み具合と、${ctx.focus === ctx.thisMon ? "今週" : "先週"}の報告、現場からの声。現場を選ぶと、工程順に声を見られます。</div></div>` +
-    `<div class="chips">${chips.map(([k, l]) => `<button class="chip${siteFilter === k ? " on" : ""}" data-sf="${k}">${l}<span class="chipNum ${k === "open" ? "need" : k === "late" ? "late" : k === "rest" ? "ok" : "all"}">${info.filter((x) => hit(x, k)).length}</span></button>`).join("")}</div></div>` +
+    `<div class="siteSecHead"><h2>現場の状況</h2><span class="sub">現場を選ぶと、詳しい状況と現場からの声を確認できます。</span>` +
+    `<label class="sortSel">${icon("sort", 16)}<select id="siteSort" class="select">${SITE_SORTS.map(([k, l]) => `<option value="${k}"${sort === k ? " selected" : ""}>${l}</option>`).join("")}</select></label></div>` +
+    `<div class="chips siteChips">${chips.map(([k, l]) => `<button class="chip${siteFilter === k ? " on" : ""}" data-sf="${k}">${l}<span class="chipNum ${k === "open" ? "need" : k === "late" ? "late" : k === "rest" ? "ok" : "all"}">${info.filter((x) => hit(x, k)).length}</span></button>`).join("")}</div>` +
     (shown.length ? `<div class="siteGrid">${shown.map((x) => siteCard(x.s, ctx)).join("")}</div>` : `<div class="emptyText pad">該当する現場はありません。</div>`) +
     `<a class="moreLink personLink" href="#/sites">担当者ごとに見る（報告の遅れ・未回答）${icon("chevron", 16)}</a>`
   );
 }
 
-/* 現場の声を工程順に（段階ごと。今の段階は開いておく） */
-function siteVoicesHtml(s, prog) {
+/* 現場の声を工程順に（段階ごと。今の段階と未回答のある段階は開いておく） */
+const STAGE_NAMES = ["基礎", "上棟", "外装", "内装", "設備", "引渡し"];
+function siteVoicesHtml(s, prog, order = "old") {
   const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
-  if (!notes.length) return "";
   const stage = siteStage(prog);
-  const groups = ["基礎", "上棟", "外装", "内装", "設備", "引渡し"];
-  const byGroup = new Map(groups.map((g) => [g, []]));
+  const byGroup = new Map(STAGE_NAMES.map((g) => [g, []]));
   const other = [];
   notes.forEach((n) => (byGroup.get(PROC_GROUP[n.process]) || other).push(n));
-  const multi = s.persons.size > 1;
-  const row = (n) =>
-    `<button class="voiceRow ${noteStatus(n)}" data-note="${esc(n.id)}">${typeBadge(n.type, n.origType)}${statusBadge(n)}` +
-    `<span class="vText"><b>${esc(headline(n.text))}</b><small>${esc(shortProc(n.process))} › ${esc(n.item || "")}</small></span>` +
-    `<span class="vWho">${multi ? `${avatar(n.personName, 22)}${esc(n.personName)}` : ""}</span><span class="mutedText">${fmtMD(n.at)}</span>${icon("chevron", 16)}</button>`;
-  const sec = (name, list, open) => {
-    if (!list.length) return "";
-    const nOpen = list.filter((n) => noteStatus(n) === "open").length;
+  const row = (n) => {
+    const rest = restText(n.text);
     return (
-      `<details class="voiceGroup"${open ? " open" : ""}><summary><img src="art/${GROUP_ART[name] || "g1"}.webp" alt=""><b>${esc(name)}</b><span class="mutedText">${list.length}件</span>` +
-      `${nOpen ? `<span class="sBadge open">未回答 ${nOpen}</span>` : ""}${open && prog && groups[stage] === name ? `<span class="tag">今の段階</span>` : ""}${icon("chevron", 16)}</summary>` +
-      `<div class="voiceList">${list.sort((a, b) => (a.at < b.at ? -1 : 1)).map(row).join("")}</div></details>`
+      `<button class="voiceRow ${noteStatus(n)}" data-note="${esc(n.id)}"><span class="vBadges">${typeBadge(n.type, n.origType)}${statusBadge(n)}</span>` +
+      `<span class="vWho">${avatar(n.personName, 22)}${esc(n.personName)}</span>` +
+      `<span class="vText"><b>${esc(headline(n.text))}</b><small>${esc(rest || `${shortProc(n.process)} › ${n.item || ""}`)}</small></span>` +
+      `<span class="vDate">${fmtMD(n.at)}</span></button>`
+    );
+  };
+  const sec = (name, list, i) => {
+    const nOpen = list.filter((n) => noteStatus(n) === "open").length;
+    const isCur = prog && i === stage;
+    const open = list.length && (isCur || nOpen);
+    const label = isCur && s.reports[0] && (s.reports[0].processes || []).length ? `${name}（${shortProc(s.reports[0].processes.slice(-1)[0].name)}）` : name;
+    return (
+      `<details class="voiceGroup${nOpen ? " hasOpen" : ""}${list.length ? "" : " empty"}"${open ? " open" : ""}><summary><img src="art/${GROUP_ART[name] || "g1"}.webp" alt=""><b>${esc(label)}</b>` +
+      `<span class="vCount${nOpen ? " open" : ""}">${list.length}件</span>${isCur ? `<span class="tag">今の段階</span>` : ""}${icon("chevron", 18)}</summary>` +
+      (list.length ? `<div class="voiceList">${list.sort((a, b) => (order === "new" ? (a.at < b.at ? 1 : -1) : a.at < b.at ? -1 : 1)).map(row).join("")}</div>` : "") +
+      `</details>`
     );
   };
   return (
-    `<div class="secHead"><div><h2>現場の声（工程順）</h2><div class="sub">この現場で出た疑問・気づき・職人さんの要望を、段階ごとに古い順で並べています。${multi ? "誰の声かは名前で分かります。" : ""}</div></div></div>` +
-    `<div class="card voiceCard">${groups.map((g, i) => sec(g, byGroup.get(g), i === stage || byGroup.get(g).some((n) => noteStatus(n) === "open"))).join("")}${sec("その他", other, true)}</div>`
+    `<div class="card sdPanel"><div class="sdPanelHead"><div><h2>現場の声（工程順）</h2><div class="sub">現場からの疑問・気づき・職人さんの要望を、工程ごとに確認できます。</div></div>` +
+    `<label class="sortSel">${icon("sort", 16)}<select id="voiceOrder" class="select"><option value="old"${order === "old" ? " selected" : ""}>古い順</option><option value="new"${order === "new" ? " selected" : ""}>新しい順</option></select></label></div>` +
+    (notes.length ? "" : `<div class="emptyText pad">この現場からの声は、まだありません。</div>`) +
+    `<div class="voiceGroups">${STAGE_NAMES.map((g, i) => sec(g, byGroup.get(g), i)).join("")}${other.length ? sec("その他", other, -1) : ""}</div></div>`
   );
 }
 
@@ -946,16 +969,15 @@ let homeFilter = "all";
 function renderHome() {
   const main = $("main");
   let html =
-    `<section class="hero"><img src="art/hero-sky.webp" class="heroSky" alt=""><img src="art/hero-frame.webp" class="heroArt" alt=""><img src="art/hero-icons.webp" class="heroIcons" alt="">` +
-    `<h1 class="heroTitle">現場の声に、<br>すぐに気づき、支える。</h1>` +
-    `<p class="heroSub">現場からの疑問・気づき・相談をいち早く確認し、<br>必要なサポートにつなげましょう。</p></section>`;
+    `<section class="hero small homeHero"><img src="art/site-bg.webp" class="siteBg" alt="">` +
+    `<h1 class="heroTitle">現場の状況</h1>` +
+    `<p class="heroSub">現場ごとの進み具合と、今週の報告、現場からの声を一覧で確認できます。<br>週次の班の打合せでの確認にお使いください。</p></section>`;
   if (noData()) {
     main.innerHTML = html + (dirHandle ? emptyBox("前回のフォルダを開きます", "ボタンを押すと、前回選んだ報告フォルダを読み込みます。", false).replace("</div></div>", `</div><div class="btnRow"><button class="btn btnPrimary" data-act="reopen">${icon("folder", 18)}読み込む</button><button class="btn btnOutline" data-act="pick">別のフォルダを選ぶ</button></div></div>`) : noDataView());
     bindCommon(main);
     return;
   }
   const open = openQuestions().sort((a, b) => (a.at < b.at ? 1 : -1));
-  html += scopeBarHtml();
   const recent = scopedNotes().filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
   html +=
     `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">未回答の疑問・要望</div>` +
@@ -968,9 +990,13 @@ function renderHome() {
       : `<div class="emptyText pad">対応待ちのメモはありません。</div>`) +
     `</div></div>`;
 
-  html += `<a class="weekLink card" href="#/weeks">${icon("calendar", 26)}<span><b>週の報告</b><small>担当者ごと・現場ごとに、週の報告が済んでいるかを一覧で見る</small></span>${icon("chevron", 18)}</a>`;
+  html += scopeBarHtml();
   html += siteSectionHtml();
   main.innerHTML = html;
+  $("siteSort").addEventListener("change", (e) => {
+    setLS("siteSort", e.target.value);
+    renderHome();
+  });
   main.querySelectorAll("[data-sf]").forEach((b) =>
     b.addEventListener("click", () => {
       siteFilter = b.dataset.sf;
@@ -1229,46 +1255,74 @@ function renderSite(key) {
   const main = $("main");
   const s = data.sites.get(key);
   if (noData() || !s) return renderSites();
-  const p = data.people.get(s.personKey);
-  const last = s.reports[0];
-  const open = [...data.notes.values()].filter((n) => n.siteKey === key && noteStatus(n) === "open");
   const prog = siteProgress(s);
   const personProg = personProgress(s);
-  const curGroup = prog ? (prog.find((g) => !g.before_start && g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
+  const stage = siteStage(prog);
+  const last = s.reports[0];
+  const curProc = last && (last.processes || []).length ? shortProc(last.processes.slice(-1)[0].name) : "";
+  const live = (prog || []).filter((g) => !g.before_start);
+  const sum = (k) => live.reduce((t, g) => t + (g[k] || 0), 0);
+  const [cd, ct, pd, pt, na] = [sum("checks_done"), sum("checks_total"), sum("photos_done"), sum("photos_total"), sum("checks_na")];
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const state = s.completedAt ? ["fin", `完工 ${fmtMD(s.completedAt)}`] : s.pausedAt ? ["paused", `休工中（${fmtMD(s.pausedAt)}〜）`] : ["doing", "進行中"];
   let html =
-    `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
-    `<div class="crumbs"><a href="#/home">現場</a>›<a href="#/sites">担当者</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
-    `<h1 class="heroTitle">${esc(s.name)}の報告${s.completedAt ? ` <span class="doneBadge">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? ` <span class="doneBadge paused">休工中（${fmtMD(s.pausedAt)}〜）</span>` : ""}</h1>` +
-    `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
-  html +=
-    `<div class="card siteSummary"><div class="ssCell">${avatar(s.personName, 56)}<div><div class="ssLabel">担当監督${s.persons.size > 1 ? `（${s.persons.size}人）` : ""}</div>` +
-    `<div class="ssValue">${esc([...s.persons.values()].join("・"))}</div>` +
-    `<div class="ssSub">${s.koujiNo ? `<span class="tag">工事番号 ${esc(s.koujiNo)}</span> ` : '<span class="tag warnTag">工事番号なし</span> '}` +
-    (s.members.size ? `<span class="tag">登録された担当 ${esc([...s.members].join("・"))}</span>` : "") +
-    `</div></div></div>` +
-    `<div class="ssCell">${icon("calendar", 28)}<div><div class="ssLabel">最新の報告期間</div><div class="ssValue">${last ? `${fmtMD(last.period.start)} 〜 ${fmtMD(last.period.end)}` : "－"}</div>` +
-    `<div class="ssSub">${last ? `${agoLabel(last.sent_at)}に届きました` : ""}</div></div></div>` +
-    `<button class="ssCell ssAlert${open.length ? "" : " zero"}" ${open.length ? `data-note="${esc(open[0].id)}"` : ""}>${icon("chat", 30)}<div><div class="ssLabel">未回答の疑問・要望</div><div class="ssValue big"><b>${open.length}</b>件</div></div>${open.length ? icon("chevron", 18) : ""}</button></div>`;
+    `<section class="hero small sdHero"><img src="art/site-bg.webp" class="siteBg" alt="">` +
+    `<a class="backLink" href="#/home">${icon("back", 18)}一覧に戻る</a><h1 class="heroTitle">現場の詳細</h1></section>` +
+    `<div class="card sdHead"><div class="sdName"><h2>${esc(s.name)}</h2><span class="sdState ${state[0]}">${state[1]}</span></div>` +
+    `<div class="sdMeta"><span>工事番号 <b>${s.koujiNo ? "No." + esc(s.koujiNo) : "なし"}</b></span><span>${icon("user", 16)}担当者</span>` +
+    [...s.persons.entries()].map(([pk, n]) => `<button class="sdPerson" data-person="${esc(pk)}">${avatar(n, 24)}${esc(n)}</button>`).join("") +
+    (s.members.size ? `<span class="mutedText">登録された担当：${esc([...s.members].join("・"))}</span>` : "") +
+    `</div></div>`;
 
-  html += `<div class="secHead"><div><h2>段階ごとの進み具合</h2><div class="sub">${s.persons.size > 1 ? "担当者のうち誰かが確認したチェックを、現場全体の進み具合として数えています。" : "6つの段階のチェックの進み具合と、品質写真の撮影状況です（最新の報告の時点）。"}</div></div></div>`;
+  // 工程の進捗：6段階のステッパー＋チェック・品質写真の合計
   html += prog
-    ? `<div class="progRow">${prog
-        .map((g) => {
-          const pc = g.checks_total ? Math.round((g.checks_done / g.checks_total) * 100) : 0;
-          const pp = g.photos_total ? Math.round((g.photos_done / g.photos_total) * 100) : 0;
-          if (g.before_start)
-            return `<div class="progCard pre"><div class="pgHead"><img src="art/${GROUP_ART[g.group] || "g1"}.webp" alt=""><b>${esc(g.group)}</b></div><div class="pgPre">アプリ導入前<small>記録はありません</small></div><div class="pgState">導入前</div></div>`;
-          const state = g.checks_total && g.checks_done >= g.checks_total ? ["done", "完了"] : g.checks_done ? ["doing", "進行中"] : ["todo", "未着手"];
-          return (
-            `<div class="progCard"><div class="pgHead"><img src="art/${GROUP_ART[g.group] || "g1"}.webp" alt=""><b>${esc(g.group)}</b></div>` +
-            `<div class="pgBar"><span style="width:${pc}%"></span></div><div class="pgNum">チェック ${pc}%<small>${g.checks_done}/${g.checks_total}</small></div>` +
-            (g.checks_na ? `<div class="pgNa">この現場で該当なし ${g.checks_na}件を除く</div>` : "") +
-            `<div class="pgBar photo"><span style="width:${pp}%"></span></div><div class="pgNum">品質写真 ${pp}%<small>${g.photos_done}/${g.photos_total}</small></div>` +
-            `<div class="pgState ${state[0]}">${state[1]}</div></div>`
-          );
+    ? `<div class="card sdProg"><div class="sdStepWrap"><h3>工程の進捗</h3><div class="stepper">${prog
+        .map((g, i) => {
+          const st = g.before_start ? "pre" : g.checks_total && g.checks_done >= g.checks_total ? "done" : i === stage ? "cur" : i < stage ? "done" : "";
+          const tip = g.before_start ? "アプリ導入前" : `チェック ${g.checks_done}/${g.checks_total}（${pct(g.checks_done, g.checks_total)}%）・品質写真 ${g.photos_done}/${g.photos_total}${g.checks_na ? `・該当なし${g.checks_na}件` : ""}`;
+          return `<div class="stepNode ${st}" title="${esc(g.group)}：${esc(tip)}"><span class="stepLabel">${esc(g.group)}${st === "cur" && curProc ? `<small>（${esc(curProc)}）</small>` : ""}${st === "pre" ? "<small>導入前</small>" : ""}</span><span class="stepDot">${st === "done" ? icon("check", 14, 3.4) : ""}</span></div>`;
         })
-        .join("")}</div>`
+        .join("")}</div></div>` +
+      `<div class="sdStat"><span class="sdStatIcon">${icon("list", 22)}</span><div><div class="sdStatLabel">チェックの進捗</div><div class="sdStatNum"><b>${cd}</b> / ${ct} 件</div><div class="sdBar"><span style="width:${pct(cd, ct)}%"></span></div></div><b class="sdPct">${pct(cd, ct)}%</b></div>` +
+      `<div class="sdStat"><span class="sdStatIcon">${icon("photo", 22)}</span><div><div class="sdStatLabel">品質写真の進捗</div><div class="sdStatNum"><b>${pd}</b> / ${pt} 枚</div><div class="sdBar"><span style="width:${pct(pd, pt)}%"></span></div></div><b class="sdPct">${pct(pd, pt)}%</b></div>` +
+      `<div class="sdNote">${s.persons.size > 1 ? "担当者のうち誰かが確認したチェックを数えています。" : ""}${na ? `※ この現場で該当なし ${na}件を除く` : ""}${live.length < prog.length ? `　※ 導入前の段階は数えていません` : ""}</div></div>`
     : `<div class="emptyText pad card">進み具合は、現場ナビを新しい版にしてから届いた報告から表示されます。</div>`;
+
+  // 2列：現場の声（工程順）／週ごとの報告
+  const order = getLS("voiceOrder", "old");
+  html += `<div class="sdCols">${siteVoicesHtml(s, prog, order)}<div class="card sdPanel"><div class="sdPanelHead"><div><h2>週ごとの報告</h2><div class="sub">現場の進み具合や、付けたチェック・品質写真を週ごとに確認できます。</div></div></div><div class="wkList">`;
+  html += s.reports
+    .map((r) => {
+      const photos = r.photos || [];
+      const rec = photos.filter((x) => x.kind === "record");
+      const checked = (r.checks || []).reduce((t, c) => t + (c.checked || []).length, 0);
+      const completed = (r.checks || []).filter((c) => c.completed_at);
+      const naChecks = (r.checks || []).flatMap((c) => (c.na_checks || []).map((x) => ({ x, c })));
+      const thumbs = photos.slice(0, 4);
+      return (
+        `<div class="wkItem"><span class="wkDot"></span><div class="wkCard"><div class="wkHead"><b>${fmtMD(r.period.start)} 〜 ${fmtMD(r.period.end)}</b>` +
+        (s.persons.size > 1 ? `<span class="tag">${esc(r.sender || "")}</span>` : "") +
+        `<span class="mutedText">${agoLabel(r.sent_at)}</span></div>` +
+        `<div class="wkBody"><div class="thumbs">${thumbs
+          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
+          .join("")}</div>` +
+        `<div class="wkStats"><div>${icon("list", 16)}チェック <b>${checked}</b>件</div><div>${icon("photo", 16)}品質写真 <b>${rec.length}</b>枚</div>` +
+        `<div title="${esc(completed.map((c) => c.item).join("・"))}">${icon("check", 16)}完了した工程 <b>${completed.length}</b>件</div>` +
+        `<div>${icon("list", 16)}該当なし <b>${naChecks.length}</b>件</div></div></div>` +
+        (completed.length ? `<div class="wkLine">${icon("check", 15)}<span>完了：${esc(completed.map((c) => c.item).join("・"))}</span></div>` : "") +
+        (naChecks.length
+          ? `<details class="tlNa"><summary>該当なしにしたチェック <b>${naChecks.length}</b>件</summary><ul>${naChecks
+              .map(({ x, c }) => `<li><b>${esc(c.item)}</b>：${esc(x.text)}<small>${x.by ? esc(x.by) + "・" : ""}${fmtMD(x.at)}</small></li>`)
+              .join("")}</ul></details>`
+          : "") +
+        (r.memo ? `<div class="wkLine memo">${icon("report", 15)}<span>${esc(r.memo)}</span></div>` : "") +
+        `</div></div>`
+      );
+    })
+    .join("");
+  html += `</div></div></div>`;
+
+  // 二人以上で担当している現場：人ごとの進み具合（育成の目安）
   if (personProg.length > 1) {
     html +=
       `<div class="card personProg"><div class="ppHead">担当者ごとの進み具合（育成の目安：その人が付けたチェック）</div><table><thead><tr><th></th>${(prog || personProg[0].prog)
@@ -1286,55 +1340,11 @@ function renderSite(key) {
         )
         .join("")}</tbody></table></div>`;
   }
-
-  html += siteVoicesHtml(s, prog);
-  html += `<div class="secHead"><div><h2>週ごとの報告</h2><div class="sub">現場からの報告を新しい順に表示しています。</div></div></div><div class="timeline">`;
-  html += s.reports
-    .map((r, i) => {
-      const photos = r.photos || [];
-      const rep = photos.filter((x) => x.kind !== "record");
-      const rec = photos.filter((x) => x.kind === "record");
-      const checked = (r.checks || []).reduce((t, c) => t + (c.checked || []).length, 0);
-      const notes = (r.checks || []).flatMap((c) => (c.notes || []).map((n) => ({ n, c })));
-      const completed = (r.checks || []).filter((c) => c.completed_at);
-      const naChecks = (r.checks || []).flatMap((c) => (c.na_checks || []).map((x) => ({ x, c })));
-      const thumbs = photos.slice(0, 4);
-      return (
-        `<div class="tlItem"><div class="tlDot"></div><div class="card tlCard"><div class="tlDate"><b>${fmtMD(r.period.start)} 〜<br>${fmtMD(r.period.end)}</b>` +
-        (i === 0 && daysAgo(r.sent_at) <= 6 ? `<span class="tag wood">今週</span>` : "") +
-        (s.persons.size > 1 ? `<span class="tag">${esc(r.sender || "")}</span>` : "") +
-        `<span class="mutedText">${agoLabel(r.sent_at)}</span></div>` +
-        `<div class="tlPhotos"><div class="thumbs">${thumbs
-          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
-          .join("")}</div><div class="mutedText">報告写真 <b>${rep.length}</b>枚・品質写真 <b>${rec.length}</b>枚</div></div>` +
-        `<div class="tlChecks"><div class="tlLabel">チェック</div><div class="tlStat">${icon("check", 18)}期間中に付けたチェック <b>${checked}</b>件</div>` +
-        `<div class="tlStat">${icon("camera", 18)}品質写真 <b>${rec.length}</b>枚</div>` +
-        `<div class="tlStat">${icon("list", 18)}${esc((r.processes || []).map((x) => shortProc(x.name)).join("・") || "－")}</div>` +
-        (completed.length
-          ? `<div class="tlDone"><span class="tlDoneHead">${icon("check", 16)}チェックが完了した工程 <b>${completed.length}</b>件</span><span>${completed.map((c) => esc(c.item)).join("・")}</span></div>`
-          : "") +
-        (naChecks.length
-          ? `<details class="tlNa"><summary>この現場では該当なしにしたチェック <b>${naChecks.length}</b>件</summary><ul>${naChecks
-              .map(({ x, c }) => `<li><b>${esc(c.item)}</b>：${esc(x.text)}<small>${x.by ? esc(x.by) + "・" : ""}${fmtMD(x.at)}</small></li>`)
-              .join("")}</ul></details>`
-          : "") +
-        (r.memo ? `<div class="tlMemo">${esc(r.memo)}</div>` : "") +
-        `</div><div class="tlNotes"><div class="tlLabel">気づき・疑問・職人さんの要望</div>${
-          notes.length
-            ? notes
-                .slice(0, 4)
-                .map(({ n }) => {
-                  const id = n.id || "";
-                  return `<button class="tlNote" ${id && data.notes.has(id) ? `data-note="${esc(id)}"` : ""}>${typeBadge(n.type_id || TYPE_BY_LABEL[n.type] || "notice")}<span>${esc(headline(n.text))}</span>${icon("chevron", 16)}</button>`;
-                })
-                .join("") + (notes.length > 4 ? `<div class="mutedText">ほか ${notes.length - 4}件</div>` : "")
-            : `<div class="mutedText">この週のメモはありません</div>`
-        }</div></div></div>`
-      );
-    })
-    .join("");
-  html += `</div>`;
   main.innerHTML = html;
+  $("voiceOrder").addEventListener("change", (e) => {
+    setLS("voiceOrder", e.target.value);
+    renderSite(key);
+  });
   bindCommon(main);
 }
 
