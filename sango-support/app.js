@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "ホームと建物ページに「困ったときは」の連絡先（本社・担当）を目立つ形で置きました。" },
   { date: "2026-10-04", type: "fix", text: "記録は「あなたが残したものだけ」が出ることが分かるよう、表示の言葉を直しました。" },
   { date: "2026-10-04", type: "feature", text: "電話ボタンを押すと、相手の名前と番号を確認してから電話をかけるようにしました。" },
   { date: "2026-10-04", type: "feature", text: "ホーム画面のアプリアイコンを新しくしました（追加し直すと反映されます）。" },
@@ -196,6 +197,16 @@ async function render() {
   fillIcons(document.body);
 }
 
+/* ---------- 「困ったときは」（本社・自分など。不明な時はまずここ） ---------- */
+function helpCard(compact) {
+  const h = master && master.help;
+  if (!h || !Array.isArray(h.contacts) || !h.contacts.length) return "";
+  const btns = h.contacts.map((c) => c.phone
+    ? `<a class="helpCall" href="${telHref(c.phone)}" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}">${icon("phone")}<span class="hcName">${esc(c.name)}</span><span class="hcTel">${esc(c.phone)}</span></a>`
+    : `<span class="helpCall off">${icon("phone")}<span class="hcName">${esc(c.name)}</span><span class="hcTel">番号は未登録</span></span>`).join("");
+  return `<div class="helpCard${compact ? " compact" : ""}"><div class="helpTitle">${esc(h.title || "困ったときは")}</div>${h.lead && !compact ? `<div class="helpLead">${esc(h.lead)}</div>` : ""}<div class="helpBtns">${btns}</div></div>`;
+}
+
 /* ---------- ホーム ---------- */
 async function viewHome(main) {
   $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">設備サポート</span>`;
@@ -210,7 +221,7 @@ async function viewHome(main) {
   recs.forEach((r) => { count[r.buildingId] = (count[r.buildingId] || 0) + 1; });
   const groups = [];
   master.buildings.forEach((b) => { let g = groups.find((x) => x.name === b.group); if (!g) groups.push((g = { name: b.group, list: [] })); g.list.push(b); });
-  main.innerHTML = hero + groups.map((g) => `
+  main.innerHTML = hero + helpCard(false) + groups.map((g) => `
     <div class="sectionHead"><h3>${esc(g.name)}</h3><span class="rule"></span><span class="count">${g.list.length}件</span></div>
     <div class="bldGrid">${g.list.map((b) => `
       <button class="bldCard" data-b="${esc(b.id)}">
@@ -233,7 +244,8 @@ async function viewBuilding(main, bid) {
   $("topTitle").textContent = b.name;
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid).sort((a, c) => c.createdAt - a.createdAt);
   main.innerHTML = `
-    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>設備の連絡先と過去の記録</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
+    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>設備の連絡先と記録</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
+    ${helpCard(true)}
     <div class="sectionHead"><h3>設備カテゴリ</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
@@ -264,8 +276,10 @@ function openCategory(bid, cid) {
     });
     if (!e.none && !e.companies.length) h += `<div class="empty">この設備の担当業者はまだ登録されていません。</div>`;
     if (e.note) h += `<div class="vendorCard"><div class="vSub" style="margin:0">備考</div><ul class="noteList">${e.note.split("／").map((n) => `<li>${esc(n.trim())}</li>`).join("")}</ul></div>`;
-    const hq = master.hq || {};
-    if (hq.phone) h += `<div class="vendorCard"><div class="vName">${esc(hq.name || "本社")}</div><div class="vSub">迷ったら・大工が必要な時は本社へ</div><a class="callBtn big" href="${telHref(hq.phone)}" data-name="${esc(hq.name || "本社")}" data-phone="${esc(hq.phone)}">${icon("phone")}${esc(hq.phone)}</a></div>`;
+    const help = master.help || {};
+    (help.contacts || []).forEach((c) => {
+      if (c.phone) h += `<div class="vendorCard"><div class="vName">${esc(c.name)}</div><div class="vSub">${esc(help.title || "困ったときは")}（担当が分からない時もここへ）</div><a class="callBtn big" href="${telHref(c.phone)}" data-name="${esc(c.name)}" data-phone="${esc(c.phone)}">${icon("phone")}${esc(c.phone)}</a></div>`;
+    });
     h += `<div class="btnCol"><button class="btn btnPrimary" id="shAdd">${icon("plus")}この設備の記録を追加</button></div>`;
     body.innerHTML = h;
     $("shAdd").onclick = () => { close(); go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`); };
@@ -274,7 +288,7 @@ function openCategory(bid, cid) {
 
 /* ---------- 電話の確認（誤タップ対策：押してもすぐには電話せず、確認してから） ---------- */
 document.addEventListener("click", (e) => {
-  const a = e.target.closest("a.callBtn[href^='tel:']");
+  const a = e.target.closest("a[href^='tel:'][data-name]");
   if (!a || a.dataset.confirmed) return;
   e.preventDefault();
   e.stopPropagation();

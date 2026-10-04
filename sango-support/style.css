@@ -192,3 +192,20 @@ textarea { min-height: 84px; }
 .catCard { flex-wrap: wrap; }
 .catCard .callBtn { flex: 1 0 100%; justify-content: center; padding: 9px 10px; }
 .catBody { flex: 1 1 0; }
+
+/* 困ったときは */
+.helpCard { margin: 12px 0; padding: 14px; border-radius: 16px; background: linear-gradient(135deg, #2d6246, #1f4a33); color: #fff; box-shadow: var(--shadow); }
+.helpTitle { font-size: 19px; font-weight: 700; }
+.helpLead { font-size: 13px; opacity: 0.9; margin: 4px 0 10px; line-height: 1.5; }
+.helpBtns { display: flex; gap: 8px; margin-top: 10px; }
+.helpCall { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px; background: #fff; color: var(--green-deep); text-align: center; }
+.helpCall svg { width: 22px; height: 22px; }
+.helpCall .hcName { font-size: 12px; color: #4a5a4c; }
+.helpCall .hcTel { font-size: 17px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.helpCall.off { background: rgba(255, 255, 255, 0.55); color: #4a5a4c; pointer-events: none; }
+.helpCall.off .hcTel { font-size: 13px; font-weight: 400; }
+.helpCard.compact { padding: 10px 12px; }
+.helpCard.compact .helpTitle { font-size: 15px; }
+.helpCard.compact .helpBtns { margin-top: 6px; }
+.helpCard.compact .helpCall { flex-direction: row; justify-content: center; flex-wrap: wrap; gap: 4px 6px; padding: 8px 6px; }
+.helpCard.compact .helpCall svg { width: 18px; height: 18px; }
