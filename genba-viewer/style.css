@@ -663,3 +663,76 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 @media (max-width: 700px) { .wkBody { grid-template-columns: 1fr; } .voiceRow { grid-template-columns: 1fr; } .sdHead { margin-top: 0; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sdState.fin { background: #23384d; color: #9cc3ea; } }
 :root[data-theme="dark"] .sdState.fin { background: #23384d; color: #9cc3ea; }
+
+/* ---------- 班の打合せモード（GPT案 2026-10-04） ---------- */
+.meetStart { position: absolute; z-index: 3; right: 28px; top: 22px; box-shadow: 0 4px 14px rgba(14, 90, 69, 0.25); }
+.meetHero { min-height: 170px; }
+.meetArt { position: absolute; z-index: 0; right: -28px; top: 0; height: 100%; max-width: 60%; object-fit: contain; object-position: right top; pointer-events: none; }
+.meetNav { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 16px; padding: 12px 14px; position: sticky; top: 8px; z-index: 5; }
+.meetNav .btn { min-height: 60px; padding: 0 22px; font-size: 18px; border-radius: 14px; }
+.meetNav .btn[disabled] { opacity: 0.35; }
+.meetCount { font-size: 22px; color: var(--color-text-sub); white-space: nowrap; }
+.meetCount b { font-size: 52px; line-height: 1; color: var(--color-heading); }
+.meetCount small { font-size: 16px; margin-left: 4px; }
+.meetChips { display: flex; gap: 6px; overflow-x: auto; padding: 2px; }
+.meetChip { flex: 1 0 86px; max-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface-sub); font-size: 13px; font-weight: 700; color: var(--color-heading); cursor: pointer; }
+.meetChip span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meetChip small { min-width: 20px; height: 20px; border-radius: 10px; background: var(--color-surface); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.meetChip.on { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.meetChip.on small { color: var(--color-primary); }
+.meetChip.rest:not(.on) { opacity: 0.6; }
+.meetSite { margin-top: 14px; padding: 18px 24px 16px; }
+.meetSiteHead { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.meetSiteHead h2 { font-size: 32px; }
+.meetSiteHead .wk { font-size: 15px; min-height: 32px; padding: 0 14px; }
+.meetSiteHead .moreLink { margin-left: auto; }
+.meetPeople { display: flex; gap: 18px; margin: 8px 0 12px; font-size: 17px; font-weight: 700; }
+.meetPeople span { display: inline-flex; align-items: center; gap: 8px; }
+.meetSite .stepper { padding: 0 20px; }
+.meetSite .stepLabel { font-size: 16px; }
+.meetNow { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 14px; padding: 12px 18px; border-radius: 12px; background: var(--color-primary-soft); font-size: 17px; color: var(--color-text-sub); }
+.meetNow span:first-child { font-size: 20px; margin-right: auto; }
+.meetNow b { color: var(--color-heading); }
+.meetCols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; align-items: start; }
+.meetCardHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.meetCardHead svg { color: var(--color-primary); }
+.meetCardHead h3 { font-size: 22px; }
+.meetCardHead .mutedText { margin-left: auto; font-size: 14px; }
+.meetReport, .meetOpen, .meetMemo { padding: 16px 20px; }
+.meetPhotos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.meetPhotos .thumb { aspect-ratio: 4 / 3; }
+.meetStats { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; margin-top: 10px; }
+.meetStats > div { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--color-surface-sub); }
+.meetStats > div > svg { color: var(--color-primary); flex: none; }
+.meetStats span { display: flex; flex-direction: column; font-size: 13px; font-weight: 700; color: var(--color-text-sub); }
+.meetStats b { font-size: 26px; color: var(--color-heading); }
+.meetMemoBox span { font-weight: 500 !important; font-size: 15px !important; color: var(--color-text) !important; }
+.meetOpen.has { background: color-mix(in srgb, var(--color-danger-soft) 55%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-danger) 25%, var(--color-border)); }
+.meetOpen.has .meetCardHead svg, .meetOpen.has h3 { color: var(--color-danger); }
+.meetOpenNum { margin-left: auto; font-weight: 700; color: var(--color-danger); }
+.meetOpenNum b { font-size: 26px; }
+.meetQ { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 8px; border-radius: 12px; background: var(--color-surface); border: 1px solid var(--color-border); }
+.meetQMain { flex: 1; min-width: 0; }
+.meetQMain > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.meetQMain b { font-size: 17px; color: var(--color-heading); }
+.meetQMain .mutedText { margin-left: auto; }
+.meetQMain small { display: block; margin-top: 4px; font-size: 14px; color: var(--color-text-sub); }
+.meetMemo { margin-top: 14px; }
+.meetPrev2 { padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; background: var(--color-surface-sub); }
+.meetPrevHead { font-size: 13px; font-weight: 800; color: var(--color-text-sub); margin-bottom: 4px; }
+.meetPrevMemo { white-space: pre-wrap; margin-bottom: 6px; }
+.meetText { width: 100%; font-size: 16px; resize: vertical; }
+.taskHead { margin: 12px 0 6px; font-weight: 800; color: var(--color-heading); }
+.taskHead small { margin-left: 10px; font-weight: 500; font-size: 12px; color: var(--color-text-muted); }
+.taskEdit { display: flex; flex-direction: column; gap: 6px; }
+.taskEditRow { display: grid; grid-template-columns: 1fr 160px 150px 150px auto; gap: 6px; align-items: center; }
+.taskRow { display: grid; grid-template-columns: 22px 1fr auto auto auto; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--color-border); }
+.taskRow:last-child { border-bottom: none; }
+.taskMark { width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--color-text-muted); display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.taskRow.done .taskMark { background: var(--color-primary); border-color: var(--color-primary); }
+.taskRow.done .taskText { color: var(--color-text-muted); text-decoration: line-through; }
+.taskRow.over .taskDue { color: var(--color-danger); font-weight: 800; }
+.taskRow.cancelled { display: none; }
+.taskText small { margin-left: 8px; font-size: 12px; color: var(--color-text-muted); }
+.taskWho, .taskDue { font-size: 13px; color: var(--color-text-sub); white-space: nowrap; }
+@media (max-width: 1100px) { .meetCols { grid-template-columns: 1fr; } .meetNav { grid-template-columns: auto 1fr auto; } .meetChips { grid-column: 1 / -1; order: 3; } .taskEditRow { grid-template-columns: 1fr 1fr; } .meetStart { position: relative; right: auto; top: auto; margin-bottom: 10px; } }

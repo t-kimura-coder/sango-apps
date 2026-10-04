@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -14,6 +14,7 @@ const REPLY_DIR = "返信";
 const $ = (id) => document.getElementById(id);
 
 const ICONS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
   report: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
   sort: '<path d="M7 4v16M3 8l4-4 4 4"/><path d="M17 20V4M13 16l4 4 4-4"/>',
@@ -141,7 +142,11 @@ function personKeyOf(r) {
   return r.sender_id || "name:" + (r.sender || "（名前なし）");
 }
 
-function buildData(reports, replies, statuses = []) {
+function buildData(reports, replies, statuses = [], meetings = []) {
+  data.meetings = new Map();
+  meetings.filter((m) => m && m.site_key && m.week).sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((m) => addMeetingToData(m));
+  data.taskDone = new Map();
+  reports.forEach((r) => (r && r.tasks_done || []).forEach((t) => t && t.id && data.taskDone.set(t.id, t)));
   data.reports = [];
   data.sites = new Map();
   data.people = new Map();
@@ -534,6 +539,314 @@ function siteVoicesHtml(s, prog, order = "old") {
   );
 }
 
+/* ---------- 班の打合せモード（班の現場を1件ずつめくる。打合せメモと宿題を残す） ----------
+   打合せメモ：報告フォルダの「打合せ」に genba-meeting-memo（現場×週で1つ。保存し直すと上書き）
+   宿題：監督あては「返信／監督名」に genba-task を書き出す（現場ナビが返信と一緒に取り込む）。済は現場ナビの報告の tasks_done で戻る */
+const MEET_DIR = "打合せ";
+const PROCESS_NAMES = ["解体・仮設準備", "地盤・基礎工事", "足場工事", "大工工事（建方・上棟）", "大工工事（屋根下地）", "大工工事（外壁下地・断熱）", "大工工事（内部下地）",
+  "大工工事（造作・建具）", "屋根仕上げ工事（板金）", "電気・設備配管工事", "仕上げ：塗装", "仕上げ：クロス", "仕上げ：床・タイル", "外壁仕上げ", "美装・検査", "外構", "引渡し"];
+function meetSites() {
+  const ctx = makeWeekCtx();
+  const oldFin = addDays(ctx.focus, -14);
+  return [...data.sites.values()]
+    .filter(siteInScope)
+    .filter((s) => !s.completedAt || dayKey(s.completedAt) >= oldFin) // 2週より前に完工した現場は打合せに出さない
+    .sort((a, b) => ((a.completedAt ? 2 : a.pausedAt ? 1 : 0) - (b.completedAt ? 2 : b.pausedAt ? 1 : 0)) || (a.koujiNo || a.name).localeCompare(b.koujiNo || b.name, "ja"));
+}
+function memosOf(s) {
+  return (data.meetings.get(s.key) || []).slice().sort((a, b) => (a.week < b.week ? 1 : -1));
+}
+function taskState(t) {
+  if (t.status === "cancelled") return "cancelled";
+  if (t.status === "done" || data.taskDone.has(t.id)) return "done";
+  if (t.due && t.due < dayKey(new Date())) return "over";
+  return "open";
+}
+function taskRowHtml(t, canToggle) {
+  const st = taskState(t);
+  const done = data.taskDone.get(t.id);
+  return (
+    `<div class="taskRow ${st}"><span class="taskMark">${st === "done" ? icon("check", 14, 3.4) : ""}</span><span class="taskText">${esc(t.text)}` +
+    `${t.process ? `<small>${esc(shortProc(t.process))}</small>` : ""}</span><span class="taskWho">${esc(t.assignee || "")}</span>` +
+    `<span class="taskDue">${st === "done" ? `済 ${fmtMD((done && done.done_at) || t.done_at || "")}` : t.due ? `${fmtMD(t.due)}まで` : ""}</span>` +
+    (canToggle && t.assignee_kind === "boss" && st !== "cancelled" ? `<button class="miniBtn" data-boss-task="${esc(t.id)}">${st === "done" ? "戻す" : "済にする"}</button>` : "") +
+    `</div>`
+  );
+}
+// 下書き（保存前に別の現場へめくっても消えないように、この PC に置いておく）
+function meetDraft(key, week) {
+  try {
+    return JSON.parse(getLS(`meetDraft|${key}|${week}`, "null"));
+  } catch (e) {
+    return null;
+  }
+}
+function setMeetDraft(key, week, d) {
+  if (d) setLS(`meetDraft|${key}|${week}`, JSON.stringify(d));
+  else localStorage.removeItem(LS + `meetDraft|${key}|${week}`);
+}
+function stepperHtml(prog, stage, curProc) {
+  return `<div class="stepper">${prog
+    .map((g, i) => {
+      const st = g.before_start ? "pre" : g.checks_total && g.checks_done >= g.checks_total ? "done" : i === stage ? "cur" : i < stage ? "done" : "";
+      return `<div class="stepNode ${st}" title="${esc(g.group)}：${g.before_start ? "導入前" : `チェック ${g.checks_done}/${g.checks_total}`}"><span class="stepLabel">${esc(g.group)}${st === "cur" && curProc ? `<small>（${esc(curProc)}）</small>` : ""}${st === "pre" ? "<small>導入前</small>" : ""}</span><span class="stepDot">${st === "done" ? icon("check", 14, 3.4) : ""}</span></div>`;
+    })
+    .join("")}</div>`;
+}
+
+function renderMeet(arg) {
+  const main = $("main");
+  let html =
+    `<section class="hero small meetHero"><img src="art/meeting.webp" class="meetArt" alt="" onerror="this.src='art/site-bg.webp';this.className='siteBg'">` +
+    `<h1 class="heroTitle">班の打合せモード</h1><p class="heroSub">週次の班の打合せで、各現場の進み具合・報告・疑問をみんなで確認しましょう。<br>← → キーでも現場をめくれます。</p></section>`;
+  if (noData()) {
+    main.innerHTML = html + noDataView();
+    bindCommon(main);
+    return;
+  }
+  const sites = meetSites();
+  if (!sites.length) {
+    main.innerHTML = html + scopeBarHtml() + `<div class="emptyText pad card">打合せで見る現場がありません。</div>`;
+    bindCommon(main);
+    return;
+  }
+  let idx = Math.min(sites.length, Math.max(1, parseInt(arg || getLS("meetIdx", "1"), 10) || 1)) - 1;
+  setLS("meetIdx", String(idx + 1));
+  const s = sites[idx];
+  const ctx = makeWeekCtx();
+  const prog = siteProgress(s);
+  const stage = siteStage(prog);
+  const last = s.reports[0];
+  const curProc = last && (last.processes || []).length ? shortProc(last.processes.slice(-1)[0].name) : "";
+  const live = (prog || []).filter((g) => !g.before_start);
+  const cd = live.reduce((t, g) => t + g.checks_done, 0);
+  const ct = live.reduce((t, g) => t + g.checks_total, 0);
+  const wk = siteWeekState(s, ctx);
+  const weekReps = s.reports.filter((r) => reportWeekOf(r) === ctx.focus);
+  const shownReps = weekReps.length ? weekReps : last ? [last] : [];
+  const photos = shownReps.flatMap((r) => r.photos || []);
+  const checked = shownReps.reduce((t, r) => t + (r.checks || []).reduce((u, c) => u + (c.checked || []).length, 0), 0);
+  const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").sort((a, b) => (a.at < b.at ? -1 : 1));
+
+  html += scopeBarHtml();
+  html +=
+    `<div class="card meetNav"><button class="btn btnPrimary meetPrev" data-meet="${idx}"${idx ? "" : " disabled"}>${icon("back", 20)}前へ</button>` +
+    `<div class="meetCount"><b>${idx + 1}</b> / ${sites.length}<small>現場</small></div><div class="meetChips">${sites
+      .map((x, i) => `<button class="meetChip${i === idx ? " on" : ""}${x.completedAt || x.pausedAt ? " rest" : ""}" data-meet="${i + 1}"><span>${esc(x.name.replace(/\s.*$/, ""))}</span><small>${i + 1}</small></button>`)
+      .join("")}</div><button class="btn btnPrimary meetNext" data-meet="${idx + 2}"${idx < sites.length - 1 ? "" : " disabled"}>次へ${icon("chevron", 20)}</button></div>`;
+
+  html +=
+    `<div class="card meetSite"><div class="meetSiteHead"><h2>${esc(s.name)}</h2>${s.koujiNo ? `<span class="scNo">No.${esc(s.koujiNo)}</span>` : ""}` +
+    `<span class="wk ${wk.st}" title="${esc(wk.title || "")}">${wk.label || "－"}</span><a class="moreLink" href="#/site/${encodeURIComponent(s.key)}">現場の詳細${icon("chevron", 14)}</a></div>` +
+    `<div class="meetPeople">${[...s.persons.values()].map((n) => `<span>${avatar(n, 28)}${esc(n)}</span>`).join("")}</div>` +
+    (prog ? stepperHtml(prog, stage, curProc) : "") +
+    `<div class="meetNow"><span>今：<b>${stage >= 0 && prog ? esc(prog[stage].group) : "－"}</b>${curProc ? `（${esc(curProc)}）` : ""}</span><span>最終報告 <b>${last ? fmtMD(last.sent_at) : "－"}</b></span><span>チェックの進捗 <b>${ct ? Math.round((cd / ct) * 100) : 0}%</b>（${cd} / ${ct}）</span></div></div>`;
+
+  html +=
+    `<div class="meetCols"><div class="card meetReport"><div class="meetCardHead">${icon("calendar", 24)}<h3>${weekReps.length ? (ctx.focus === ctx.thisMon ? "今週の報告" : "先週の報告") : "最新の報告"}</h3>` +
+    `<span class="mutedText">${shownReps[0] ? `${fmtMD(shownReps[0].period.start)} 〜 ${fmtMD(shownReps[0].period.end)}` : ""}</span></div>` +
+    (shownReps.length
+      ? `<div class="meetPhotos">${photos
+          .slice(0, 4)
+          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
+          .join("")}</div>` +
+        `<div class="meetStats"><div>${icon("check", 22, 2.6)}<span>チェック<b>${checked}</b>件</span></div><div>${icon("photo", 22)}<span>品質写真<b>${photos.filter((x) => x.kind === "record").length}</b>枚</span></div>` +
+        `<div class="meetMemoBox">${icon("report", 20)}<span>${esc(shownReps.map((r) => r.memo).filter(Boolean).join(" ／ ") || "メモはありません")}</span></div></div>` +
+        (weekReps.length ? "" : `<div class="mutedText">${ctx.focus === ctx.thisMon ? "今週" : "先週"}の報告はまだ届いていません（${esc(wk.label || "")}）</div>`)
+      : `<div class="emptyText pad">報告はまだありません。</div>`) +
+    `</div>` +
+    `<div class="card meetOpen${open.length ? " has" : ""}"><div class="meetCardHead">${icon("chat", 24)}<h3>未回答の疑問・要望</h3><span class="meetOpenNum">未回答 <b>${open.length}</b>件</span></div>` +
+    (open.length
+      ? open
+          .map(
+            (n) =>
+              `<div class="meetQ"><div class="meetQMain"><div>${typeBadge(n.type)}${statusBadge(n)}<b>${esc(headline(n.text))}</b><span class="mutedText">${fmtMD(n.at)}</span></div>` +
+              `<small>${esc(restText(n.text) || `${shortProc(n.process)} › ${n.item || ""}`)}</small></div><button class="btn btnPrimary" data-note="${esc(n.id)}">${icon("chat", 18)}返信を書く</button></div>`
+          )
+          .join("")
+      : `<div class="emptyText pad">未回答の疑問・要望はありません。</div>`) +
+    `</div></div>`;
+
+  // 打合せメモ（決めたこと・宿題）
+  const week = ctx.focus;
+  const memos = memosOf(s);
+  const cur = memos.find((m) => m.week === week);
+  const prev = memos.find((m) => m.week < week);
+  const carried = memos.filter((m) => m.week < week).flatMap((m) => (m.tasks || []).map((t) => ({ ...t, _week: m.week }))).filter((t) => ["open", "over"].includes(taskState(t)));
+  const draft = meetDraft(s.key, week) || { memo: (cur && cur.memo) || "", tasks: (cur && cur.tasks ? cur.tasks : []).map((t) => ({ ...t })) };
+  const people = [...s.persons.entries()];
+  const me = getLS("name") || "上司";
+  html +=
+    `<div class="card meetMemo"><div class="meetCardHead">${icon("report", 24)}<h3>打合せメモ（決めたこと・宿題）</h3><span class="mutedText">${fmtMD(week)}〜の週の打合せ${cur ? `・保存済み（${esc(cur.by || "")} ${fmtDateTime(cur.at)}）` : ""}</span></div>` +
+    (prev || carried.length
+      ? `<div class="meetPrev2"><div class="meetPrevHead">前回までの打合せ${prev ? `（${fmtMD(prev.week)}〜の週）` : ""}</div>` +
+        (prev && prev.memo ? `<div class="meetPrevMemo">${esc(prev.memo)}</div>` : "") +
+        (prev ? (prev.tasks || []).map((t) => taskRowHtml(t, true)).join("") : "") +
+        carried.filter((t) => !prev || t._week !== prev.week).map((t) => taskRowHtml(t, true)).join("") +
+        `</div>`
+      : "") +
+    `<textarea id="meetMemoText" class="input meetText" rows="3" placeholder="決めたこと・話したことを書きます（例：土台の腐れは月曜に課長と現地確認）">${esc(draft.memo)}</textarea>` +
+    `<div class="taskHead">宿題<small>監督あての宿題は、現場ナビの「やること」に届きます（返信と一緒に取り込み）</small></div>` +
+    `<div id="taskEdit" class="taskEdit">${draft.tasks
+      .filter((t) => t.status !== "cancelled")
+      .map(
+        (t, i) =>
+          `<div class="taskEditRow" data-i="${i}"><input class="input tText" value="${esc(t.text)}" placeholder="やること"><select class="select tWho">${people
+            .map(([pk, n]) => `<option value="${esc(pk)}"${t.assignee_id === pk ? " selected" : ""}>${esc(n)}</option>`)
+            .join("")}<option value="boss"${t.assignee_kind === "boss" ? " selected" : ""}>${esc(me)}（自分）</option></select>` +
+          `<input class="input tDue" type="date" value="${esc(t.due || "")}"><select class="select tProc"><option value="">工程（任意）</option>${PROCESS_NAMES.map((p, k) => `<option value="${k + 1}"${t.process_no === k + 1 ? " selected" : ""}>${esc(shortProc(p))}</option>`).join("")}</select>` +
+          `<button class="iconBtn tDel" title="消す">${icon("x", 18)}</button></div>`
+      )
+      .join("")}</div>` +
+    `<div class="btnRow"><button class="btn btnOutline" id="taskAdd">${icon("plus", 18)}宿題を足す</button><button class="btn btnPrimary" id="meetSave">${icon("check", 18)}メモを保存</button></div></div>`;
+
+  main.innerHTML = html;
+  // めくる
+  main.querySelectorAll("[data-meet]").forEach((b) => b.addEventListener("click", () => (location.hash = `#/meet/${b.dataset.meet}`)));
+  // 下書き：入力のたびに覚える
+  const readDraft = () => {
+    const rows = [...main.querySelectorAll(".taskEditRow")];
+    const kept = draft.tasks.filter((t) => t.status !== "cancelled");
+    const tasks = rows.map((r, i) => {
+      const base = kept[i] || { id: newId(), created_at: new Date().toISOString() };
+      const who = r.querySelector(".tWho").value;
+      const pn = parseInt(r.querySelector(".tProc").value, 10) || 0;
+      return {
+        ...base,
+        text: r.querySelector(".tText").value.trim(),
+        assignee_kind: who === "boss" ? "boss" : "person",
+        assignee_id: who === "boss" ? "" : who,
+        assignee: who === "boss" ? me : s.persons.get(who) || "",
+        due: r.querySelector(".tDue").value,
+        process_no: pn || null,
+        process: pn ? PROCESS_NAMES[pn - 1] : "",
+      };
+    });
+    const removed = draft.tasks.filter((t) => t.status === "cancelled" || (!rows.length && false));
+    return { memo: $("meetMemoText").value, tasks: [...tasks, ...removed] };
+  };
+  const remember = () => setMeetDraft(s.key, week, readDraft());
+  main.querySelector(".meetMemo").addEventListener("input", remember);
+  main.querySelector(".meetMemo").addEventListener("change", remember);
+  $("taskAdd").addEventListener("click", () => {
+    const d = readDraft();
+    const first = people[0] ? people[0][0] : "boss";
+    d.tasks.push({ id: newId(), created_at: new Date().toISOString(), text: "", assignee_kind: first === "boss" ? "boss" : "person", assignee_id: first === "boss" ? "" : first, assignee: people[0] ? people[0][1] : me, due: "", process_no: null, process: "" });
+    setMeetDraft(s.key, week, d);
+    renderMeet(String(idx + 1));
+    const rows = document.querySelectorAll(".taskEditRow .tText");
+    if (rows.length) rows[rows.length - 1].focus();
+  });
+  main.querySelectorAll(".tDel").forEach((b) =>
+    b.addEventListener("click", () => {
+      const d = readDraft();
+      const i = parseInt(b.closest(".taskEditRow").dataset.i, 10);
+      const live2 = d.tasks.filter((t) => t.status !== "cancelled");
+      const t = live2[i];
+      // 保存済みの宿題は「取り消し」として残す（現場ナビにも取り消しを届ける）
+      const saved = cur && (cur.tasks || []).some((x) => x.id === t.id);
+      d.tasks = d.tasks.filter((x) => x !== t);
+      if (saved) d.tasks.push({ ...t, status: "cancelled" });
+      setMeetDraft(s.key, week, d);
+      renderMeet(String(idx + 1));
+    })
+  );
+  $("meetSave").addEventListener("click", () => saveMeeting(s, week, readDraft(), idx));
+  main.querySelectorAll("[data-boss-task]").forEach((b) => b.addEventListener("click", () => toggleBossTask(s, b.dataset.bossTask, idx)));
+  bindCommon(main);
+}
+
+async function writeToFolder(dirs, name, body) {
+  let d = dirHandle;
+  for (const x of dirs) d = await d.getDirectoryHandle(x, { create: true });
+  const fh = await d.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(body);
+  await w.close();
+}
+function addMeetingToData(m) {
+  const list = (data.meetings.get(m.site_key) || []).filter((x) => x.id !== m.id);
+  list.push(m);
+  data.meetings.set(m.site_key, list);
+}
+
+async function saveMeeting(s, week, d, idx) {
+  const me = getLS("name");
+  if (!me) {
+    alert("先に設定で、あなたの名前を登録してください（打合せメモと宿題に名前が入ります）。");
+    location.hash = "#/settings";
+    return;
+  }
+  const tasks = d.tasks.filter((t) => t.status === "cancelled" || t.text);
+  if (tasks.some((t) => t.status !== "cancelled" && t.assignee_kind === "person" && !t.assignee_id)) return alert("宿題の担当を選んでください。");
+  const m = {
+    kind: "genba-meeting-memo",
+    schema: 1,
+    id: `${s.key}|${week}`,
+    app_version: APP_VERSION,
+    site_key: s.key,
+    kouji_no: s.koujiNo || "",
+    site: s.name,
+    week,
+    at: new Date().toISOString(),
+    by: me,
+    memo: d.memo.trim(),
+    tasks: tasks.map((t) => ({ ...t, status: t.status || "open" })),
+  };
+  // 監督あての宿題（現場ナビが取り込む形）。その監督の端末での現場の番号を入れる
+  const siteIdOf = (pk) => (s.reports.find((r) => personKeyOf(r) === pk) || {}).site_id || "";
+  const taskFiles = m.tasks
+    .filter((t) => t.assignee_kind === "person")
+    .map((t) => ({
+      dir: safeName(t.assignee || "名前なし"),
+      name: safeName(`宿題_${s.name}_${t.id.slice(0, 8)}.json`),
+      body: JSON.stringify(
+        { kind: "genba-task", schema: 1, id: t.id, app_version: APP_VERSION, site_id: siteIdOf(t.assignee_id), kouji_no: s.koujiNo || "", site: s.name,
+          to_id: t.assignee_id.startsWith("name:") ? "" : t.assignee_id, to: t.assignee, from: me, text: t.text, due: t.due || "", process_no: t.process_no || null,
+          process: t.process || "", week, status: t.status, at: m.at },
+        null,
+        2
+      ),
+    }));
+  if (demoMode) {
+    addMeetingToData(m);
+    setMeetDraft(s.key, week, null);
+    toast("サンプルなので、ファイルには書き出していません");
+    return renderMeet(String(idx + 1));
+  }
+  if (!(dirHandle && data.source && data.source.writable)) return alert("このブラウザでは報告フォルダに書き込めません。Edge か Chrome で、設定から報告フォルダを選び直してください。");
+  try {
+    await writeToFolder([MEET_DIR], safeName(`打合せ_${s.name}_${week}.json`), JSON.stringify(m, null, 2));
+    for (const f of taskFiles) await writeToFolder([REPLY_DIR, f.dir], f.name, f.body);
+    addMeetingToData(m);
+    setMeetDraft(s.key, week, null);
+    const n = taskFiles.filter((f) => !f.body.includes('"status": "cancelled"')).length;
+    toast(`打合せメモを保存しました${n ? `（監督あての宿題 ${n}件を「${REPLY_DIR}」に書き出し）` : ""}`);
+  } catch (e) {
+    console.error(e);
+    alert("保存できませんでした。フォルダへの書き込みが許可されているか確認してください。");
+  }
+  renderMeet(String(idx + 1));
+}
+// 上司（自分）の宿題は、見守りで済にする（その週のメモを書き直す）
+async function toggleBossTask(s, id, idx) {
+  const m = memosOf(s).find((x) => (x.tasks || []).some((t) => t.id === id));
+  if (!m) return;
+  const t = m.tasks.find((x) => x.id === id);
+  t.status = t.status === "done" ? "open" : "done";
+  t.done_at = t.status === "done" ? new Date().toISOString() : "";
+  m.at = new Date().toISOString();
+  if (!demoMode && dirHandle && data.source && data.source.writable) {
+    try {
+      await writeToFolder([MEET_DIR], safeName(`打合せ_${m.site}_${m.week}.json`), JSON.stringify(m, null, 2));
+    } catch (e) {
+      alert("保存できませんでした。");
+    }
+  }
+  addMeetingToData(m);
+  renderMeet(String(idx + 1));
+}
+
 function renderWeeks() {
   const main = $("main");
   let html = `<section class="pageHead"><h1>週の報告</h1><p class="sub">担当者ごと・現場ごとに、週の報告が済んでいるかを並べています。報告は金曜〜翌週の月曜（遅くとも火曜）。休工中の週と完工した後の週は報告しなくてよい週です。</p></section>`;
@@ -713,6 +1026,7 @@ async function loadFromHandle() {
     const reports = [];
     const replies = [];
     const statuses = [];
+    const meetings = [];
     data.photoFiles = new Map();
     await clearUrlCache();
     let jsonCount = 0;
@@ -726,12 +1040,13 @@ async function loadFromHandle() {
           if (j.kind === "genba-photo-report") reports.push(j);
           else if (j.kind === "genba-reply") replies.push(j);
           else if (j.kind === "genba-site-status") statuses.push(j);
+          else if (j.kind === "genba-meeting-memo") meetings.push(j);
         } catch (e) {
           console.warn("読めないJSON", f.path, e);
         }
       }
     }
-    buildData(reports, replies, statuses);
+    buildData(reports, replies, statuses, meetings);
     data.source = { name: dirHandle.name, at: new Date().toISOString(), reports: data.reports.length, photos: data.photoFiles.size, writable: true };
     toast(`報告 ${data.reports.length}件・写真 ${data.photoFiles.size}枚を読み込みました`);
   } catch (e) {
@@ -753,6 +1068,7 @@ async function onFolderInput(e) {
   const reports = [];
   const replies = [];
   const statuses = [];
+  const meetings = [];
   data.photoFiles = new Map();
   await clearUrlCache();
   for (const f of files) {
@@ -764,11 +1080,12 @@ async function onFolderInput(e) {
         if (j.kind === "genba-photo-report") reports.push(j);
         else if (j.kind === "genba-reply") replies.push(j);
           else if (j.kind === "genba-site-status") statuses.push(j);
+        else if (j.kind === "genba-meeting-memo") meetings.push(j);
       } catch (err) {}
     }
   }
   demoMode = false;
-  buildData(reports, replies, statuses);
+  buildData(reports, replies, statuses, meetings);
   data.source = { name: (files[0].webkitRelativePath || "").split("/")[0] || "フォルダ", at: new Date().toISOString(), reports: data.reports.length, photos: data.photoFiles.size, writable: false };
   hideLoading();
   renderSource();
@@ -970,6 +1287,7 @@ function renderHome() {
   const main = $("main");
   let html =
     `<section class="hero small homeHero"><img src="art/site-bg.webp" class="siteBg" alt="">` +
+    `<a class="btn btnPrimary meetStart" href="#/meet">${icon("people", 20)}班の打合せを始める</a>` +
     `<h1 class="heroTitle">現場の状況</h1>` +
     `<p class="heroSub">現場ごとの進み具合と、今週の報告、現場からの声を一覧で確認できます。<br>週次の班の打合せでの確認にお使いください。</p></section>`;
   if (noData()) {
@@ -1423,6 +1741,7 @@ function route() {
   if (name === "notes") renderNotes(params);
   else if (name === "sites") renderSites();
   else if (name === "weeks") renderWeeks();
+  else if (name === "meet") renderMeet(arg);
   else if (name === "site") renderSite(decodeURIComponent(arg || ""));
   else if (name === "person") renderPerson(decodeURIComponent(arg || ""));
   else if (name === "settings") renderSettings();
@@ -1448,6 +1767,11 @@ async function init() {
   $("drawerClose").addEventListener("click", closeDrawer);
   document.querySelector(".drawerBackdrop").addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => {
+    // 打合せモード：← → で現場をめくる（入力中は除く）
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && location.hash.startsWith("#/meet") && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "") && $("drawer").hidden) {
+      const b = document.querySelector(e.key === "ArrowLeft" ? ".meetPrev" : ".meetNext");
+      if (b && !b.disabled) b.click();
+    }
     if (e.key === "Escape") {
       if (!$("lightbox").hidden) $("lightbox").hidden = true;
       else closeDrawer();
