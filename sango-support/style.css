@@ -228,3 +228,10 @@ textarea { min-height: 84px; }
 .tag.done { background: #d9ecd2; color: var(--green); }
 /* 写真の追加ボタン */
 .photoAdd { width: 96px; font-size: 11px; line-height: 1.25; text-align: center; padding: 4px; }
+
+/* 2行ボタン（見出し＋説明） */
+.btn.twoLine { flex-direction: column; gap: 2px; padding: 9px 14px; text-align: center; }
+.btn.twoLine span { display: inline-flex; align-items: center; gap: 6px; }
+.btn.twoLine small { display: block; font-weight: 400; font-size: 11px; opacity: 0.85; }
+.tag.line { background: #dcedf2; color: #2b6577; }
+#lnText { background: #fff; font-size: 14px; line-height: 1.5; }

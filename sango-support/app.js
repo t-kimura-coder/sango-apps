@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "feature", text: "症例を「LINEで連絡する」ボタンを追加しました（文章と写真をLINEに送れます）。LINEで送った内容は管理ページには載らないので、受け取った方が登録し直してください。送ると症例に「LINE連絡済み」の印が付きます。管理ページに載せたいときは、これまでどおり「管理者に報告する」を押します。" },
   { date: "2026-10-05", type: "feature", text: "「報告済み」「完了」を一覧で見分けられるようにしました（報告済みは薄く、完了はさらに薄く表示）。解決したら症例の詳細から「完了にする」を押してください。写真は「カメラで撮る」「撮影済みを選ぶ」から追加できます（撮影日時も読み取ります）。送信先アドレスのコピーボタンも付けました。" },
   { date: "2026-10-04", type: "fix", text: "バグチェックで見つかった点を直しました（報告の送り方を「準備→メールを開く」の2段階にして、iPhoneで共有画面が開かない問題を避けるなど）。" },
   { date: "2026-10-04", type: "feature", text: "管理者への報告の送信先を、最初から設定済みにしました（設定で入力する必要はありません）。" },
@@ -196,7 +197,7 @@ document.addEventListener("error", (e) => { // 絵が無い時の仮表示（GPT
 }, true);
 
 /* ---------- シート ---------- */
-function openSheet(title, build) {
+function openSheet(title, build, onClose) {
   const back = document.createElement("div");
   back.className = "sheetBack";
   const sheet = document.createElement("div");
@@ -207,7 +208,7 @@ function openSheet(title, build) {
   const body = document.createElement("div");
   sheet.append(head, body);
   back.appendChild(sheet);
-  const close = () => back.remove();
+  const close = () => { back.remove(); if (onClose) onClose(); };
   head.querySelector("button").onclick = close;
   back.addEventListener("click", (e) => { if (e.target === back) close(); });
   $("sheetRoot").appendChild(back);
@@ -363,12 +364,76 @@ async function viewCategory(main, bid, cid) {
 }
 /* 保存した直後に「管理者へ報告しますか？」 */
 function askReport(rec) {
-  openSheet("管理者へ報告しますか？", (body, close) => {
-    body.innerHTML = `<div class="mutedText" style="margin-bottom:12px">症例を保存しました。管理者へ報告（送信）すると、管理者がまとめて見られます。あとで「自分の症例」からでも報告できます。</div>
-      <div class="btnCol"><button class="btn btnPrimary" id="arGo">${icon("send")}今すぐ報告する</button><button class="btn" id="arLater">あとで</button></div>`;
+  openSheet("報告しますか？", (body, close) => {
+    body.innerHTML = `<div class="mutedText" style="margin-bottom:12px">症例を保存しました。管理者へ報告すると、管理ページにのって、管理者がまとめて見られます。LINEで連絡した場合は、管理ページには載りません（受け取った方が登録し直します）。あとで「自分の症例」からでも報告できます。</div>
+      <div class="btnCol"><button class="btn btnPrimary twoLine" id="arGo"><span>${icon("send")}管理者に報告する</span><small>管理ページに載ります（メールでBoxへ）</small></button>
+        <button class="btn twoLine" id="arLine"><span>${icon("send")}LINEで連絡する</span><small>管理ページには載りません</small></button>
+        <button class="btn" id="arLater">あとで</button></div>`;
     $("arLater").onclick = close;
     $("arGo").onclick = () => { close(); sendRecords([rec]); };
+    $("arLine").onclick = () => { close(); sendLine(rec); };
   });
+}
+
+/* ---------- LINEで連絡する（文章＋写真。管理ページには載らない） ---------- */
+function lineText(r, nPhotos) {
+  const L = [`【症例】${r.buildingName}／${r.categoryName || "分類なし"}　${fmtDate(r.createdAt)}`, `何が起きた：${r.what}`];
+  if (r.how) L.push(`対応：${r.how}`);
+  if (r.vendor) L.push(`対応した業者：${r.vendor}`);
+  if (r.reporter) L.push(`連絡元：${r.reporter}`);
+  const who = getSetting("name");
+  if (who) L.push(`連絡した人：${who}`);
+  if (nPhotos) L.push(`（写真${nPhotos}枚）`);
+  L.push("※山郷サポートの管理ページには未登録です。受け取った方は、症例として登録をお願いします。");
+  return L.join("\n");
+}
+async function sendLine(r) {
+  toast("送る準備をしています...");
+  let files = [], bytes = 0;
+  try {
+    const ps = (await photosOf(r.id)).sort((a, b) => a.takenAt - b.takenAt);
+    let n = 0;
+    for (const p of ps) {
+      const img = await dbGet("images", p.id);
+      if (!img) continue;
+      n++;
+      files.push(new File([img.blob], safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${n}.jpg`), { type: "image/jpeg" }));
+      bytes += img.blob.size;
+    }
+  } catch (e) { console.error(e); return toast("送る準備ができませんでした。もう一度試してください"); }
+  const text = lineText(r, files.length);
+  $("toast").hidden = true;
+  let marked = false;
+  openSheet("LINEで連絡する", (body, close) => {
+    body.innerHTML = `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">LINEで送った内容は、山郷サポートの管理ページには<b>登録されません</b>。受け取った方が、症例として登録し直してください。</div>
+      <textarea id="lnText" readonly rows="9">${esc(text)}</textarea>
+      <div class="mutedText" style="margin:6px 0 10px">写真 ${files.length}枚（約${(bytes / 1048576).toFixed(1)}MB）。LINEによっては、文章と写真のどちらかしか入らないことがあります。その時は「文章だけ」「写真だけ」に分けて送ってください。文章は、押すとコピーもされます。</div>
+      <div class="btnCol"><button class="btn btnPrimary" id="lnBoth">${icon("send")}LINEを開く（文章＋写真）</button>
+        <button class="btn" id="lnTextOnly">文章だけ送る</button>${files.length ? `<button class="btn" id="lnPhotos">写真だけ送る</button>` : ""}
+        <button class="btn" id="lnCopy">文章をコピー</button><button class="btn" id="lnNo">やめる</button></div>`;
+    $("lnNo").onclick = close;
+    $("lnCopy").onclick = () => copyText(text).then((ok) => toast(ok ? "文章をコピーしました" : "コピーできませんでした"));
+    const go = (data, copy) => { // 押した直後に共有を呼ぶ
+      if (copy) copyText(text);
+      if (navigator.canShare && !navigator.canShare(data)) { alert("この端末ではこの形では共有できません。「文章だけ」「写真だけ」を試してください。"); return; }
+      navigator.share(data).then(async () => {
+        if (marked) return;
+        if (confirm("LINEで送れましたか？\n送れていたら「OK」で、「LINE連絡済み」の印を付けます。")) {
+          marked = true;
+          const cur = await dbGet("records", r.id);
+          if (cur) await dbPut("records", { ...cur, lineAt: Date.now() });
+          toast("「LINE連絡済み」の印を付けました");
+          const note = document.createElement("div");
+          note.className = "infoBar";
+          note.textContent = "「LINE連絡済み」の印を付けました。文章か写真が入っていなければ、続けて「文章だけ／写真だけ」を送れます。";
+          body.insertBefore(note, body.firstChild);
+        }
+      }).catch((e) => { if (e && e.name === "AbortError") return; alert("共有画面を開けませんでした。\n（" + (e && e.name ? e.name : e) + "）"); });
+    };
+    $("lnBoth").onclick = () => go(files.length ? { text, files } : { text }, true);
+    $("lnTextOnly").onclick = () => go({ text }, true);
+    const lp = $("lnPhotos"); if (lp) lp.onclick = () => go({ files }, false);
+  }, () => { if (marked) render(); });
 }
 
 /* ---------- 電話の確認（誤タップ対策：押してもすぐには電話せず、確認してから） ---------- */
@@ -389,7 +454,7 @@ document.addEventListener("click", (e) => {
 function stateTag(r) { // 下書き／完了／報告済み／未報告
   if (r.draft) return `<span class="tag warn">下書き</span>`;
   if (r.doneAt) return `<span class="tag done">完了</span>`;
-  return r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`;
+  return (r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`) + (r.lineAt ? `<span class="tag line">LINE連絡済み</span>` : "");
 }
 async function fillRecList(box, recs, emptyText) {
   if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
@@ -424,7 +489,7 @@ async function viewForm(main, r) {
       if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: (await dbGet("images", p.id)).blob, saved: true })));
-      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, photos: full, removed: [] };
+      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, photos: full, removed: [] };
     } else {
       form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
     }
@@ -498,7 +563,7 @@ async function viewForm(main, r) {
     const f = form;
     const rec = {
       id: f.id, buildingId: f.buildingId, buildingName: b() ? b().name : f.buildingName || "", categoryId: f.categoryId, categoryName: c() ? c().label : f.categoryName || "",
-      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, by: getSetting("name"),
+      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, lineAt: f.lineAt || null, by: getSetting("name"),
     };
     try {
       for (const p of f.photos) if (!p.saved) { await dbPut("images", { id: p.id, blob: p.blob }); await dbPut("photos", { id: p.id, recordId: f.id, takenAt: p.takenAt, thumb: p.thumb }); }
@@ -575,12 +640,13 @@ async function viewDetail(main, id) {
   const ps = (await photosOf(id)).sort((a, b) => a.takenAt - b.takenAt);
   main.innerHTML = `
     <div class="formCard">
-      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
+      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
       <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
-      ${r.draft ? "" : `<button class="btn btnPrimary" id="dSend">${icon("send")}管理者へ報告する${r.sentAt ? "（もう一度）" : ""}</button>`}
+      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります（メールでBoxへ）</small></button>`}
+      ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
       ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "対応中に戻す" : "完了にする（解決した）"}</button>`}
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
@@ -589,6 +655,7 @@ async function viewDetail(main, id) {
   if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => showLightbox((await dbGet("images", p.id)).blob); box.appendChild(im); });
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };
   const ds = $("dSend"); if (ds) ds.onclick = () => sendRecords([r]);
+  const dl = $("dLine"); if (dl) dl.onclick = () => sendLine(r);
   const dd = $("dDone");
   if (dd) dd.onclick = async () => {
     const wasDone = !!r.doneAt;
@@ -681,7 +748,7 @@ async function viewSettings(main) {
     <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
     <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
-      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま管理者へ報告<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
+      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま「管理者に報告」（管理ページに載ります）。LINEで連絡することもできますが、その場合は管理ページには載らないので、受け取った方が登録し直します<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
   $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
