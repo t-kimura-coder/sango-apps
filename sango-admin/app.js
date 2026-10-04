@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -121,7 +121,7 @@ async function apiCall(body, ms) {
   const timer = setTimeout(() => ctl.abort(), ms || 60000);
   try {
     const res = await fetch(S.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: S.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
-    const j = await res.json();
+    let j; try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。URL・公開の設定・電波を確認してください"); }
     if (!j.ok) throw new Error(j.error || "窓口からの返事が不正です");
     return j;
   } finally { clearTimeout(timer); }
@@ -161,6 +161,7 @@ function renderSync() {
 /** 自動更新のあと、いま開いている画面を新しいデータで描き直す（入力中の詳細画面は触らない） */
 function refreshView() {
   const name = route().name;
+  if (S.records.length && $("main").querySelector(".empty, .emptyBox") ) return render(); // 空表示のままだった画面を、症例が入ったら描き直す
   if (name === "list" && $("listBody")) { if (!$("sideExtra").contains(document.activeElement)) renderFilters(); renderListBody(); } // 左の選択欄を操作中は、作り直さない
   else if (name === "summary") { viewSummary($("main")); fillIcons($("main")); }
   // 設定画面は、入力中の文字が消えないよう描き直さない（上の自動更新の表示だけ変わる）
@@ -254,7 +255,11 @@ async function startDemo() {
 
 /* ---------- 管理データの保存 ---------- */
 async function readDiskAdmin() {
-  try { const fh = await S.dirHandle.getFileHandle(ADMIN_FILE); return JSON.parse(await (await fh.getFile()).text()); } catch (e) { return null; }
+  let fh;
+  try { fh = await S.dirHandle.getFileHandle(ADMIN_FILE); } catch (e) { if (e && e.name === "NotFoundError") return null; throw e; } // まだ無い時だけ「無い」。それ以外は保存を止める
+  const text = await (await fh.getFile()).text();
+  if (!text.trim()) return null;
+  return JSON.parse(text); // 壊れていたら例外にして、他のPCの分を上書きしない
 }
 let saveBusy = false;
 async function saveItem(r, patch) {
@@ -588,9 +593,12 @@ function viewSettings(main) {
   $("apiSave").onclick = async () => {
     const url = $("apiUrl").value.trim(), token = $("apiToken").value.trim();
     if (!/^https:\/\/script\.google\.com\//.test(url) || !token) return alert("窓口のURL（https://script.google.com/…）と、管理用の合言葉を入れてください");
-    if (S.demo) { S.demo = false; S.fileRecs = []; S.fileAdmin = null; S.fileGetters = new Map(); S.source = null; } // デモは終わらせる
+    const prev = S.api, was = S.demo;
     S.api = { url, token };
-    try { await apiCall({ action: "ping" }, 30000); } catch (e) { S.api = loadApiCfg(); return alert("つながりませんでした：" + String(e && e.message || e)); }
+    try { await apiCall({ action: "ping" }, 30000); } catch (e) { S.api = prev; return alert("つながりませんでした：" + String(e && e.message || e)); }
+    if (was) { S.demo = false; S.fileRecs = []; S.fileAdmin = null; S.fileGetters = new Map(); S.source = null; } // デモは、つながってから終わらせる
+    if (!prev || prev.url !== url || prev.token !== token) { S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); S.syncedAt = 0; } // 別の窓口なら、前の窓口のデータは捨てる
+    apiLoading = false; // 読み込み中でも、つなぎ直した分を読む（前の読み込みの結果は捨てられる）
     setLS("api", JSON.stringify({ url, token }));
     showLoading("窓口から読み込んでいます...");
     await loadApiRecords(true);
@@ -618,7 +626,7 @@ fillIcons(document.body);
   } else boot();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
   renderSync();
-  if (S.api) loadApiRecords(false).then(() => render()); // 窓口は、画面を出したあとに読む（遅くても画面は止まらない）
+  if (S.api) loadApiRecords(false).then(() => refreshView()); // 窓口は、画面を出したあとに読む（遅くても画面は止まらない）
   setInterval(autoRefresh, 45000); // 開いている間、45秒おきに最新にする
   document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 })();

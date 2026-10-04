@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
@@ -116,7 +116,9 @@ function normMaster(data) {
   if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.categories) || !Array.isArray(data.entries)) throw new Error("山郷サポート用のマスターデータではありません");
   if (data.buildings.some((b) => !b || !b.id || !b.name) || data.categories.some((c) => !c || !c.id || !c.label)) throw new Error("マスターデータの建物または分類の情報が足りません");
   if (data.api && !(typeof data.api.url === "string" && /^https:\/\/script\.google\.com\//.test(data.api.url) && typeof data.api.token === "string" && data.api.token)) data.api = null; // 送り先は、Google Apps Script のURLだけ許可
-  data.entries = data.entries.filter((e) => e && e.b && e.c).map((e) => ({ ...e, companies: Array.isArray(e.companies) ? e.companies.filter(Boolean) : [] }));
+  data.entries = data.entries.filter((e) => e && e.b && e.c).map((e) => ({ ...e, note: typeof e.note === "string" ? e.note : "", companies: Array.isArray(e.companies) ? e.companies.filter((x) => x && typeof x === "object") : [] }));
+  if (data.help && typeof data.help === "object") data.help = { ...data.help, contacts: Array.isArray(data.help.contacts) ? data.help.contacts.filter((c) => c && typeof c === "object" && c.name) : [] };
+  else data.help = null;
   return data;
 }
 async function loadMaster() {
@@ -233,6 +235,14 @@ const go = (hash) => { location.hash = hash; };
 const goReplace = (hash) => location.replace(location.pathname + location.search + hash);
 
 async function render() {
+  try { await renderInner(); } catch (e) {
+    console.error(e);
+    $("main").innerHTML = `<div class="empty"><br>画面を表示できませんでした。<br><br><button class="btn btnPrimary" id="errHome">ホームへ戻る</button> <button class="btn" id="errSet">設定を開く（データの取り込み直し）</button></div>`;
+    $("errHome").onclick = () => goReplace("#/home"); $("errSet").onclick = () => goReplace("#/settings");
+  }
+}
+async function renderInner() {
+  const lb = $("lightbox"); if (lb) { lb.hidden = true; lb.innerHTML = ""; }
   $("sheetRoot").innerHTML = "";
   clearUrls();
   const r = route();
@@ -455,11 +465,13 @@ document.addEventListener("click", (e) => {
 }, true);
 
 /* ---------- 症例リスト（共通） ---------- */
+const changedAfterSent = (r) => !!r.sentAt && (r.updatedAt || 0) > r.sentAt; // 報告したあとに、完了・編集などで変えた
+const needsReport = (r) => !r.draft && (!r.sentAt || changedAfterSent(r));
 function stateTag(r) { // 下書き／完了／報告済み／未報告
   if (r.draft) return `<span class="tag warn">下書き</span>`;
   const line = r.lineAt ? `<span class="tag line">LINE連絡済み</span>` : "";
-  if (r.doneAt) return `<span class="tag done">完了</span>` + line;
-  return (r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`) + line;
+  if (r.doneAt) return `<span class="tag done">完了</span>` + (!r.sentAt ? `<span class="tag gray">未報告</span>` : changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") + line;
+  return (r.sentAt ? `<span class="tag">報告済み</span>` + (changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") : `<span class="tag gray">未報告</span>`) + line;
 }
 async function fillRecList(box, recs, emptyText) {
   if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
@@ -550,7 +562,7 @@ async function viewForm(main, r) {
     const names = form.buildingId && form.categoryId ? entryOf(form.buildingId, form.categoryId).companies.map((x) => x.name) : [];
     const opts = [...names, "自分で対応", "未定"];
     body.innerHTML = `<div class="optList">${opts.map((n) => `<button class="optBtn${n === form.vendor ? " sel" : ""}" data-n="${esc(n)}">${esc(n)}</button>`).join("")}</div>
-      <div class="fieldLabel" style="margin-top:14px">その他の業者名を入力</div><input class="textInput" id="vOther" placeholder="業者名" value="${esc(opts.includes(form.vendor) ? "" : form.vendor)}">
+      <div class="fieldLabel" style="margin-top:14px">その他の業者名を入力</div><input class="textInput" id="vOther" maxlength="40" placeholder="業者名" value="${esc(opts.includes(form.vendor) ? "" : form.vendor)}">
       <div class="btnCol"><button class="btn btnPrimary" id="vOk">この名前にする</button>${form.vendor ? `<button class="btn" id="vClear">選択を外す</button>` : ""}</div>`;
     body.querySelectorAll(".optBtn").forEach((el) => (el.onclick = () => { form.vendor = el.dataset.n; close(); draw(); }));
     $("vOk").onclick = () => { form.vendor = $("vOther").value.trim(); close(); draw(); };
@@ -613,7 +625,7 @@ let mineFilter = "all", mineQuery = "";
 async function viewMine(main) {
   $("topTitle").textContent = "自分の症例";
   const all = (await dbAll("records")).sort((a, b) => b.createdAt - a.createdAt);
-  const unsent = all.filter((r) => !r.draft && !r.sentAt);
+  const unsent = all.filter(needsReport);
   main.innerHTML = `
     <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例です。他の人の症例は出ません。</div>
     <div class="searchRow">${icon("search")}<input id="mQ" type="search" placeholder="建物・分類・内容で探す" value="${esc(mineQuery)}"></div>
@@ -625,7 +637,7 @@ async function viewMine(main) {
     const q = mineQuery.trim().toLowerCase();
     let list = all;
     if (mineFilter === "unsent") list = unsent;
-    if (mineFilter === "sent") list = all.filter((r) => !r.draft && r.sentAt && !r.doneAt);
+    if (mineFilter === "sent") list = all.filter((r) => !r.draft && r.sentAt && !r.doneAt && !changedAfterSent(r));
     if (mineFilter === "done") list = all.filter((r) => !r.draft && r.doneAt);
     if (mineFilter === "draft") list = all.filter((r) => r.draft);
     if (q) list = list.filter((r) => [r.buildingName, r.categoryName, r.what, r.how, r.vendor].join(" ").toLowerCase().includes(q));
@@ -646,14 +658,14 @@ async function viewDetail(main, id) {
   const ps = (await photosOf(id)).sort((a, b) => a.takenAt - b.takenAt);
   main.innerHTML = `
     <div class="formCard">
-      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
+      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>${changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : ""}` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
       <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
-      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（すぐ送信）" : "（メールでBoxへ）"}</small></button>`}
+      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>`}
       ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
-      ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "対応中に戻す" : "完了にする（解決した）"}</button>`}
+      ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "完了を取り消す" : "完了にする（解決した）"}</button>`}
       ${r.draft || !hasApi() ? "" : `<button class="btn" id="dMail" style="min-height:40px;font-weight:400">メールで送る（予備）</button>`}
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
@@ -668,14 +680,16 @@ async function viewDetail(main, id) {
   if (dd) dd.onclick = async () => {
     const wasDone = !!r.doneAt;
     const cur = (await dbGet("records", id)) || r;
-    await dbPut("records", { ...cur, doneAt: wasDone ? null : Date.now(), updatedAt: Date.now() });
-    toast(wasDone ? "対応中に戻しました" : "完了にしました。管理者にも伝えるには、もう一度「管理者へ報告する」を押してください");
+    try { await dbPut("records", { ...cur, doneAt: wasDone ? null : Date.now(), updatedAt: Date.now() }); } catch (e) { console.error(e); return toast("保存できませんでした。端末の空き容量を確認してください"); }
+    toast(wasDone ? "完了を取り消しました" : "完了にしました。管理者にも伝えるには、もう一度「管理者に報告する」を押してください");
     render();
   };
   $("dDel").onclick = async () => {
-    if (!confirm("この症例を削除しますか？写真も消えます。")) return;
-    await dbDel("records", id);
-    for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
+    if (!confirm("この症例を削除しますか？写真も消えます。\n（管理者に報告済みの分は、管理者側には残ります）")) return;
+    try {
+      await dbDel("records", id);
+      for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
+    } catch (e) { console.error(e); toast("削除の途中で失敗しました。もう一度試してください"); return render(); }
     toast("削除しました");
     goReplace("#/mine");
   };
@@ -742,23 +756,26 @@ async function sendRecords(list) {
   closeStatus = openSheet("管理者に報告しています", (body) => { body.innerHTML = `<div class="mutedText" id="apiStatus" style="font-size:15px;padding:8px 0">準備しています...</div><div class="mutedText">この画面を開いたまま、少しお待ちください。</div>`; status = $("apiStatus"); const back = body.closest(".sheetBack"); back.dataset.locked = "1"; const x = back.querySelector(".sheetHead button"); if (x) x.hidden = true; }); // 送信中は閉じられない
   try {
     if (navigator.onLine === false) throw new Error("オフライン");
+    list = (await Promise.all(list.map((r) => dbGet("records", r.id)))).filter(Boolean); // 開いてから変わっていても、最新の内容で送る
+    if (!list.length) throw new Error("送る症例が見つかりません");
     const prep = await buildReport(list);
     showStatus(`症例 ${list.length}件を送っています...`);
     await apiCall({ action: "submit", sender: getSetting("name"), sender_id: deviceId(), app_version: APP_VERSION, records: prep.recs }, 60000);
-    let done = 0, next = 0, failed = false;
+    let done = 0, next = 0, failed = false, firstErr = null;
     const total = prep.jobs.length;
     const worker = async () => { // 3枚ずつ並行して送る（1枚ずつより速い）。1枚でも失敗したら、残りの送信も止める
       while (!failed && next < total) {
         const job = prep.jobs[next++];
         try {
           await apiCall({ action: "putPhoto", name: job.name, record_id: job.record_id, taken_at: job.taken_at, data: await blobToBase64(job.blob) });
-        } catch (e) { failed = true; throw e; }
+        } catch (e) { failed = true; firstErr = firstErr || e; return; }
         done++;
         showStatus(`写真を送っています（${done}/${total}枚）...`);
       }
     };
     if (total) showStatus(`写真を送っています（0/${total}枚）...`);
-    await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
+    await Promise.all(Array.from({ length: Math.min(3, total) }, worker)); // 全部の送信が終わるのを待つ（失敗後に裏で送り続けない）
+    if (failed) throw firstErr || new Error("写真を送れませんでした");
     const now = Date.now();
     let edited = 0;
     for (const r of list) {
@@ -830,7 +847,7 @@ async function viewSettings(main) {
       <div class="mutedText">本社から配られたマスターデータ（JSON）を取り込みます。取り込み直すと入れ替わり、症例は消えません。</div>
       <div style="margin:10px 0">${meta ? `<span class="statusOk">取り込み済み</span>　版 ${esc(meta.data.version)}／建物${meta.data.buildings.length}／${fmtDate(meta.importedAt)}` : `<span class="statusWarn">未取り込み</span>`}</div>
       <button class="btn btnPrimary" id="sImport" style="width:100%">データを取り込む</button></div></div>
-    <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
+    <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" maxlength="20" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
     <div class="settingSec"><h3>報告の送り方</h3><div class="formCard"><div id="apiLine">${hasApi() ? `<span class="statusOk">自動で送信</span>（ボタン1つで、症例と写真が管理者に届きます）` : `<span class="statusWarn">メールで送信</span>（業者データに送り先が入っていません）`}</div>${hasApi() ? `<button class="btn wide" id="apiPing" style="margin-top:8px">つながるか確認する</button>` : ""}</div></div>
     <div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
