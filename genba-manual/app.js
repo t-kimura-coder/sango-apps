@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "その週の報告が済んでいる時は、報告タブの下のボタンが「✓ 今週は報告済み」になります。送り間違えた時は、そこか「過去の報告」から報告を取り消して、写真を「送る写真」に戻して送り直せます（上司の画面では新しい方に置き換わります）" },
   { date: "2026-10-04", type: "feature", text: "電話やLINEで聞いたこと・業者に頼んだことを「やりとり」として残せるようになりました（工程マニュアルの項目の「電話・LINEのやりとりを残す」から）。相手は次から候補で選べます。写真はLINEにある印か、アプリの写真を指すだけなので二重に保存しません。業者の返事待ちはホームの「やること」に出ます" },
   { date: "2026-10-04", type: "fix", text: "バックアップを戻した時に、「該当なし」で外したチェックが戻ってきてしまうのを直しました。宿題を済にした直後は「元に戻す」で取り消せます。品質写真で最後のチェックが付いた時も「完了」をお知らせします" },
   { date: "2026-10-04", type: "feature", text: "班の打合せで上司が決めた「宿題」を受け取れるようになりました。上司からの返信と一緒に取り込むと、ホームの「やること」に期限付きで出ます。押して「済にする」と、次の報告で上司に届きます" },
@@ -2305,6 +2306,9 @@ async function renderReport() {
   }
   $("reportBar").hidden = false;
   $("sendCount").textContent = picks.length;
+  const doneBtn = $("markReportedBtn");
+  doneBtn.textContent = wk.state === "done" ? `✓ ${wk.isPrev ? "先週" : "今週"}は報告済み` : "報告済みにする";
+  doneBtn.classList.toggle("doneState", wk.state === "done");
 }
 
 function openProcessPicker() {
@@ -2485,6 +2489,7 @@ async function renderReportPast() {
   $("reportPastEmpty").hidden = list.length > 0;
   $("pastShareBtn").hidden = !list.length;
   $("deleteReportPhotosBtn").hidden = !list.length;
+  $("undoReportBtn").hidden = !list.length || !!r.kind;
 }
 
 async function deleteReportPhotos() {
@@ -2811,6 +2816,33 @@ function markWeekOther(site, wk, kind, cands) {
   });
 }
 
+// 報告済みにした報告を取り消す（送り間違い・送り直したい時）。写真は「送る写真」に戻し、
+// Boxへ送った時の報告番号を戻すので、直して送り直すと見守りでは新しい方に置き換わる
+async function undoReport(r) {
+  if (r.kind) return cancelWeekOther(r);
+  const msg =
+    `${fmtDate(r.start)}〜${fmtDate(r.end)}の報告を取り消して、写真を「送る写真」に戻しますか？\n` +
+    `上司にはもう届いています。直して「Boxへ送信」で送り直すと、見守りでは新しい方に置き換わります。`;
+  if (!confirm(msg)) return;
+  const site = currentSite();
+  if (!site) return;
+  const photos = (await getSitePhotos(site.id)).filter((p) => p.reportId === r.id);
+  photos.forEach((p) => {
+    p.reportId = null;
+    p.sendPick = true;
+  });
+  if (photos.length) await dbPutMany("photos", photos);
+  await dbDeleteMany("reports", [r.id]);
+  if (r.sentReportId) site.draftReportId = r.sentReportId;
+  await dbPut("sites", site);
+  toast(`報告を取り消しました（写真${photos.length}枚を「送る写真」に戻しました）`);
+  goReport();
+}
+// 対象の週の報告（済みなら、その記録）
+function weekReportOf(wk, reports) {
+  return (reports || []).filter((r) => r.week === wk.mon).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] || null;
+}
+
 async function cancelWeekOther(r) {
   if (!confirm(`${fmtDate(r.start)}〜${fmtDate(r.end)}の「${r.kind === "external" ? "アプリ外で報告" : "報告なし"}」を取り消しますか？`)) return;
   await dbDeleteMany("reports", [r.id]);
@@ -2822,6 +2854,29 @@ async function cancelWeekOther(r) {
 async function chooseReportedKind() {
   const site = currentSite();
   if (!site) return;
+  // 対象の週がもう済んでいる時は、何で済んだかを見せて、間違えた時の取り消しだけを出す
+  const allReps = await dbGetAll("reports", "siteId", site.id);
+  const w = reportWeek(site, allReps);
+  if (w.state === "done") {
+    const r = weekReportOf(w, allReps);
+    return openSheet(`${w.isPrev ? "先週" : "今週"}は報告済みです`, (body, close) => {
+      const box = document.createElement("div");
+      box.className = "summaryBox";
+      box.innerHTML =
+        `${fmtDate(w.mon)}〜${fmtDate(w.sat)}の報告は済んでいます。` +
+        (r ? `<br>${r.kind === "external" ? "アプリ外で報告" : r.kind === "skip" ? "報告なし" : "アプリから送信"}（${esc(fmtDateTime(r.createdAt))}）${r.memo ? "<br>" + esc(r.memo) : ""}` : "") +
+        `<br><span class="mutedText">写真を撮り足して追加で送る時は、そのまま「Boxへ送信」から送れます。</span>`;
+      body.appendChild(box);
+      if (r)
+        body.appendChild(
+          sheetButton(r.kind ? "この記録を取り消す" : "この報告を取り消して送り直す", "btnOutline", () => {
+            close();
+            undoReport(r);
+          })
+        );
+      body.appendChild(sheetButton("閉じる", "btnGhost", close));
+    });
+  }
   const cands = unreported(await getSitePhotos(site.id));
   const picks = cands.filter((p) => p.sendPick);
   const wk = tagWeek(site, await dbGetAll("reports", "siteId", site.id));
@@ -2863,7 +2918,7 @@ async function markReported(memo = "", opts = null) {
   const start = opts && opts.start ? opts.start : dates[0] < wk.mon ? dates[0] : wk.mon;
   let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].sort().pop();
   if (end > todayKey()) end = todayKey();
-  const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon };
+  const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon, sentReportId: site.draftReportId || "" };
   targets.forEach((p) => {
     p.reportId = report.id;
     p.sendPick = false;
@@ -5619,6 +5674,10 @@ function init() {
   });
   $("markReportedBtn").addEventListener("click", chooseReportedKind);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
+  $("undoReportBtn").addEventListener("click", async () => {
+    const r = await dbGet("reports", reportPastId);
+    if (r) undoReport(r);
+  });
   document.querySelector(".sheetBackdrop").addEventListener("click", () => {
     const f = sheetDismiss;
     sheetDismiss = null;

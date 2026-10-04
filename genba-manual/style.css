@@ -1166,3 +1166,6 @@ img.imgBroken { visibility: hidden; }
 .cPickMark { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 11px; border: 2px solid #fff; background: rgba(0, 0, 0, 0.25); color: transparent; display: flex; align-items: center; justify-content: center; }
 .cPick.on { outline: 3px solid var(--color-primary); outline-offset: -3px; }
 .cPick.on .cPickMark { background: var(--color-primary); color: #fff; }
+
+/* 報告済みの週は、下のボタンを「済み」の見た目に */
+#markReportedBtn.doneState { border-color: var(--color-ok-text); background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; }

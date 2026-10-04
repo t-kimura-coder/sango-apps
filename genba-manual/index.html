@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=65">
+<link rel="stylesheet" href="style.css?v=66">
 </head>
 <body>
 
@@ -259,6 +259,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div id="reportPastGrid" class="photoGrid"></div>
     <div id="reportPastEmpty" class="emptyState" hidden><div class="emptyText">この報告の写真は削除済みです。</div></div>
     <button id="pastShareBtn" class="btn btnOutline">この報告の写真を保存</button>
+    <button id="undoReportBtn" class="btn btnOutline">この報告を取り消して送り直す</button>
     <button id="deleteReportPhotosBtn" class="btn btnDanger">この報告の写真を削除</button>
   </div>
 </section>
@@ -493,6 +494,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=67"></script>
+<script src="app.js?v=68"></script>
 </body>
 </html>
