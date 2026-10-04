@@ -1,8 +1,8 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 15;
+const CACHE_VERSION = 16;
 const CACHE_NAME = `sango-support-v${CACHE_VERSION}`;
 // 絵(art/)は無くても動くので、ここには入れず初回表示時に取得してキャッシュする
-const APP_SHELL = ['./', 'index.html', 'app.js?v=15', 'style.css?v=5', 'icon-96.png?v=3', 'icon-180.png?v=3', 'icon-512.png'];
+const APP_SHELL = ['./', 'index.html', 'app.js?v=16', 'style.css?v=5', 'icon-96.png?v=3', 'icon-180.png?v=3', 'icon-512.png'];
 // 業者データなどの社内データはアプリに含めず、JSONで取り込んでIndexedDBに保存する
 
 self.addEventListener('install', (event) => {
@@ -26,8 +26,10 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   if (req.mode === 'navigate') {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
     event.respondWith(
-      fetch(req)
+      fetch(req, { signal: ctl.signal })
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();
@@ -36,6 +38,7 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() => caches.match(req).then((res) => res || caches.match('index.html')))
+        .finally(() => clearTimeout(timer))
     );
     return;
   }

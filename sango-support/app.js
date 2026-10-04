@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "バグチェックで見つかった点を直しました（報告の送り方を「準備→メールを開く」の2段階にして、iPhoneで共有画面が開かない問題を避けるなど）。" },
   { date: "2026-10-04", type: "feature", text: "管理者への報告の送信先を、最初から設定済みにしました（設定で入力する必要はありません）。" },
   { date: "2026-10-04", type: "feature", text: "アプリの名前を「山郷サポート」にしました（ホーム画面に追加し直すと、アイコンの名前も変わります）。分類の一覧から電話ボタンを外し、分類を開いて症例を見てから連絡先に進む形にしました。" },
   { date: "2026-10-04", type: "feature", text: "分類を押した画面を「何が起きたかを書く → 連絡先 → これまでの症例」の順にしました。「設備カテゴリ」は、建具・内装・外構なども含むため「分類」に変えました。" },
@@ -80,6 +81,7 @@ function db() {
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+    dbPromise.catch(() => { dbPromise = null; });
   }
   return dbPromise;
 }
@@ -104,11 +106,21 @@ let master = null;
 const bById = (id) => (master && master.buildings.find((b) => b.id === id)) || null;
 const cById = (id) => (master && master.categories.find((c) => c.id === id)) || null;
 const entryOf = (b, c) => (master && master.entries.find((e) => e.b === b && e.c === c)) || { b, c, none: false, companies: [], note: "" };
-async function loadMaster() { const m = await dbGet("meta", "master"); master = m && m.data ? m.data : null; return master; }
+function normMaster(data) {
+  if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.categories) || !Array.isArray(data.entries)) throw new Error("山郷サポート用のマスターデータではありません");
+  if (data.buildings.some((b) => !b || !b.id || !b.name) || data.categories.some((c) => !c || !c.id || !c.label)) throw new Error("マスターデータの建物または分類の情報が足りません");
+  data.entries = data.entries.filter((e) => e && e.b && e.c).map((e) => ({ ...e, companies: Array.isArray(e.companies) ? e.companies.filter(Boolean) : [] }));
+  return data;
+}
+async function loadMaster() {
+  const m = await dbGet("meta", "master");
+  try { master = m && m.data ? normMaster(m.data) : null; } catch (e) { master = null; }
+  return master;
+}
 async function importMaster(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch (e) { throw new Error("JSONとして読めませんでした"); }
-  if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.entries)) throw new Error("山郷サポート用のマスターデータではありません");
+  data = normMaster(data);
   await dbPut("meta", { key: "master", data, importedAt: Date.now() });
   master = data;
 }
@@ -118,7 +130,8 @@ async function resizeImage(file, maxEdge) {
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch (e) {
-    bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
+    const u = URL.createObjectURL(file);
+    try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; }); } finally { setTimeout(() => URL.revokeObjectURL(u), 3000); }
   }
   const w = bmp.width, h = bmp.height, s = Math.min(1, maxEdge / Math.max(w, h));
   const c = document.createElement("canvas");
@@ -174,11 +187,14 @@ const route = () => {
   const h = location.hash.replace(/^#\/?/, "");
   const [path, q] = h.split("?");
   const parts = path.split("/").filter(Boolean);
-  return { name: parts[0] || "home", id: parts[1] ? decodeURIComponent(parts[1]) : "", sub: parts[2] || "", sid: parts[3] ? decodeURIComponent(parts[3]) : "", q: new URLSearchParams(q || "") };
+  const dec = (v) => { try { return decodeURIComponent(v); } catch (e) { return v; } };
+  return { name: parts[0] || "home", id: parts[1] ? dec(parts[1]) : "", sub: parts[2] || "", sid: parts[3] ? dec(parts[3]) : "", q: new URLSearchParams(q || "") };
 };
 const go = (hash) => { location.hash = hash; };
+const goReplace = (hash) => location.replace(location.pathname + location.search + hash);
 
 async function render() {
+  $("sheetRoot").innerHTML = "";
   clearUrls();
   const r = route();
   if (r.name !== "new") form = null;
@@ -199,7 +215,7 @@ async function render() {
   else if (r.name === "mine") await viewMine(main);
   else if (r.name === "r") await viewDetail(main, r.id);
   else if (r.name === "settings") await viewSettings(main);
-  else go("#/home");
+  else goReplace("#/home");
   fillIcons(document.body);
 }
 
@@ -246,7 +262,7 @@ function catSummary(e) {
 }
 async function viewBuilding(main, bid) {
   const b = bById(bid);
-  if (!b) { go("#/home"); return; }
+  if (!b) { goReplace("#/home"); return; }
   $("topTitle").textContent = b.name;
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid).sort((a, c) => c.createdAt - a.createdAt);
   main.innerHTML = `
@@ -289,7 +305,7 @@ function contactHtml(bid, cid) {
 /* 設備ページ：①何が起きたかを書く → ②連絡先 → ③これまでの症例（履歴は下にたまる） */
 async function viewCategory(main, bid, cid) {
   const b = bById(bid), c = cById(cid);
-  if (!b || !c) { go("#/home"); return; }
+  if (!b || !c) { goReplace("#/home"); return; }
   $("topTitle").textContent = `${b.name}・${c.label}`;
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid && r.categoryId === cid).sort((x, y) => y.createdAt - x.createdAt);
   main.innerHTML = `
@@ -350,7 +366,7 @@ async function fillRecList(box, recs, emptyText) {
       <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? "" : `<span class="tag gray">未報告</span>`}</div>
       <div class="recTitle">${esc(r.what || "（内容なし）")}</div>
       <div class="recSub">${esc([r.buildingName, r.how].filter(Boolean).join(" ／ "))}</div></div>${icon("chevron")}`;
-    btn.querySelector("svg:last-child").style.cssText = "width:18px;height:18px;color:var(--muted);flex:none";
+    btn.lastElementChild.style.cssText = "width:18px;height:18px;color:var(--muted);flex:none";
     btn.onclick = () => go("#/r/" + encodeURIComponent(r.id));
     box.appendChild(btn);
   });
@@ -366,10 +382,10 @@ async function viewForm(main, r) {
   if (!form || form.key !== location.hash) {
     if (editId) {
       const rec = await dbGet("records", editId);
-      if (!rec) { go("#/mine"); return; }
+      if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: (await dbGet("images", p.id)).blob, saved: true })));
-      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", photos: full, removed: [] };
+      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", photos: full, removed: [] };
     } else {
       form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
     }
@@ -430,37 +446,52 @@ async function viewForm(main, r) {
     $("vOk").onclick = () => { form.vendor = $("vOther").value.trim(); close(); draw(); };
     const cl = $("vClear"); if (cl) cl.onclick = () => { form.vendor = ""; close(); draw(); };
   });
+  let saving = false;
   async function saveForm(draft) {
+    if (saving || !form) return;
     if (!draft) {
       if (!form.buildingId) return toast("建物を選んでください");
       if (!form.categoryId) return toast("分類を選んでください");
       if (!form.what.trim()) return toast("「何が起きたか」を入力してください");
     } else if (!form.buildingId) return toast("下書きでも建物は選んでください");
+    saving = true;
+    document.querySelectorAll("#fDraft, #fSave").forEach((x) => (x.disabled = true));
+    const f = form;
     const rec = {
-      id: form.id, buildingId: form.buildingId, buildingName: b() ? b().name : "", categoryId: form.categoryId, categoryName: c() ? c().label : "",
-      what: form.what.trim(), how: form.how.trim(), vendor: form.vendor, reporter: form.reporter.trim(), draft, createdAt: form.createdAt, updatedAt: Date.now(), sentAt: null, by: getSetting("name"),
+      id: f.id, buildingId: f.buildingId, buildingName: b() ? b().name : f.buildingName || "", categoryId: f.categoryId, categoryName: c() ? c().label : f.categoryName || "",
+      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, by: getSetting("name"),
     };
-    await dbPut("records", rec);
-    for (const id of form.removed) { await dbDel("photos", id); await dbDel("images", id); }
-    for (const p of form.photos) if (!p.saved) { await dbPut("images", { id: p.id, blob: p.blob }); await dbPut("photos", { id: p.id, recordId: form.id, takenAt: p.takenAt, thumb: p.thumb }); }
-    const bid = form.buildingId;
+    try {
+      for (const p of f.photos) if (!p.saved) { await dbPut("images", { id: p.id, blob: p.blob }); await dbPut("photos", { id: p.id, recordId: f.id, takenAt: p.takenAt, thumb: p.thumb }); }
+      await dbPut("records", rec); // 写真を先に書き、最後に症例を書く（途中で失敗しても、写真だけ欠けた症例が残らない）
+      for (const id of f.removed) { await dbDel("photos", id); await dbDel("images", id); }
+    } catch (e) {
+      console.error(e);
+      saving = false;
+      document.querySelectorAll("#fDraft, #fSave").forEach((x) => (x.disabled = false));
+      return toast("保存できませんでした。端末の空き容量を確認して、もう一度試してください");
+    }
+    saving = false;
+    const bid = f.buildingId;
     form = null;
     toast(draft ? "下書きを保存しました" : "保存しました");
     const cid = rec.categoryId;
-    go(draft ? "#/mine" : cid ? `#/b/${encodeURIComponent(bid)}/c/${encodeURIComponent(cid)}` : "#/b/" + encodeURIComponent(bid));
+    goReplace(draft ? "#/mine" : cid ? `#/b/${encodeURIComponent(bid)}/c/${encodeURIComponent(cid)}` : "#/b/" + encodeURIComponent(bid));
     if (!draft) setTimeout(() => askReport(rec), 400);
   }
   draw();
 }
 async function addPhotos(files) {
-  if (!form) return;
+  const target = form;
+  if (!target) return;
   for (const f of files) {
     try {
       const [blob, thumb] = [await resizeImage(f, 1600), await resizeImage(f, 360)];
-      form.photos.push({ id: uid(), takenAt: f.lastModified || Date.now(), blob, thumb, saved: false });
+      if (form !== target) return; // 追加中に別の画面へ移った
+      target.photos.push({ id: uid(), takenAt: f.lastModified || Date.now(), blob, thumb, saved: false });
     } catch (e) { toast("読み込めない写真がありました"); }
   }
-  if (window.__formDraw) window.__formDraw();
+  if (form === target && window.__formDraw) window.__formDraw();
 }
 $("shootInput").addEventListener("change", (e) => { addPhotos([...e.target.files]); e.target.value = ""; });
 $("pickInput").addEventListener("change", (e) => { addPhotos([...e.target.files]); e.target.value = ""; });
@@ -497,7 +528,7 @@ async function viewMine(main) {
 /* ---------- 症例の詳細 ---------- */
 async function viewDetail(main, id) {
   const r = await dbGet("records", id);
-  if (!r) { go("#/mine"); return; }
+  if (!r) { goReplace("#/mine"); return; }
   $("topTitle").textContent = "症例";
   const ps = (await photosOf(id)).sort((a, b) => a.takenAt - b.takenAt);
   main.innerHTML = `
@@ -520,16 +551,13 @@ async function viewDetail(main, id) {
     for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
     await dbDel("records", id);
     toast("削除しました");
-    go("#/mine");
+    goReplace("#/mine");
   };
 }
 
 /* ---------- 管理者へ報告する（Boxのメール宛 ＋ 共有シート） ---------- */
 function boxEmail() { return BOX_UPLOAD_EMAIL || getSetting("box"); }
-async function sendRecords(list) {
-  const email = boxEmail();
-  if (!email) { toast("先に設定で管理者の送信先を入れてください"); return go("#/settings"); }
-  if (!getSetting("name")) { toast("先に設定で名前を入れてください"); return go("#/settings"); }
+async function buildReport(list) {
   const files = [];
   const outRecs = [];
   let bytes = 0;
@@ -539,10 +567,11 @@ async function sendRecords(list) {
     let n = 0;
     for (const p of ps) {
       n++;
-      const blob = (await dbGet("images", p.id)).blob;
+      const img = await dbGet("images", p.id);
+      if (!img) continue;
       const name = safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${n}.jpg`);
-      files.push(new File([blob], name, { type: "image/jpeg" }));
-      bytes += blob.size;
+      files.push(new File([img.blob], name, { type: "image/jpeg" }));
+      bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
     }
     outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
@@ -550,17 +579,35 @@ async function sendRecords(list) {
   const payload = { kind: "sango-support-records", schema: 1, app_version: APP_VERSION, master_version: master ? master.version : "", sent_at: new Date().toISOString(), sender: getSetting("name"), sender_id: deviceId(), records: outRecs };
   const jsonName = safeName(`症例_${getSetting("name")}_${ymd(Date.now())}_${list.length}件.json`);
   const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
-  const all = [jsonFile, ...files];
-  if (bytes > MAIL_WARN_BYTES && !confirm("写真が15MBを超えています。メールの容量上限で送れないかもしれません。このまま進めますか？")) return;
-  if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
-  if (!(navigator.canShare && navigator.canShare({ files: all }))) { alert("この端末では共有機能が使えないため送信できません。iPhoneのホーム画面から開いてください。"); return; }
-  try { await navigator.share({ files: all, title: jsonName }); } catch (e) { return; }
-  if (confirm("メールを送れましたか？\n送れていたら「OK」で、報告済みにします。")) {
-    const now = Date.now();
-    for (const r of list) await dbPut("records", { ...r, sentAt: now });
-    toast("報告済みにしました");
-    render();
-  } else toast("報告済みにはしていません");
+  return { all: [jsonFile, ...files], photoCount: files.length, bytes, jsonName };
+}
+async function sendRecords(list) {
+  const email = boxEmail();
+  if (!email) { toast("先に設定で管理者の送信先を入れてください"); return go("#/settings"); }
+  if (!getSetting("name")) { toast("先に設定で名前を入れてください"); return go("#/settings"); }
+  toast("送る準備をしています...");
+  let prep;
+  try { prep = await buildReport(list); } catch (e) { console.error(e); return toast("送る準備ができませんでした。もう一度試してください"); }
+  openSheet("管理者へ報告する", (body, close) => {
+    const mb = (prep.bytes / 1048576).toFixed(1);
+    body.innerHTML = `<div class="mutedText" style="margin-bottom:10px">症例 ${list.length}件・写真 ${prep.photoCount}枚（約${mb}MB）を、メールで管理者へ送ります。<br>「メールを開く」を押すと、送信先のアドレスをコピーして共有画面が開きます。メールを選び、宛先に貼り付けて送信してください。</div>
+      ${prep.bytes > MAIL_WARN_BYTES ? `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">写真が15MBを超えています。メールの容量上限で送れないかもしれません。件数を分けて報告してください。</div>` : ""}
+      <div class="btnCol"><button class="btn btnPrimary" id="rpGo">${icon("send")}メールを開く</button><button class="btn" id="rpNo">やめる</button></div>`;
+    $("rpNo").onclick = close;
+    $("rpGo").onclick = () => { // 押した直後に共有を呼ぶ（間に待ち時間を入れない）
+      if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+      if (!(navigator.canShare && navigator.canShare({ files: prep.all }))) { alert("この端末では共有機能が使えないため送信できません。iPhoneのホーム画面から開いてください。"); return; }
+      navigator.share({ files: prep.all, title: prep.jsonName }).then(async () => {
+        close();
+        if (confirm("メールを送れましたか？\n送れていたら「OK」で、報告済みにします。")) {
+          const now = Date.now();
+          for (const r of list) await dbPut("records", { ...r, sentAt: now });
+          toast("報告済みにしました");
+          render();
+        } else toast("報告済みにはしていません");
+      }).catch((e) => { if (e && e.name === "AbortError") return; alert("共有画面を開けませんでした。\n（" + (e && e.name ? e.name : e) + "）"); });
+    };
+  });
 }
 
 /* ---------- 設定 ---------- */
@@ -608,9 +655,16 @@ $("backBtn").onclick = () => { if (history.length > 1) history.back(); else go("
 window.addEventListener("hashchange", render);
 $("gearBtn").onclick = () => go("#/settings");
 (async () => {
-  await loadMaster();
-  refreshBell();
-  if (!location.hash) location.hash = "#/home";
-  await render();
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  try {
+    await loadMaster();
+    refreshBell();
+    if (!location.hash) history.replaceState(null, "", location.pathname + location.search + "#/home");
+    await render();
+  } catch (e) {
+    console.error(e);
+    $("main").innerHTML = `<div class="empty">端末の保存領域が使えませんでした。<br>Safariの「プライベートブラウズ」を使っていないか確認して、ホーム画面のアイコンから開き直してください。<br><button class="btn btnPrimary" id="retryBoot">もう一度開く</button></div>`;
+    $("retryBoot").onclick = () => location.reload();
+  }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
 })();
