@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "ロゴ、ホームの風景、記録が空の時の絵を入れました。" },
   { date: "2026-10-04", type: "feature", text: "建物とカテゴリの絵を入れました。" },
   { date: "2026-10-04", type: "feature", text: "設備サポートを作りました。建物から業者の連絡先を調べて電話でき、トラブルと対応を写真付きで記録できます。" },
 ];
@@ -192,10 +193,10 @@ async function render() {
 
 /* ---------- ホーム ---------- */
 async function viewHome(main) {
-  $("topLogo").innerHTML = `<img src="art/logo.webp" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">設備サポート</span>`;
-  const hero = `<div class="pageHero"><img class="heroArt" src="art/hero.webp" alt="" data-fb="x"><div class="heroText"><h2>建物を選ぶ</h2><p>設備の連絡先確認と記録管理</p></div></div>`;
+  $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">設備サポート</span>`;
+  const hero = `<div class="homeHero"><div class="heroText"><h2>建物を選ぶ</h2><p>設備の連絡先確認と記録管理</p></div><img class="heroLand" src="art/hero.webp?v=${ART_V}" alt="" data-fb="x"></div>`;
   if (!master) {
-    main.innerHTML = hero + `<div class="empty" style="margin-top:12px">業者データがまだ入っていません。<br>本社から配られたマスターデータ（JSON）を取り込んでください。<br><button class="btn btnPrimary" id="goSettings">設定を開く</button></div>`;
+    main.innerHTML = hero + `<div class="empty" style="margin-top:12px"><img class="emptyArt" src="art/empty-master.webp?v=${ART_V}" alt="" data-fb="x"><br>業者データがまだ入っていません。<br>本社から配られたマスターデータ（JSON）を取り込んでください。<br><button class="btn btnPrimary" id="goSettings">設定を開く</button></div>`;
     $("goSettings").onclick = () => go("#/settings");
     return;
   }
@@ -267,7 +268,7 @@ function openCategory(bid, cid) {
 
 /* ---------- 記録リスト（共通） ---------- */
 async function fillRecList(box, recs, emptyText) {
-  if (!recs.length) { box.innerHTML = `<div class="empty">${esc(emptyText)}</div>`; return; }
+  if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
   const photos = await dbAll("photos");
   const firstThumb = {};
   photos.sort((a, b) => a.takenAt - b.takenAt).forEach((p) => { if (!firstThumb[p.recordId]) firstThumb[p.recordId] = p; });
