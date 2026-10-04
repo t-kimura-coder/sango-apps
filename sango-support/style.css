@@ -188,3 +188,7 @@ textarea { min-height: 84px; }
 .emptyArt { width: 150px; max-width: 55%; height: auto; margin-bottom: 4px; }
 .topBrand img { height: 34px; width: auto; margin-right: 8px; }
 .topBrand { gap: 0; }
+/* 電話ボタンはカードの下段に（文字が潰れないように） */
+.catCard { flex-wrap: wrap; }
+.catCard .callBtn { flex: 1 0 100%; justify-content: center; padding: 9px 10px; }
+.catBody { flex: 1 1 0; }

@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "電話ボタンをカードの下に移し、設備名が読みやすくなりました。" },
   { date: "2026-10-04", type: "fix", text: "設定ボタンを歯車の形にしました。" },
   { date: "2026-10-04", type: "feature", text: "ロゴ、ホームの風景、記録が空の時の絵を入れました。" },
   { date: "2026-10-04", type: "feature", text: "建物とカテゴリの絵を入れました。" },
