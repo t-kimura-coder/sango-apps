@@ -2,9 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 1;
+const APP_VERSION = 3;
+const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "建物とカテゴリの絵を入れました。" },
   { date: "2026-10-04", type: "feature", text: "設備サポートを作りました。建物から業者の連絡先を調べて電話でき、トラブルと対応を写真付きで記録できます。" },
 ];
 
@@ -124,8 +126,8 @@ function house(group) {
   const roof = group === "Villa" ? "#8a6a45" : group === "施設" ? "#6d5a45" : "#7a8a6a";
   return `<svg viewBox="0 0 120 80" aria-hidden="true"><ellipse cx="60" cy="72" rx="52" ry="6" fill="#cfdcc2"/><rect x="38" y="36" width="44" height="32" fill="#b98b57"/><path d="M30 38 L60 16 L90 38 Z" fill="${roof}"/><rect x="52" y="48" width="10" height="20" fill="#f3d58c"/><rect x="68" y="46" width="9" height="9" fill="#f3d58c"/><path d="M14 68 L22 40 L30 68 Z" fill="#5f8a4f"/><path d="M94 68 L102 36 L110 68 Z" fill="#4f7a43"/></svg>`;
 }
-function bldImg(b) { return `<img src="art/bld-${esc(b.id)}.webp" alt="" loading="lazy" data-fb="bld" data-group="${esc(b.group)}">`; }
-function catIconHtml(c) { return `<img src="art/cat-${esc(c.id.toLowerCase())}.webp" alt="" loading="lazy" data-fb="cat" data-glyph="${esc(c.glyph)}">`; }
+function bldImg(b) { return `<img src="art/bld-${esc(b.id)}.webp?v=${ART_V}" alt="" loading="lazy" data-fb="bld" data-group="${esc(b.group)}">`; }
+function catIconHtml(c) { return `<img src="art/${esc(c.id.toLowerCase())}.webp?v=${ART_V}" alt="" loading="lazy" data-fb="cat" data-glyph="${esc(c.glyph)}">`; }
 document.addEventListener("error", (e) => { // 絵が無い時の仮表示（GPTの素材を置くまで）
   const t = e.target;
   if (!t || t.tagName !== "IMG" || !t.dataset.fb) return;
