@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -14,6 +14,7 @@ const REPLY_DIR = "返信";
 const $ = (id) => document.getElementById(id);
 
 const ICONS = {
+  people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.8"/><path d="M16.5 14.6c2.6.2 4.4 2 5 5"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
@@ -270,8 +271,49 @@ function toggleAsQuestion(n) {
 }
 const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み" };
 
+/* ---------- 自分の班（班の打合せ用に、班のメンバーの報告・疑問だけを出す） ----------
+   見せ方だけの絞り込み（Box の権限は変わらない）。この PC に覚える。監督は名前で覚える（端末を替えても同じ人になるように） */
+function normName(s) {
+  return String(s || "").normalize("NFKC").replace(/\s/g, "");
+}
+function teamList() {
+  try {
+    return JSON.parse(getLS("team", "[]"));
+  } catch (e) {
+    return [];
+  }
+}
+function teamOn() {
+  return teamList().length > 0 && getLS("scope", "team") !== "all";
+}
+function personInScope(p) {
+  if (!teamOn()) return true;
+  if (!p) return false;
+  const n = normName(p.name);
+  return teamList().some((x) => normName(x) === n) || (!!getLS("name") && normName(getLS("name")) === n); // 自分の現場も出す
+}
+function noteInScope(n) {
+  return personInScope(data.people.get(n.personKey));
+}
+function scopedPeople() {
+  return [...data.people.values()].filter(personInScope);
+}
+function scopedNotes() {
+  return [...data.notes.values()].filter(noteInScope);
+}
+// 画面の上の「班だけ／全員」
+function scopeBarHtml() {
+  const t = teamList();
+  if (!t.length) return `<div class="scopeBar"><span>${icon("people", 16)}全員を表示しています</span><a href="#/settings" class="moreLink">自分の班を設定${icon("chevron", 14)}</a></div>`;
+  const on = teamOn();
+  return (
+    `<div class="scopeBar"><span>${icon("people", 16)}表示</span><div class="scopeSeg"><button data-scope="team" class="${on ? "on" : ""}">自分の班（${t.length}人）</button><button data-scope="all" class="${on ? "" : "on"}">全員</button></div>` +
+    `<a href="#/settings" class="moreLink">班を変える${icon("chevron", 14)}</a></div>`
+  );
+}
+
 function openQuestions() {
-  return [...data.notes.values()].filter((n) => noteStatus(n) === "open");
+  return scopedNotes().filter((n) => noteStatus(n) === "open");
 }
 
 function personStats(p) {
@@ -359,6 +401,7 @@ function weekCell(site, pk, mon, ctx) {
 function renderWeeks() {
   const main = $("main");
   let html = `<section class="pageHead"><h1>週の報告</h1><p class="sub">担当者ごと・現場ごとに、週の報告が済んでいるかを並べています。報告は金曜〜翌週の月曜（遅くとも火曜）。休工中の週と完工した後の週は報告しなくてよい週です。</p></section>`;
+  if (!noData()) html += scopeBarHtml();
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -382,7 +425,7 @@ function renderWeeks() {
     },
   };
   const order = (s) => (s.completedAt ? 2 : s.pausedAt ? 1 : 0);
-  const people = [...data.people.values()].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const people = scopedPeople().sort((a, b) => a.name.localeCompare(b.name, "ja"));
   const rows = [];
   people.forEach((p) => {
     const sites = [...p.sites]
@@ -752,6 +795,13 @@ function emptyBox(title, text, withButtons = false) {
   );
 }
 function bindCommon(root) {
+  root.querySelectorAll("[data-scope]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setLS("scope", b.dataset.scope);
+      updateNavBadge();
+      route();
+    })
+  );
   root.querySelectorAll('[data-act="pick"]').forEach((b) => b.addEventListener("click", pickFolder));
   root.querySelectorAll('[data-act="reopen"]').forEach((b) => b.addEventListener("click", reopenFolder));
   root.querySelectorAll('[data-act="demo"]').forEach((b) => b.addEventListener("click", loadDemo));
@@ -792,7 +842,8 @@ function renderHome() {
     return;
   }
   const open = openQuestions().sort((a, b) => (a.at < b.at ? 1 : -1));
-  const recent = [...data.notes.values()].filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
+  html += scopeBarHtml();
+  const recent = scopedNotes().filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
   html +=
     `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">未回答の疑問・要望</div>` +
     `<div class="bigNum"><b>${open.length}</b>件</div></div><a class="btn btnOutline bigBtn" href="#/notes?st=open">未回答をすべて確認${icon("chevron", 16)}</a></div>` +
@@ -804,7 +855,7 @@ function renderHome() {
       : `<div class="emptyText pad">対応待ちのメモはありません。</div>`) +
     `</div></div>`;
 
-  const people = [...data.people.values()].map((p) => ({ p, st: personStats(p) }));
+  const people = scopedPeople().map((p) => ({ p, st: personStats(p) }));
   const hit = (x, k) => k === "all" || (k === "need" ? x.st.open > 0 : k === "late" ? x.st.late : x.st.state === "ok");
   const cnt = Object.fromEntries(["all", "need", "late", "ok"].map((k) => [k, people.filter((x) => hit(x, k)).length]));
   const chips = [["all", "すべて"], ["need", "未回答あり"], ["late", "報告の遅れあり"], ["ok", "順調"]];
@@ -864,7 +915,7 @@ function renderNotes(params) {
     `<div class="filterRow"><label class="searchField">${icon("search", 18)}<input id="noteQ" type="search" placeholder="キーワードで検索（本文・現場名・監督名など）" value="${esc(noteFilter.q)}"></label>` +
     `<select id="noteSort" class="select"><option value="new">新しい順</option><option value="old">古い順</option></select></div></div>`;
   const q = noteFilter.q.trim().toLowerCase();
-  const list = [...data.notes.values()]
+  const list = scopedNotes()
     .filter((n) => noteFilter.type === "all" || n.type === noteFilter.type)
     .filter((n) => noteFilter.status === "all" || noteStatus(n) === noteFilter.status)
     .filter((n) => !q || [n.text, n.siteName, n.personName, n.item, n.process].some((f) => String(f || "").toLowerCase().includes(q)))
@@ -997,7 +1048,8 @@ function renderSites() {
     bindCommon(main);
     return;
   }
-  const people = [...data.people.values()].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const people = scopedPeople().sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  html += scopeBarHtml();
   html += people
     .filter((p) => matchesQuery(p.name, ...[...p.sites].map((k) => data.sites.get(k).name)))
     .map((p) => {
@@ -1181,6 +1233,23 @@ function renderSite(key) {
 }
 
 /* ---------- 設定 ---------- */
+function teamCardHtml() {
+  const team = teamList();
+  const inTeam = (name) => team.some((x) => normName(x) === normName(name));
+  // 届いている報告の監督＋前に選んだが今は報告が無い人
+  const names = [...new Set([...[...data.people.values()].map((p) => p.name), ...team])].sort((a, b) => a.localeCompare(b, "ja"));
+  return (
+    `<div class="card setCard"><h2>自分の班</h2><p class="sub">班のメンバーを選ぶと、ホーム・週の報告・疑問・気づき・監督・現場に、その人たちの報告だけが出ます（班の打合せ用）。画面の上の「全員」でいつでも全員に戻せます。` +
+    `「あなたの名前」と同じ名前の監督（自分の現場）は、選ばなくても出ます。見せ方だけを変えるもので、Box のフォルダの権限は変わりません。</p>` +
+    (names.length
+      ? `<div class="teamGrid">${names
+          .map((n) => `<label class="teamItem"><input type="checkbox" data-team="${esc(n)}"${inTeam(n) ? " checked" : ""}>${avatar(n, 28)}<span>${esc(n)}</span></label>`)
+          .join("")}</div><div id="teamCount" class="mutedText">${team.length ? `${team.length}人を選んでいます` : "選んでいません（全員を表示）"}</div>`
+      : `<p class="mutedText">報告フォルダを読み込むと、届いている監督の名前から選べます。</p>`) +
+    `</div>`
+  );
+}
+
 function renderSettings() {
   const main = $("main");
   const s = data.source;
@@ -1196,6 +1265,7 @@ function renderSettings() {
     `<button class="btn btnOutline" data-act="demo">サンプルデータで見る</button></div>` +
     (canPickFolder ? "" : `<p class="warn">このブラウザではフォルダに書き込めません。Edge か Chrome で開くと、返信をフォルダに直接書き出せます。</p>`) +
     `</div>` +
+    teamCardHtml() +
     `<div class="card setCard"><h2>表示の色</h2><div class="themeSeg">${[["auto", "端末と同じ"], ["light", "ライト"], ["dark", "ダーク"]]
       .map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${(getLS("theme") || "auto") === k ? "on" : ""}">${l}</button>`)
       .join("")}</div><p class="sub">「端末と同じ」は、Windows の「個人用設定 → 色」に合わせて切り替わります。</p></div>` +
@@ -1206,6 +1276,18 @@ function renderSettings() {
       setLS("theme", b.dataset.themeSet === "auto" ? "" : b.dataset.themeSet);
       applyTheme(b.dataset.themeSet);
       main.querySelectorAll("[data-theme-set]").forEach((x) => x.classList.toggle("on", x === b));
+    })
+  );
+  main.querySelectorAll("[data-team]").forEach((c) =>
+    c.addEventListener("change", () => {
+      const names = new Set(teamList());
+      if (c.checked) names.add(c.dataset.team);
+      else [...names].filter((x) => normName(x) === normName(c.dataset.team)).forEach((x) => names.delete(x));
+      setLS("team", JSON.stringify([...names]));
+      setLS("scope", "team");
+      updateNavBadge();
+      const cnt = main.querySelector("#teamCount");
+      if (cnt) cnt.textContent = names.size ? `${names.size}人を選んでいます` : "選んでいません（全員を表示）";
     })
   );
   $("myName").addEventListener("change", (e) => {
