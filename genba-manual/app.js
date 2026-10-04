@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 70;
+const APP_VERSION = 71;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -4175,8 +4175,16 @@ function gasOn() {
   return !!getSetting(GAS_TOKEN_KEY);
 }
 async function gasCall(body) {
-  const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getSetting(GAS_TOKEN_KEY) }) });
-  const j = await res.json();
+  // 電波が弱くて返ってこない時に止まったままにならないよう、25秒で打ち切る
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 25000);
+  let j;
+  try {
+    const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getSetting(GAS_TOKEN_KEY) }), signal: ctl.signal });
+    j = await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
   if (!j.ok) throw new Error(j.error || "error");
   return j;
 }

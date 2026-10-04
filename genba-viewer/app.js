@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 26;
+const APP_VERSION = 28;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -270,8 +270,16 @@ function gasOn() {
   return !!getLS("gasToken");
 }
 async function gasCall(body) {
-  const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getLS("gasToken") }) });
-  const j = await res.json();
+  // 電波が弱くて返ってこない時に止まったままにならないよう、25秒で打ち切る
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 25000);
+  let j;
+  try {
+    const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getLS("gasToken") }), signal: ctl.signal });
+    j = await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
   if (!j.ok) throw new Error(j.error || "error");
   return j;
 }
@@ -1369,8 +1377,9 @@ async function sendReply(n, text) {
   rp.from_role = "上司";
   const fileName = safeName(`返信_${n.siteName}_${n.personName}_${stamp()}_${rp.id.slice(0, 6)}.json`);
   const body = JSON.stringify(rp, null, 2);
-  const viaGas = !demoMode && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.personName, payload: rp }));
-  if (viaGas && !(dirHandle && data.source && data.source.writable)) {
+  // GAS で届いた疑問への返信は、サンプル表示中でも本物として送る
+  const viaGas = (!demoMode || n.viaGas) && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.personName, payload: rp }));
+  if (viaGas && (n.viaGas || !(dirHandle && data.source && data.source.writable))) {
     addReplyToData(rp);
     toast("返信を送りました（監督の現場ナビにすぐ届きます）");
     return true;
