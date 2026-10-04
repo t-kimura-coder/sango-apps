@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 61;
+const APP_VERSION = 62;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "項目名の右の「該当なし」も、押すと付けていたチェックが外れるようにしました（外れる件数を確認してから切り替わります）" },
   { date: "2026-10-03", type: "fix", text: "チェックを付けた後に「なし」にすると、チェックが付いたまま灰色になっていたのを直しました（なしにするとチェックは外れます）" },
   { date: "2026-10-03", type: "feature", text: "チェックが全部済んだ工程に「✓ 完了」が付くようにしました（工程ページ・段階のカード）。写真要の一覧も、全部撮れた工程に「✓ 撮影済み」が出ます" },
   { date: "2026-10-03", type: "feature", text: "チェックポイントごとに「なし」（この現場には無いチェック）を付けられるようにしました。灰色になり、進み具合・写真要の数から外れます" },
@@ -3569,6 +3570,12 @@ async function toggleMark(it, key) {
 
 async function toggleNa(it) {
   const rec = checkRecOf(it.id);
+  // 該当なしにする時は、付けていたチェックも外す（チェックが付いたまま灰色にならないように）
+  const marked = Object.keys(rec.marks || {}).length;
+  if (!rec.na && marked) {
+    if (!confirm(`付けていたチェック ${marked}件も外れます。\nこの現場では「該当なし」にしますか？`)) return;
+    rec.marks = {};
+  }
   rec.na = !rec.na;
   rec.naAt = new Date().toISOString();
   rec.naBy = getSetting(USER_NAME_KEY);
