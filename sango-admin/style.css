@@ -183,3 +183,14 @@ main { padding: 16px 18px 40px; min-width: 0; }
   .listLayout, .detailLayout { grid-template-columns: minmax(0, 1fr); }
   .pv { position: static; }
 }
+
+/* 一覧：何が起きたかの列が余った幅を使う（右の欄や横スクロールで隠れない） */
+.appBody { grid-template-columns: 230px 1fr; }
+.tbl { min-width: 0; }
+.tbl td.cWhat { width: 100%; max-width: 0; }
+.cWhat b, .cWhat span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: none; }
+.cPeople, .cDate { white-space: nowrap; }
+.cBld span { max-width: 92px; }
+.listLayout.noPv { grid-template-columns: minmax(0, 1fr); }
+.listLayout.noPv > aside { display: none; }
+@media (min-width: 1500px) { .cWhat span { max-width: none; } }

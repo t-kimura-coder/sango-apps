@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -306,11 +306,14 @@ function renderFilters() {
 }
 
 /* ---------- 症例一覧 ---------- */
+const pvOpen = () => getLS("pv", innerWidth >= 1500 ? "1" : "0") === "1";
 function viewList(main) {
-  main.innerHTML = `<div class="listLayout"><section class="panel">
+  const pvOn = pvOpen();
+  main.innerHTML = `<div class="listLayout${pvOn ? "" : " noPv"}"><section class="panel">
     <div class="listTop"><h2>症例一覧</h2>
       <div class="seg" id="srcSeg">${[["all", "すべて"], ["new", "新しい症例"], ["past", "過去"]].map(([v, l]) => `<button data-v="${v}" class="${F.src === v ? "on" : ""}">${l}</button>`).join("")}</div>
       <span class="grow"></span><span class="cnt" id="listCnt"></span>
+      <button class="btn" id="pvToggle" style="min-height:34px;padding:0 12px">${pvOn ? "プレビューを閉じる" : "プレビューを開く"}</button>
       <select class="sortSel" id="sortSel"><option value="new" ${F.sort === "new" ? "selected" : ""}>新しい順</option><option value="old" ${F.sort === "old" ? "selected" : ""}>古い順</option></select></div>
     <table class="tbl"><thead><tr><th>日付</th><th>建物</th><th>分類</th><th>何が起きたか</th><th>報告した人／担当</th><th>写真</th><th>状態</th></tr></thead><tbody id="listBody"></tbody></table>
     <div id="listEmpty" class="empty" hidden>条件に合う症例がありません。</div></section>
@@ -318,6 +321,7 @@ function viewList(main) {
   $("globalSearch").value = F.q;
   $("srcSeg").querySelectorAll("button").forEach((b) => (b.onclick = () => { F.src = b.dataset.v; viewList(main); fillIcons(main); }));
   $("sortSel").onchange = (e) => { F.sort = e.target.value; renderListBody(); };
+  $("pvToggle").onclick = () => { setLS("pv", pvOn ? "0" : "1"); viewList(main); fillIcons(main); };
   renderListBody();
 }
 function stateChip(r) { return r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">整理済み</span>` : `<span class="chip todo">未整理</span>`; }
@@ -334,13 +338,17 @@ function renderListBody() {
     <td class="cPeople"><b>${esc(r.reporter || "—")}</b><span>担当 ${esc(r.sender || "—")}</span></td>
     <td><span class="cPhoto">${icon("photo")}${r.photos.length}</span></td><td>${stateChip(r)}</td></tr>`).join("");
   $("listBody").querySelectorAll("tr.row").forEach((tr) => {
-    tr.onclick = () => { F.sel = tr.dataset.id; $("listBody").querySelectorAll("tr.row").forEach((x) => x.classList.toggle("sel", x === tr)); renderPreview(); };
+    tr.onclick = () => {
+      if (!pvOpen()) { location.hash = "#/r/" + encodeURIComponent(tr.dataset.id); return; } // プレビューを閉じている時は、そのまま詳細へ
+      F.sel = tr.dataset.id; $("listBody").querySelectorAll("tr.row").forEach((x) => x.classList.toggle("sel", x === tr)); renderPreview();
+    };
     tr.ondblclick = () => (location.hash = "#/r/" + encodeURIComponent(tr.dataset.id));
   });
   fillIcons($("listBody"));
   renderPreview();
 }
 async function renderPreview() {
+  if (!pvOpen()) return;
   const box = $("preview");
   const r = S.records.find((x) => x.id === F.sel);
   if (!r) { box.innerHTML = `<div class="note">症例を選ぶと、ここに内容が出ます。</div>`; return; }
