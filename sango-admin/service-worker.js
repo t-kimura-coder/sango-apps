@@ -1,7 +1,7 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const CACHE_NAME = `sango-admin-v${CACHE_VERSION}`;
-const APP_SHELL = ['./', 'index.html', 'app.js?v=1', 'demo.js?v=1', 'style.css?v=1', 'manifest.webmanifest', 'icon-96.png', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const APP_SHELL = ['./', 'index.html', 'app.js?v=1', 'demo.js?v=1', 'style.css?v=1', 'manifest.webmanifest', 'icon-96.png?v=2', 'icon-180.png?v=2', 'icon-192.png?v=2', 'icon-512.png?v=2'];
 // 症例データ（社内データ）はキャッシュしない。PCの Box Drive フォルダから毎回読む。絵(art/)は初回表示時に取得してキャッシュする
 
 self.addEventListener('install', (event) => {
