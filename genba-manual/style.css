@@ -1129,3 +1129,8 @@ img.imgBroken { visibility: hidden; }
 .reqDone + svg { margin-left: 4px; }
 .reqGroup .reqDone { font-size: 11px; }
 .chipDone { flex: none; width: 20px; height: 20px; border-radius: 10px; background: var(--color-ok-text); color: #fff; display: inline-flex; align-items: center; justify-content: center; margin-left: -2px; }
+
+/* 事前準備の進み具合 */
+#prepProgress.complete { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; white-space: nowrap; }
+.tabDone { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 8px; background: var(--color-ok-text); color: #fff; vertical-align: -2px; }
+.itemTab.active .tabDone { background: #fff; color: var(--color-primary); }

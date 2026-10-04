@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 62;
+const APP_VERSION = 63;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "作業手順の「事前準備」に進み具合（2/6）を出し、全部そろうと「✓ 準備OK」、作業手順タブにも ✓ が付くようにしました（工程の完了には含めません）" },
   { date: "2026-10-04", type: "fix", text: "項目名の右の「該当なし」も、押すと付けていたチェックが外れるようにしました（外れる件数を確認してから切り替わります）" },
   { date: "2026-10-03", type: "fix", text: "チェックを付けた後に「なし」にすると、チェックが付いたまま灰色になっていたのを直しました（なしにするとチェックは外れます）" },
   { date: "2026-10-03", type: "feature", text: "チェックが全部済んだ工程に「✓ 完了」が付くようにしました（工程ページ・段階のカード）。写真要の一覧も、全部撮れた工程に「✓ 撮影済み」が出ます" },
@@ -3040,6 +3041,28 @@ function checkProgHtml(it) {
   if (pr.na && !checkRecOf(it.id).na) return "すべて該当なし";
   return itemDone(it) ? `${icon(ICONS.check, 14, 3)}完了` : `${pr.done}/${pr.total}`;
 }
+// 事前準備の進み具合（工程の完了・進み具合には入れない）
+function prepProgress(it) {
+  const rec = checkRecOf(it.id);
+  const prep = (it.text && it.text.prep) || [];
+  return { done: prep.filter((c) => rec.marks[checkKey("prep", c)]).length, total: prep.length };
+}
+function prepDone(it) {
+  const pr = prepProgress(it);
+  return !!currentSiteId && !checkRecOf(it.id).na && pr.total > 0 && pr.done >= pr.total;
+}
+function setPrepProg(it) {
+  const fin = prepDone(it);
+  const prog = $("prepProgress");
+  if (prog) {
+    const pr = prepProgress(it);
+    prog.innerHTML = fin ? `${icon(ICONS.check, 14, 3)}準備OK` : `${pr.done}/${pr.total}`;
+    prog.classList.toggle("complete", fin);
+  }
+  const tab = document.querySelector('.itemTab[data-mtab="flow"]');
+  if (tab) tab.innerHTML = "作業手順" + (fin ? `<span class="tabDone" aria-label="準備OK">${icon(ICONS.check, 10, 3.6)}</span>` : "");
+}
+
 function setCheckProg(it) {
   const prog = $("checkProgress");
   if (!prog) return;
@@ -3221,7 +3244,7 @@ async function renderItem() {
           .map((x) => `<span>${esc(x)}</span>`)
           .join("")}</div>`;
       }
-      html += `<div class="secHead">${icon(ICONS.checkSquare, 22)}事前準備</div>`;
+      html += `<div class="secHead">${icon(ICONS.checkSquare, 22)}事前準備${tx.prep.length && currentSiteId ? `<span class="secRight"><span id="prepProgress"></span></span>` : ""}</div>`;
       html += tx.prep.length
         ? `<div class="checkList">${tx.prep.map((c) => checkRowHtml("prep", c, rec, it)).join("")}</div>`
         : `<div class="emptyNote">事前準備はまだ登録されていません。</div>`;
@@ -3233,6 +3256,7 @@ async function renderItem() {
   box.innerHTML = html;
 
   box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
+  setPrepProg(it);
   box.querySelectorAll("details[data-fold]").forEach((d) => d.addEventListener("toggle", () => setFold(d.dataset.fold, d.open)));
   if ($("memoSection")) renderMemoSection(it);
   const na = box.querySelector("[data-na]");
@@ -3434,7 +3458,10 @@ function refreshCheckRow(it, key) {
   const fresh = tmp.firstElementChild;
   row.replaceWith(fresh);
   bindCheckRow(fresh, it);
-  if (it.text) setCheckProg(it);
+  if (it.text) {
+    setCheckProg(it);
+    setPrepProg(it);
+  }
 }
 
 // 品質写真のカメラ：未撮影なら撮る、撮影済みなら確認（撮り直し・削除）
