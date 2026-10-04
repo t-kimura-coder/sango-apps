@@ -745,3 +745,11 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 @media (max-width: 1100px) { .headArt { width: 90%; opacity: 0.35; } .artHero .heroTitle, .artHero .heroSub, .meetHero .heroTitle, .meetHero .heroSub { max-width: none; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .headArt { opacity: 0.55; } }
 :root[data-theme="dark"] .headArt { opacity: 0.55; }
+
+/* 左メニュー：今のページをはっきり（塗りつぶし＋左の印） */
+.sideNav a { position: relative; }
+.sideNav a.on { background: var(--color-primary); color: var(--color-primary-text); box-shadow: 0 3px 10px rgba(14, 90, 69, 0.25); }
+.sideNav a.on::before { content: ""; position: absolute; left: -12px; top: 10px; bottom: 10px; width: 5px; border-radius: 0 4px 4px 0; background: var(--color-primary); }
+.sideNav a.on svg { color: var(--color-primary-text); }
+.sideNav a.on .navBadge { background: #fff; color: var(--color-danger); }
+.sideNav a:not(.on):hover { background: var(--color-surface); color: var(--color-heading); }
