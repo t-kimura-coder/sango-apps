@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="設備サポート">
+<meta name="theme-color" content="#244f37">
+<title>設備サポート</title>
+<link rel="apple-touch-icon" href="icon-180.png?v=1">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=1">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <button id="backBtn" class="iconBtn" aria-label="戻る" hidden></button>
+    <div id="topBrand" class="topBrand" hidden><span id="topLogo"></span></div>
+    <h1 id="topTitle"></h1>
+    <div class="topActions">
+      <button id="bellBtn" class="iconBtn" aria-label="お知らせ"><span id="bellDot" class="bellDot" hidden></span></button>
+      <button id="gearBtn" class="iconBtn" aria-label="設定"></button>
+    </div>
+  </header>
+  <main id="main"></main>
+  <nav id="tabbar">
+    <a href="#/home" data-tab="home"><span data-icon="home"></span>ホーム</a>
+    <a href="#/mine" data-tab="mine"><span data-icon="doc"></span>自分の記録</a>
+  </nav>
+</div>
+<div id="sheetRoot"></div>
+<div id="lightbox" hidden></div>
+<div id="toast" hidden></div>
+<input type="file" id="masterFile" accept=".json,application/json" hidden>
+<input type="file" id="shootInput" accept="image/*" capture="environment" hidden>
+<input type="file" id="pickInput" accept="image/*" multiple hidden>
+<script src="app.js?v=1"></script>
+</body>
+</html>
