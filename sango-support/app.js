@@ -1,11 +1,12 @@
 "use strict";
-/* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
+/* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "アプリの名前を「山郷サポート」にしました（ホーム画面に追加し直すと、アイコンの名前も変わります）。分類の一覧から電話ボタンを外し、分類を開いて症例を見てから連絡先に進む形にしました。" },
   { date: "2026-10-04", type: "feature", text: "分類を押した画面を「何が起きたかを書く → 連絡先 → これまでの症例」の順にしました。「設備カテゴリ」は、建具・内装・外構なども含むため「分類」に変えました。" },
   { date: "2026-10-04", type: "feature", text: "設備を押すと、まず症例と写真、次に連絡先が出るようにしました。言葉も「症例」「報告」に統一し、保存したあとにそのまま報告できます。LINEで受けた報告を残す時の「報告した人」欄も付けました。" },
   { date: "2026-10-04", type: "feature", text: "LARCH（バックヤード）と外構の絵を入れました。" },
@@ -106,7 +107,7 @@ async function loadMaster() { const m = await dbGet("meta", "master"); master = 
 async function importMaster(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch (e) { throw new Error("JSONとして読めませんでした"); }
-  if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.entries)) throw new Error("設備サポート用のマスターデータではありません");
+  if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.entries)) throw new Error("山郷サポート用のマスターデータではありません");
   await dbPut("meta", { key: "master", data, importedAt: Date.now() });
   master = data;
 }
@@ -213,7 +214,7 @@ function helpCard(compact) {
 
 /* ---------- ホーム ---------- */
 async function viewHome(main) {
-  $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">設備サポート</span>`;
+  $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">山郷サポート</span>`;
   const hero = `<div class="homeHero"><div class="heroText"><h2>建物を選ぶ</h2><p>連絡先の確認と症例の管理</p></div><img class="heroLand" src="art/hero.webp?v=${ART_V}" alt="" data-fb="x"></div>`;
   if (!master) {
     main.innerHTML = hero + `<div class="empty" style="margin-top:12px"><img class="emptyArt" src="art/empty-master.webp?v=${ART_V}" alt="" data-fb="x"><br>業者データがまだ入っていません。<br>本社から配られたマスターデータ（JSON）を取り込んでください。<br><button class="btn btnPrimary" id="goSettings">設定を開く</button></div>`;
@@ -253,11 +254,10 @@ async function viewBuilding(main, bid) {
     <div class="sectionHead"><h3>分類から探す</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
-      const solo = e.companies.length === 1 && e.companies[0].phone ? e.companies[0] : null;
       return `<div class="catCard${e.none ? " none" : ""}" data-c="${esc(c.id)}" role="button" tabindex="0">
         <div class="catIcon">${catIconHtml(c)}</div>
         <div class="catBody"><div class="catLabel">${esc(c.label)}</div><div class="catSub ${s.cls}">${esc(s.text)}</div></div>
-        ${solo ? `<a class="callBtn" href="${telHref(solo.phone)}" data-stop="1" data-name="${esc(solo.name)}" data-phone="${esc(solo.phone)}">${icon("phone")}電話</a>` : e.companies.length > 1 ? `<span class="chipN">${e.companies.length}社</span>` : ""}
+        ${e.companies.length > 1 ? `<span class="chipN">${e.companies.length}社</span>` : ""}
       </div>`;
     }).join("")}</div>
     <div class="sectionHead"><h3>あなたの症例</h3><span class="rule"></span><span class="count">${recs.length}件</span></div>
