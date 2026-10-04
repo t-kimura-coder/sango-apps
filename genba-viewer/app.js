@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -162,7 +162,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
   latestBy.forEach((r) => r.tasks_done.forEach((t) => t && t.id && data.taskDone.set(t.id, t)));
   const num = (v) => Number(v) || 0;
   reports.forEach((r) =>
-    (r && Array.isArray(r.progress) ? r.progress : []).forEach((g) => ["checks_done", "checks_total", "checks_na", "photos_done", "photos_total"].forEach((k) => (g[k] = num(g[k]))))
+    (r && Array.isArray(r.progress) ? r.progress : []).forEach((g) => g && typeof g === "object" && ["checks_done", "checks_total", "checks_na", "photos_done", "photos_total"].forEach((k) => (g[k] = num(g[k]))))
   );
   data.reports = [];
   data.sites = new Map();
@@ -884,6 +884,8 @@ async function toggleBossTask(s, id, idx) {
     }
   }
   addMeetingToData(m);
+  const dr = meetDraft(s.key, m.week);
+  if (dr && (dr.base || "") >= (orig.at || "")) setMeetDraft(s.key, m.week, { ...dr, base: m.at });
   renderMeet(String(idx + 1));
 }
 
@@ -1320,11 +1322,30 @@ function bindSearch() {
   const input = $("globalSearch");
   input.addEventListener("input", () => {
     clearTimeout(bindSearch.t);
-    bindSearch.t = setTimeout(renderSearchPanel, 120);
+    bindSearch.t = setTimeout(() => {
+      bindSearch.t = null;
+      renderSearchPanel();
+    }, 120);
   });
-  input.addEventListener("focus", renderSearchPanel);
-  input.addEventListener("blur", () => setTimeout(() => ($("searchPanel").hidden = true), 150));
+  input.addEventListener("focus", () => {
+    clearTimeout(bindSearch.close);
+    renderSearchPanel();
+  });
+  input.addEventListener("blur", () => {
+    clearTimeout(bindSearch.close);
+    bindSearch.close = setTimeout(() => ($("searchPanel").hidden = true), 150);
+  });
+  $("searchPanel").addEventListener("mousedown", (e) => e.preventDefault()); // 一覧の中を押しても入力欄から外れない
   input.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // 日本語の変換中
+    if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (bindSearch.t) {
+        clearTimeout(bindSearch.t);
+        bindSearch.t = null;
+        renderSearchPanel(); // 打ってすぐのキーでも、今の文字で候補を作ってから選ぶ
+      }
+      if ($("searchPanel").hidden) return;
+    }
     const rows = [...$("searchPanel").querySelectorAll(".spRow")];
     const cur = rows.findIndex((r) => r.classList.contains("sel"));
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1456,7 +1477,7 @@ function renderNotes(params) {
     return;
   }
   const types = [["all", "すべて"], ["question", "疑問"], ["notice", "気づき"], ["request", "職人さんの要望"], ["contact", "やりとり"]];
-  const sts = [["all", "すべて"], ["open", "未回答"], ["replied", "返信済み"], ["resolved", "解決済み"]];
+  const sts = [["all", "すべて"], ["open", "未回答"], ["replied", "返信済み"], ["resolved", "解決済み"], ["waiting", "返事待ち"]];
   html +=
     `<div class="card filterCard"><div class="filterRow"><span class="fLabel">種類</span>${types
       .map(([k, l]) => `<button class="chip${noteFilter.type === k ? " on" : ""} t-${k}" data-ft="${k}">${k !== "all" ? icon(NOTE_TYPES[k].icon, 16) : ""}${l}</button>`)
@@ -1501,7 +1522,7 @@ function noteRow(n) {
     (rest ? `<div class="noteBody">${esc(rest)}</div>` : "") +
     `</div><div class="noteMeta"><div>${icon("user", 16)}${esc(n.personName)}</div><div>${icon("building", 16)}${esc(n.siteName)}</div>` +
     `<div>${icon("list", 16)}${esc(shortProc(n.process))} › ${esc(n.item || "")}</div><div>${icon("clock", 16)}${fmtDateTime(n.at)}</div></div>` +
-    `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
+    `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
   );
 }
 function shortProc(p) {
@@ -1818,8 +1839,10 @@ async function extractBackupPhotos() {
         const site = safeName(names.get(p.siteId) || `現場_${String(p.siteId || "").slice(0, 6)}`);
         const no = parseInt(String(p.processId || "").replace(/\D/g, ""), 10);
         const proc = safeName(SHORT_PROC[no - 1] || "工程なし");
-        const t = new Date(p.takenAt || p.dateKey || Date.now());
-        const base = `${dayKey(t)}_${String(t.getHours()).padStart(2, "0")}${String(t.getMinutes()).padStart(2, "0")}_${p.kind === "record" ? "品質" : "報告"}`;
+        let t = new Date(p.takenAt || p.dateKey || Date.now());
+        if (isNaN(t)) t = new Date();
+        const hms = [t.getHours(), t.getMinutes(), t.getSeconds()].map((x) => String(x).padStart(2, "0")).join("");
+        const base = `${dayKey(t)}_${hms}_${p.kind === "record" ? "品質" : "報告"}_${safeName(String(p.id || "").slice(0, 4))}`;
         const key = `${site}/${proc}/${base}`;
         const n = (seen.get(key) || 0) + 1;
         seen.set(key, n);
