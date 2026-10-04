@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#244f37">
+<title>山郷サポート 管理者ビューア</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<header class="appHeader">
+  <a class="brand" href="#/list">
+    <img src="art/logo-green.webp" class="brandLogo" alt="" data-fb="x">
+    <span class="brandName">山郷サポート</span><span class="brandTag">管理者ビューア</span>
+  </a>
+  <span class="brandCopy">現場の症例を整理して知識にする</span>
+  <div class="headerSpacer"></div>
+  <label class="headerSearch"><span data-icon="search"></span><input id="globalSearch" type="search" placeholder="症例を検索（キーワード・内容・建物名など）" autocomplete="off"></label>
+  <span id="modeBadge" class="modeBadge"></span>
+  <button id="reloadBtn" class="iconBtn" title="フォルダを読み直す" aria-label="読み直す"></button>
+</header>
+<div class="appBody">
+  <nav class="sideNav">
+    <a href="#/list" data-nav="list"><span data-icon="doc"></span>症例一覧</a>
+    <a href="#/summary" data-nav="summary"><span data-icon="chart"></span>まとめ</a>
+    <a href="#/settings" data-nav="settings"><span data-icon="gear"></span>設定</a>
+    <div id="sideExtra"></div>
+  </nav>
+  <main id="main"></main>
+</div>
+<div id="lightbox" hidden></div>
+<div id="loading" hidden><div class="loadingBox" id="loadingText">読み込んでいます...</div></div>
+<div id="toast" hidden></div>
+<input type="file" id="folderInput" webkitdirectory multiple hidden>
+<script src="demo.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
