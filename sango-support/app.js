@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "記録は「あなたが残したものだけ」が出ることが分かるよう、表示の言葉を直しました。" },
   { date: "2026-10-04", type: "feature", text: "電話ボタンを押すと、相手の名前と番号を確認してから電話をかけるようにしました。" },
   { date: "2026-10-04", type: "feature", text: "ホーム画面のアプリアイコンを新しくしました（追加し直すと反映されます）。" },
   { date: "2026-10-04", type: "fix", text: "電話ボタンをカードの下に移し、設備名が読みやすくなりました。" },
@@ -215,7 +216,7 @@ async function viewHome(main) {
       <button class="bldCard" data-b="${esc(b.id)}">
         <div class="bldImg">${bldImg(b)}</div>
         <div class="bldName"><span>${esc(b.name)}</span>${icon("chevron")}</div>
-        <div class="bldSub">${count[b.id] ? `記録 ${count[b.id]}件` : "連絡先を確認"}</div>
+        <div class="bldSub">${count[b.id] ? `あなたの記録 ${count[b.id]}件` : "連絡先を確認"}</div>
       </button>`).join("")}</div>`).join("");
   main.querySelectorAll(".bldCard").forEach((el) => (el.onclick = () => go("#/b/" + encodeURIComponent(el.dataset.b))));
 }
@@ -243,12 +244,13 @@ async function viewBuilding(main, bid) {
         ${solo ? `<a class="callBtn" href="${telHref(solo.phone)}" data-stop="1" data-name="${esc(solo.name)}" data-phone="${esc(solo.phone)}">${icon("phone")}電話</a>` : e.companies.length > 1 ? `<span class="chipN">${e.companies.length}社</span>` : ""}
       </div>`;
     }).join("")}</div>
-    <div class="sectionHead"><h3>過去の記録</h3><span class="rule"></span><span class="count">${recs.length}件</span></div>
+    <div class="sectionHead"><h3>あなたの記録</h3><span class="rule"></span><span class="count">${recs.length}件</span></div>
+    <div class="mutedText" style="margin:-2px 4px 8px">この端末で、あなたが残した記録だけが出ます。</div>
     <div class="recList" id="bRecs"></div>
     <button class="fab" id="fabAdd">${icon("plus")}記録を追加</button>`;
   main.querySelectorAll(".catCard").forEach((el) => (el.onclick = (ev) => { if (ev.target.closest("[data-stop]")) return; openCategory(bid, el.dataset.c); }));
   $("fabAdd").onclick = () => go(`#/new?b=${encodeURIComponent(bid)}`);
-  await fillRecList($("bRecs"), recs, "この建物の記録はまだありません。");
+  await fillRecList($("bRecs"), recs, "この建物で、あなたが残した記録はまだありません。");
 }
 function openCategory(bid, cid) {
   const b = bById(bid), c = cById(cid), e = entryOf(bid, cid);
@@ -415,6 +417,7 @@ async function viewMine(main) {
   const all = (await dbAll("records")).sort((a, b) => b.createdAt - a.createdAt);
   const unsent = all.filter((r) => !r.draft && !r.sentAt);
   main.innerHTML = `
+    <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した記録です。他の人の記録は出ません。</div>
     <div class="searchRow">${icon("search")}<input id="mQ" type="search" placeholder="建物・設備・内容で探す" value="${esc(mineQuery)}"></div>
     <div class="chips">${[["all", "すべて"], ["unsent", "未送信"], ["draft", "下書き"]].map(([k, l]) => `<button class="chip${mineFilter === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
     ${unsent.length ? `<div class="sendBar"><button class="btn btnPrimary" id="sendAll">${icon("send")}未送信${unsent.length}件を管理者へ送る</button></div>` : ""}
@@ -517,7 +520,7 @@ async function viewSettings(main) {
     <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">記録を送る時に付きます。</div></div></div>
     <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
-      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選ぶ → 設備を押すと業者の連絡先が出ます<br>3. 困ったら電話。対応したら「記録を追加」で、何があったか・どう対応したかを写真付きで残す<br>4. 「自分の記録」から管理者へ送る（メールの共有画面が開きます）</div></div>
+      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選ぶ → 設備を押すと業者の連絡先が出ます<br>3. 困ったら電話。対応したら「記録を追加」で、何があったか・どう対応したかを写真付きで残す<br>4. 「自分の記録」から管理者へ送る（メールの共有画面が開きます）<br>※ 見られるのは、この端末であなたが残した記録だけです。他のリーダーの記録は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　記録 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
   $("sName").onchange = (e) => { setSetting("name", e.target.value.trim()); toast("保存しました"); };
