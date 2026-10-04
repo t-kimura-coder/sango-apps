@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 65;
+const APP_VERSION = 66;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "バックアップを戻した時に、「該当なし」で外したチェックが戻ってきてしまうのを直しました。宿題を済にした直後は「元に戻す」で取り消せます。品質写真で最後のチェックが付いた時も「完了」をお知らせします" },
   { date: "2026-10-04", type: "feature", text: "班の打合せで上司が決めた「宿題」を受け取れるようになりました。上司からの返信と一緒に取り込むと、ホームの「やること」に期限付きで出ます。押して「済にする」と、次の報告で上司に届きます" },
   { date: "2026-10-04", type: "fix", text: "事前準備にチェックを入れただけで、まだ撮れない写真が「撮り忘れ」に出ていたのを直しました。チェックの右のボタンも「該当なし」「撮影不要」と書き分けました" },
   { date: "2026-10-04", type: "feature", text: "作業手順の「事前準備」に進み具合（2/6）を出し、全部そろうと「✓ 準備OK」、作業手順タブにも ✓ が付くようにしました（工程の完了には含めません）" },
@@ -708,6 +709,19 @@ function toast(msg) {
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), 2400);
+}
+
+// 取り消しボタン付きのお知らせ（押し間違いをすぐ戻せるように）
+function toastAction(msg, label, fn) {
+  const t = $("toast");
+  t.innerHTML = `<span>${esc(msg)}</span><button type="button" class="toastBtn">${esc(label)}</button>`;
+  t.hidden = false;
+  t.querySelector(".toastBtn").addEventListener("click", () => {
+    t.hidden = true;
+    fn();
+  });
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), 6000);
 }
 
 function setProcessing(on, text = "写真を保存中...") {
@@ -3534,6 +3548,8 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
     // 撮り直しは前の1枚と入れ替える（ただし報告済みの写真は過去の報告から欠けないよう残す）
     if (old && !old.reportId) await dbDeleteMany("photos", [old.id]);
     let autoChecked = false;
+    const shown = groupItems[currentItemIdx];
+    const wasDone = shown && shown.id === t.itemId ? itemDone(shown) : true;
     if (t.siteId === currentSiteId) {
       siteRecordPhotos[mapKey] = rec;
       const crec = checkRecOf(t.itemId);
@@ -3548,7 +3564,8 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
       renderItemStrip(false);
       refreshCheckRow(it, t.checkKey);
     }
-    toast(autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました");
+    if (autoChecked && !wasDone && it && it.id === t.itemId && itemDone(it)) toast(`品質写真を保存しました。「${it.name}」のチェックが完了しました`);
+    else toast(autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました");
     if (currentView === "requiredView") renderRequired(true);
   } catch (e) {
     console.error(e);
@@ -3784,9 +3801,16 @@ function openTaskSheet(site, t) {
         t.doneAt = t.doneAt ? null : new Date().toISOString();
         await dbPut("sites", site);
         await refreshSites();
-        toast(t.doneAt ? "宿題を済にしました（次の報告で上司に届きます）" : "宿題をまだに戻しました");
         close();
         rerenderCurrentView();
+        if (!t.doneAt) return toast("宿題をまだに戻しました");
+        toastAction("宿題を済にしました（次の報告で上司に届きます）", "元に戻す", async () => {
+          t.doneAt = null;
+          await dbPut("sites", site);
+          await refreshSites();
+          rerenderCurrentView();
+          toast("宿題をまだに戻しました");
+        });
       })
     );
     if (t.process_no) {
@@ -4765,7 +4789,10 @@ async function restoreFromFile(file, quiet) {
         const cur = current[r.key];
         if (!cur) return r;
         const marks = Object.assign({}, cur.marks);
+        // この端末で「該当なし」にして外したチェック（外した時より前のチェック）は、バックアップから戻さない
+        const removedByNa = (k, m) => (cur.naAt && m.at < cur.naAt) || (cur.naChecks && cur.naChecks[k] && (cur.naChecks[k].at || "") > m.at);
         Object.entries(r.marks || {}).forEach(([k, m]) => {
+          if (!marks[k] && removedByNa(k, m)) return;
           if (!marks[k] || marks[k].at < m.at) marks[k] = m;
         });
         const byId = new Map((cur.notes || []).map((n) => [n.id, n]));

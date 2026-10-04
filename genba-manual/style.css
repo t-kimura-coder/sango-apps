@@ -1138,3 +1138,7 @@ img.imgBroken { visibility: hidden; }
 /* 「該当なし」「撮影不要」は2行で書き分ける */
 .checkCam.skip { line-height: 1.2; font-size: 11px; }
 .naCheckBtn { line-height: 1.2; font-size: 11px; min-height: 42px; border-radius: 12px; }
+
+/* 取り消しボタン付きのお知らせ */
+.toast:has(.toastBtn) { display: flex; align-items: center; gap: 12px; }
+.toastBtn { flex: none; min-height: 36px; padding: 0 14px; border: none; border-radius: 18px; background: var(--color-bg); color: var(--color-heading); font-weight: 800; font-size: var(--fs-sm); }

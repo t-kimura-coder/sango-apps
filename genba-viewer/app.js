@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -146,7 +146,17 @@ function buildData(reports, replies, statuses = [], meetings = []) {
   data.meetings = new Map();
   meetings.filter((m) => m && m.site_key && m.week).sort((a, b) => (a.at < b.at ? -1 : 1)).forEach((m) => addMeetingToData(m));
   data.taskDone = new Map();
-  reports.forEach((r) => (r && r.tasks_done || []).forEach((t) => t && t.id && data.taskDone.set(t.id, t)));
+  const latestBy = new Map();
+  reports.forEach((r) => {
+    if (!r || !Array.isArray(r.tasks_done)) return;
+    const k = `${r.site_id || r.site}|${personKeyOf(r)}`;
+    if (!latestBy.has(k) || latestBy.get(k).sent_at < r.sent_at) latestBy.set(k, r);
+  });
+  latestBy.forEach((r) => r.tasks_done.forEach((t) => t && t.id && data.taskDone.set(t.id, t)));
+  const num = (v) => Number(v) || 0;
+  reports.forEach((r) =>
+    (r && Array.isArray(r.progress) ? r.progress : []).forEach((g) => ["checks_done", "checks_total", "checks_na", "photos_done", "photos_total"].forEach((k) => (g[k] = num(g[k]))))
+  );
   data.reports = [];
   data.sites = new Map();
   data.people = new Map();
@@ -446,7 +456,7 @@ function siteCard(s, ctx) {
   const stage = siteStage(prog);
   const last = s.reports[0];
   const curProc = last && (last.processes || []).length ? shortProc(last.processes[last.processes.length - 1].name) : "";
-  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
+  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key).filter(noteInScope);
   const open = notes.filter((n) => noteStatus(n) === "open");
   const latest = notes.filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1))[0];
   const wk = siteWeekState(s, ctx);
@@ -476,7 +486,7 @@ function siteSectionHtml() {
   const ctx = makeWeekCtx();
   const sites = [...data.sites.values()].filter(siteInScope).filter((s) => matchesQuery(s.name, ...s.persons.values()));
   const info = sites.map((s) => {
-    const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
+    const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open" && noteInScope(n)).length;
     const wk = siteWeekState(s, ctx).st.split(" ")[0];
     const rest = !!(s.completedAt || s.pausedAt);
     const late = !rest && (wk === "miss" || wk === "due");
@@ -504,6 +514,7 @@ function siteSectionHtml() {
 
 /* 現場の声を工程順に（段階ごと。今の段階と未回答のある段階は開いておく） */
 const STAGE_NAMES = ["基礎", "上棟", "外装", "内装", "設備", "引渡し"];
+const STAGE_ART = { 基礎: "stage-1", 上棟: "stage-2", 外装: "stage-3", 内装: "stage-4", 設備: "stage-5", 引渡し: "stage-6" };
 function siteVoicesHtml(s, prog, order = "old") {
   const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
   const stage = siteStage(prog);
@@ -521,11 +532,11 @@ function siteVoicesHtml(s, prog, order = "old") {
   };
   const sec = (name, list, i) => {
     const nOpen = list.filter((n) => noteStatus(n) === "open").length;
-    const isCur = prog && i === stage;
+    const isCur = !!prog && i >= 0 && i === stage;
     const open = list.length && (isCur || nOpen);
     const label = isCur && s.reports[0] && (s.reports[0].processes || []).length ? `${name}（${shortProc(s.reports[0].processes.slice(-1)[0].name)}）` : name;
     return (
-      `<details class="voiceGroup${nOpen ? " hasOpen" : ""}${list.length ? "" : " empty"}"${open ? " open" : ""}><summary><img src="art/${GROUP_ART[name] || "g1"}.webp" alt=""><b>${esc(label)}</b>` +
+      `<details class="voiceGroup${nOpen ? " hasOpen" : ""}${list.length ? "" : " empty"}"${open ? " open" : ""}><summary><img src="art/${STAGE_ART[name] || "stage-1"}.webp" alt=""><b>${esc(label)}</b>` +
       `<span class="vCount${nOpen ? " open" : ""}">${list.length}件</span>${isCur ? `<span class="tag">今の段階</span>` : ""}${icon("chevron", 18)}</summary>` +
       (list.length ? `<div class="voiceList">${list.sort((a, b) => (order === "new" ? (a.at < b.at ? 1 : -1) : a.at < b.at ? -1 : 1)).map(row).join("")}</div>` : "") +
       `</details>`
@@ -597,7 +608,7 @@ function stepperHtml(prog, stage, curProc) {
 function renderMeet(arg) {
   const main = $("main");
   let html =
-    `<section class="hero small meetHero"><img src="art/meeting.webp" class="meetArt" alt="" onerror="this.src='art/site-bg.webp';this.className='siteBg'">` +
+    `<section class="hero small meetHero"><img src="art/meeting.webp" class="headArt" alt="">` +
     `<h1 class="heroTitle">班の打合せモード</h1><p class="heroSub">週次の班の打合せで、各現場の進み具合・報告・疑問をみんなで確認しましょう。<br>← → キーでも現場をめくれます。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
@@ -626,7 +637,7 @@ function renderMeet(arg) {
   const shownReps = weekReps.length ? weekReps : last ? [last] : [];
   const photos = shownReps.flatMap((r) => r.photos || []);
   const checked = shownReps.reduce((t, r) => t + (r.checks || []).reduce((u, c) => u + (c.checked || []).length, 0), 0);
-  const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").sort((a, b) => (a.at < b.at ? -1 : 1));
+  const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open" && noteInScope(n)).sort((a, b) => (a.at < b.at ? -1 : 1));
 
   html += scopeBarHtml();
   html +=
@@ -673,7 +684,16 @@ function renderMeet(arg) {
   const cur = memos.find((m) => m.week === week);
   const prev = memos.find((m) => m.week < week);
   const carried = memos.filter((m) => m.week < week).flatMap((m) => (m.tasks || []).map((t) => ({ ...t, _week: m.week }))).filter((t) => ["open", "over"].includes(taskState(t)));
-  const draft = meetDraft(s.key, week) || { memo: (cur && cur.memo) || "", tasks: (cur && cur.tasks ? cur.tasks : []).map((t) => ({ ...t })) };
+  Object.keys(localStorage)
+    .filter((k) => k.startsWith(LS + "meetDraft|") && k.split("|").pop() < addDays(week, -14))
+    .forEach((k) => localStorage.removeItem(k));
+  let saved = meetDraft(s.key, week);
+  if (saved && cur && (saved.base || "") < cur.at) {
+    setMeetDraft(s.key, week, null);
+    saved = null;
+    toast(`${cur.by || "ほかの人"}さんが保存したメモに切り替えました（書きかけは消えました）`);
+  }
+  const draft = saved || { memo: (cur && cur.memo) || "", tasks: (cur && cur.tasks ? cur.tasks : []).map((t) => ({ ...t })) };
   const people = [...s.persons.entries()];
   const me = getLS("name") || "上司";
   html +=
@@ -723,7 +743,7 @@ function renderMeet(arg) {
       };
     });
     const removed = draft.tasks.filter((t) => t.status === "cancelled" || (!rows.length && false));
-    return { memo: $("meetMemoText").value, tasks: [...tasks, ...removed] };
+    return { memo: $("meetMemoText").value, tasks: [...tasks, ...removed], base: cur ? cur.at : "" };
   };
   const remember = () => setMeetDraft(s.key, week, readDraft());
   main.querySelector(".meetMemo").addEventListener("input", remember);
@@ -777,7 +797,11 @@ async function saveMeeting(s, week, d, idx) {
     location.hash = "#/settings";
     return;
   }
-  const tasks = d.tasks.filter((t) => t.status === "cancelled" || t.text);
+  const before = (memosOf(s).find((x) => x.week === week) || {}).tasks || [];
+  const savedIds = new Set(before.map((t) => t.id));
+  const tasks = d.tasks
+    .map((t) => (!t.text && t.status !== "cancelled" && savedIds.has(t.id) ? { ...t, text: (before.find((b) => b.id === t.id) || {}).text || "", status: "cancelled" } : t))
+    .filter((t) => (t.status === "cancelled" ? savedIds.has(t.id) : t.text));
   if (tasks.some((t) => t.status !== "cancelled" && t.assignee_kind === "person" && !t.assignee_id)) return alert("宿題の担当を選んでください。");
   const m = {
     kind: "genba-meeting-memo",
@@ -795,19 +819,24 @@ async function saveMeeting(s, week, d, idx) {
   };
   // 監督あての宿題（現場ナビが取り込む形）。その監督の端末での現場の番号を入れる
   const siteIdOf = (pk) => (s.reports.find((r) => personKeyOf(r) === pk) || {}).site_id || "";
-  const taskFiles = m.tasks
-    .filter((t) => t.assignee_kind === "person")
-    .map((t) => ({
-      dir: safeName(t.assignee || "名前なし"),
-      name: safeName(`宿題_${s.name}_${t.id.slice(0, 8)}.json`),
-      body: JSON.stringify(
-        { kind: "genba-task", schema: 1, id: t.id, app_version: APP_VERSION, site_id: siteIdOf(t.assignee_id), kouji_no: s.koujiNo || "", site: s.name,
-          to_id: t.assignee_id.startsWith("name:") ? "" : t.assignee_id, to: t.assignee, from: me, text: t.text, due: t.due || "", process_no: t.process_no || null,
-          process: t.process || "", week, status: t.status, at: m.at },
-        null,
-        2
-      ),
-    }));
+  const taskFile = (t, status) => ({
+    dir: safeName(t.assignee || "名前なし"),
+    name: safeName(`宿題_${s.name}_${t.id.slice(0, 8)}.json`),
+    open: status !== "cancelled",
+    body: JSON.stringify(
+      { kind: "genba-task", schema: 1, id: t.id, app_version: APP_VERSION, site_id: siteIdOf(t.assignee_id), kouji_no: s.koujiNo || "", site: s.name,
+        to_id: t.assignee_id.startsWith("name:") ? "" : t.assignee_id, to: t.assignee, from: me, text: t.text, due: t.due || "", process_no: t.process_no || null,
+        process: t.process || "", week, status, at: m.at },
+      null,
+      2
+    ),
+  });
+  const taskFiles = m.tasks.filter((t) => t.assignee_kind === "person").map((t) => taskFile(t, t.status));
+  // 担当を替えた・自分の宿題にした時は、前の担当の端末から消えるよう取り消しを送る
+  before.forEach((b) => {
+    const now = m.tasks.find((t) => t.id === b.id);
+    if (b.assignee_kind === "person" && b.assignee_id && now && (now.assignee_kind !== "person" || now.assignee_id !== b.assignee_id)) taskFiles.push(taskFile(b, "cancelled"));
+  });
   if (demoMode) {
     addMeetingToData(m);
     setMeetDraft(s.key, week, null);
@@ -820,7 +849,7 @@ async function saveMeeting(s, week, d, idx) {
     for (const f of taskFiles) await writeToFolder([REPLY_DIR, f.dir], f.name, f.body);
     addMeetingToData(m);
     setMeetDraft(s.key, week, null);
-    const n = taskFiles.filter((f) => !f.body.includes('"status": "cancelled"')).length;
+    const n = taskFiles.filter((f) => f.open).length;
     toast(`打合せメモを保存しました${n ? `（監督あての宿題 ${n}件を「${REPLY_DIR}」に書き出し）` : ""}`);
   } catch (e) {
     console.error(e);
@@ -830,17 +859,19 @@ async function saveMeeting(s, week, d, idx) {
 }
 // 上司（自分）の宿題は、見守りで済にする（その週のメモを書き直す）
 async function toggleBossTask(s, id, idx) {
-  const m = memosOf(s).find((x) => (x.tasks || []).some((t) => t.id === id));
-  if (!m) return;
+  const orig = memosOf(s).find((x) => (x.tasks || []).some((t) => t.id === id));
+  if (!orig) return;
+  const m = { ...orig, tasks: orig.tasks.map((x) => ({ ...x })), at: new Date().toISOString() };
   const t = m.tasks.find((x) => x.id === id);
   t.status = t.status === "done" ? "open" : "done";
   t.done_at = t.status === "done" ? new Date().toISOString() : "";
-  m.at = new Date().toISOString();
-  if (!demoMode && dirHandle && data.source && data.source.writable) {
+  if (!demoMode) {
+    if (!(dirHandle && data.source && data.source.writable)) return alert("このブラウザでは報告フォルダに書き込めません。Edge か Chrome で、設定から報告フォルダを選び直してください。");
     try {
       await writeToFolder([MEET_DIR], safeName(`打合せ_${m.site}_${m.week}.json`), JSON.stringify(m, null, 2));
     } catch (e) {
-      alert("保存できませんでした。");
+      console.error(e);
+      return alert("保存できませんでした。フォルダへの書き込みが許可されているか確認してください。");
     }
   }
   addMeetingToData(m);
@@ -849,7 +880,7 @@ async function toggleBossTask(s, id, idx) {
 
 function renderWeeks() {
   const main = $("main");
-  let html = `<section class="pageHead"><h1>週の報告</h1><p class="sub">担当者ごと・現場ごとに、週の報告が済んでいるかを並べています。報告は金曜〜翌週の月曜（遅くとも火曜）。休工中の週と完工した後の週は報告しなくてよい週です。</p></section>`;
+  let html = `<section class="hero small artHero"><img src="art/weeks-head.webp" class="headArt" alt=""><h1 class="heroTitle">週の報告</h1><p class="heroSub">担当者ごと・現場ごとに、週の報告が済んでいるかを並べています。<br>報告は金曜〜翌週の月曜（遅くとも火曜）。休工中の週と完工した後の週は報告しなくてよい週です。</p></section>`;
   if (!noData()) html += scopeBarHtml();
   if (noData()) {
     main.innerHTML = html + noDataView();
@@ -1487,7 +1518,7 @@ function closeDrawer() {
 /* ---------- 監督・現場 ---------- */
 function renderSites() {
   const main = $("main");
-  let html = `<section class="pageHead"><h1>担当者</h1><p class="sub">担当者ごとの報告の状況（遅れ・未回答）と、担当している現場を確認できます。育成や報告の声かけに使います。</p></section>`;
+  let html = `<section class="hero small artHero"><img src="art/staff.webp" class="headArt" alt=""><h1 class="heroTitle">担当者</h1><p class="heroSub">担当者ごとの報告の状況（遅れ・未回答）と、担当している現場を確認できます。<br>育成や報告の声かけに使います。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -1768,7 +1799,7 @@ async function init() {
   document.querySelector(".drawerBackdrop").addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => {
     // 打合せモード：← → で現場をめくる（入力中は除く）
-    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && location.hash.startsWith("#/meet") && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "") && $("drawer").hidden) {
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey && $("lightbox").hidden && location.hash.startsWith("#/meet") && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "") && $("drawer").hidden) {
       const b = document.querySelector(e.key === "ArrowLeft" ? ".meetPrev" : ".meetNext");
       if (b && !b.disabled) b.click();
     }
