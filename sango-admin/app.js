@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -373,7 +373,7 @@ async function viewDetail(main, id) {
       <div class="two"><div class="panel"><h3>何が起きたか</h3><div class="pvText">${esc(r.what)}</div></div><div class="panel"><h3>どう対応したか</h3><div class="pvText">${esc(r.how || "（まだ書かれていません）")}</div></div></div>
       ${r.photos.length ? `<div class="panel" style="margin-top:12px"><h3>写真 <span class="note">計 ${r.photos.length} 枚</span></h3><div class="photoGrid" id="dPhotos"></div></div>` : ""}
       <div class="panel" style="margin-top:12px"><h3>管理者による整理${edit ? "" : "　<span class=\"note\">（閲覧専用です。編集は山郷側の管理者のPCで行います）</span>"}</h3>
-        <div class="editRow"><div><label>金額（円）</label><input id="eAmt" type="number" min="0" step="1" value="${esc(a.amount)}" ${edit ? "" : "disabled"}></div>
+        <div class="editRow"><div><label>金額（円）</label><input id="eAmt" type="number" min="0" step="1" value="${esc(a.amount)}" ${edit ? "" : "disabled"}>${r.src === "past" ? `<div class="note" style="margin-top:4px">過去の事例：業者見積額の目安です（自社で対応した作業は、メモに作業時間があります）</div>` : ""}</div>
           <div><label>原因の分類</label><select id="eCause" ${edit ? "" : "disabled"}><option value="">（未選択）</option>${CAUSES.map((c) => `<option ${a.cause === c ? "selected" : ""}>${c}</option>`).join("")}${a.cause && !CAUSES.includes(a.cause) ? `<option selected>${esc(a.cause)}</option>` : ""}</select></div>
           <div><label>メモ</label><textarea id="eMemo" maxlength="500" ${edit ? "" : "disabled"}>${esc(a.memo)}</textarea></div></div>
         <div class="editBtns"><button class="btn primary" id="eDone" ${edit ? "" : "disabled"}>${a.status === "done" ? "整理済み（内容を保存）" : "整理済みにする"}</button>
