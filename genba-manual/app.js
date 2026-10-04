@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 64;
+const APP_VERSION = 65;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "班の打合せで上司が決めた「宿題」を受け取れるようになりました。上司からの返信と一緒に取り込むと、ホームの「やること」に期限付きで出ます。押して「済にする」と、次の報告で上司に届きます" },
   { date: "2026-10-04", type: "fix", text: "事前準備にチェックを入れただけで、まだ撮れない写真が「撮り忘れ」に出ていたのを直しました。チェックの右のボタンも「該当なし」「撮影不要」と書き分けました" },
   { date: "2026-10-04", type: "feature", text: "作業手順の「事前準備」に進み具合（2/6）を出し、全部そろうと「✓ 準備OK」、作業手順タブにも ✓ が付くようにしました（工程の完了には含めません）" },
   { date: "2026-10-04", type: "fix", text: "項目名の右の「該当なし」も、押すと付けていたチェックが外れるようにしました（外れる件数を確認してから切り替わります）" },
@@ -2698,6 +2699,7 @@ async function sendToBox() {
           start_group: GROUPS[site.startGroup || 0].name,
           paused: isPaused(site),
           other_weeks: otherWeeks,
+          tasks_done: (site.tasks || []).filter((t) => t.doneAt).map((t) => ({ id: t.id, done_at: t.doneAt, text: t.text })),
           pauses: site.pauses || [],
           members: site.members || [],
           period: { start, end },
@@ -3726,6 +3728,99 @@ async function saveMemo(it) {
   toast(note.type === "question" ? "疑問として残しました（報告で上司に届きます）" : "メモを残しました");
 }
 
+/* ---------- 打合せの宿題（現場ナビ 見守りの「班の打合せ」で上司が書いた genba-task） ----------
+   返信と同じ「返信／自分の名前」フォルダに届き、返信と一緒に取り込む。現場ごとに site.tasks に置き、済んだら報告の tasks_done で上司に返す */
+function normPersonName(s) {
+  return String(s || "").normalize("NFKC").replace(/\s/g, "");
+}
+async function importTasks(tasks) {
+  const all = await getSites();
+  const me = normPersonName(getSetting(USER_NAME_KEY));
+  const changed = new Set();
+  let added = 0;
+  tasks.forEach((x) => {
+    const s =
+      all.find((y) => y.id === x.site_id) ||
+      all.find((y) => x.kouji_no && normKoujiNo(y.koujiNo) === normKoujiNo(x.kouji_no) && (!x.to || normPersonName(x.to) === me));
+    if (!s) return;
+    s.tasks = s.tasks || [];
+    const v = { id: x.id, text: x.text || "", due: x.due || "", process_no: x.process_no || null, process: x.process || "", from: x.from || "", at: x.at || "", week: x.week || "", status: x.status || "open" };
+    const cur = s.tasks.find((t) => t.id === x.id);
+    if (cur) {
+      if (cur.text !== v.text || cur.due !== v.due || cur.status !== v.status || cur.process_no !== v.process_no) {
+        Object.assign(cur, v);
+        changed.add(s);
+      }
+    } else if (v.status !== "cancelled") {
+      s.tasks.push({ ...v, doneAt: null });
+      changed.add(s);
+      added++;
+    }
+  });
+  for (const s of changed) await dbPut("sites", s);
+  if (changed.size) await refreshSites();
+  return added;
+}
+function openTasks(sites) {
+  return sites
+    .flatMap((s) => (s.tasks || []).filter((t) => t.status !== "cancelled" && !t.doneAt).map((t) => ({ s, t })))
+    .sort((a, b) => ((a.t.due || "9999") < (b.t.due || "9999") ? -1 : (a.t.due || "9999") > (b.t.due || "9999") ? 1 : a.t.at < b.t.at ? -1 : 1));
+}
+function taskDueHtml(t) {
+  if (!t.due) return "期限なし";
+  return t.due < todayKey() ? `<span class="em">期限切れ</span>（${fmtDate(t.due)}まで）` : `${fmtDate(t.due)}まで`;
+}
+function openTaskSheet(site, t) {
+  openSheet("打合せの宿題", (body, close) => {
+    const box = document.createElement("div");
+    box.className = "summaryBox";
+    box.innerHTML =
+      `<b>${esc(t.text)}</b><br>現場：${esc(site.name)}<br>期限：${taskDueHtml(t)}` +
+      (t.process ? `<br>工程：${esc(t.process)}` : "") +
+      `<br><span class="mutedText">${esc(t.from || "上司")}より（${t.week ? fmtDate(t.week) + "〜の週の打合せ" : ""}）</span>`;
+    body.appendChild(box);
+    body.appendChild(
+      sheetButton(t.doneAt ? "まだにする" : "済にする", "btnPrimary btnLarge", async () => {
+        t.doneAt = t.doneAt ? null : new Date().toISOString();
+        await dbPut("sites", site);
+        await refreshSites();
+        toast(t.doneAt ? "宿題を済にしました（次の報告で上司に届きます）" : "宿題をまだに戻しました");
+        close();
+        rerenderCurrentView();
+      })
+    );
+    if (t.process_no) {
+      const pid = `p${String(t.process_no).padStart(2, "0")}`;
+      body.appendChild(
+        sheetButton("この工程のマニュアルを開く", "btnOutline", async () => {
+          close();
+          if (site.id !== currentSiteId) await setCurrentSite(site.id);
+          const it = allManualItems().find((x) => x.cat === pid);
+          currentMTab = "check";
+          showView("groupView");
+          await openGroup(groupOfProcess(pid).id, it && it.id);
+        })
+      );
+    }
+    body.appendChild(sheetButton("閉じる", "btnGhost", close));
+  });
+}
+function openTaskList(sites) {
+  openSheet("打合せの宿題", (body, close) => {
+    openTasks(sites).forEach(({ s, t }) => {
+      const b = document.createElement("button");
+      b.className = "dashRow";
+      b.innerHTML = `<span class="dashIcon green">${icon(ICONS.checkSquare, 22)}</span><span class="dashRowText">${esc(t.text)}<small>${sites.length > 1 ? esc(s.name) + "・" : ""}${taskDueHtml(t)}</small></span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+      b.addEventListener("click", () => {
+        close();
+        setTimeout(() => openTaskSheet(s, t), 250);
+      });
+      body.appendChild(b);
+    });
+    body.appendChild(sheetButton("閉じる", "btnGhost", close));
+  });
+}
+
 /* ---------- 上司からの返信（現場ナビ 見守りが Box の「返信」フォルダに書き出す genba-reply JSON） ---------- */
 // どのメモへの返信かは note_id で探す。ほかの監督あての返信も同じフォルダに入るので、この端末に無いメモへの返信は黙って飛ばす
 async function onRepliesPicked() {
@@ -3734,16 +3829,21 @@ async function onRepliesPicked() {
   input.value = "";
   if (!files.length) return;
   const replies = [];
+  const tasks = [];
   for (const f of files) {
     try {
       const j = JSON.parse(await f.text());
-      (Array.isArray(j) ? j : [j]).forEach((x) => x && x.kind === "genba-reply" && x.note_id && replies.push(x));
+      (Array.isArray(j) ? j : [j]).forEach((x) => {
+        if (x && x.kind === "genba-reply" && x.note_id) replies.push(x);
+        else if (x && x.kind === "genba-task" && x.id) tasks.push(x);
+      });
     } catch (e) {}
   }
-  if (!replies.length) {
-    alert("返信のファイルが見つかりませんでした。Box の「返信」フォルダにある「返信_〜.json」を選んでください。");
+  if (!replies.length && !tasks.length) {
+    alert("返信・宿題のファイルが見つかりませんでした。Box の「返信」フォルダにある「返信_〜.json」「宿題_〜.json」を選んでください。");
     return;
   }
+  const tasksAdded = tasks.length ? await importTasks(tasks) : 0;
   const recs = await dbGetAll("checks");
   const byNote = new Map();
   recs.forEach((r) => (r.notes || []).forEach((n) => byNote.set(n.id, { r, n })));
@@ -3765,8 +3865,9 @@ async function onRepliesPicked() {
   });
   if (changed.size) await dbPutMany("checks", [...changed]);
   await loadSiteChecks();
-  if (added) toast(`上司からの返信を${added}件取り込みました`);
-  else if (already) toast("新しい返信はありませんでした（取り込み済みです）");
+  const got = [added ? `返信 ${added}件` : "", tasksAdded ? `宿題 ${tasksAdded}件` : ""].filter(Boolean).join("・");
+  if (got) toast(`上司からの${got}を取り込みました`);
+  else if (already || tasks.length) toast("新しい返信・宿題はありませんでした（取り込み済みです）");
   else toast("この端末のメモへの返信はありませんでした");
   rerenderCurrentView();
 }
@@ -4309,6 +4410,12 @@ async function renderDash() {
   // ---- やること（その時に必要なものだけ） ----
   const todo = [];
   if (unread.length) todo.push({ icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
+  // 打合せの宿題（期限の近い順に3件まで）
+  const tasks = openTasks(sites);
+  tasks.slice(0, 3).forEach(({ s, t }) =>
+    todo.push({ icon: ICONS.checkSquare, cls: "green", html: `打合せの宿題：${esc(t.text)}<small>${sites.length > 1 ? esc(s.name) + "・" : ""}${taskDueHtml(t)}</small>`, go: () => openTaskSheet(s, t) })
+  );
+  if (tasks.length > 3) todo.push({ icon: ICONS.checkSquare, cls: "muted", html: `ほかの宿題 <b>${tasks.length - 3}件</b>`, go: () => openTaskList(sites) });
   const due = sums.filter((x) => x.reportDue);
   due.forEach((x) =>
     todo.push({
@@ -4344,7 +4451,7 @@ async function renderDash() {
       html: `撮り忘れの品質写真 <b class="em">${curSum.missing.length}件</b>`,
       go: () => openRequired("missing"),
     });
-  if (!unread.length) todo.push({ icon: ICONS.reply, cls: "muted", html: `上司からの返信を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
+  if (!unread.length) todo.push({ icon: ICONS.reply, cls: "muted", html: `上司からの返信・宿題を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
   const todoBox = $("dashTodo");
   todoBox.innerHTML = "";
   if (todo.length === 1 && todo[0].pick) {

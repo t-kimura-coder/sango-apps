@@ -294,9 +294,9 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       </div>
     </div>
     <div class="card">
-      <div class="cardTitle">上司からの返信</div>
-      <div class="mutedText">「現場ナビ 見守り」で上司が書いた返信は、Box の「返信」フォルダに届きます。「返信_〜.json」を選んで取り込むと、気づき・疑問メモの下に表示されます（まとめて選んでOK。ほかの人あての返信は飛ばします）。</div>
-      <button id="settingsReplyBtn" class="btn btnOutline" type="button">返信を取り込む</button>
+      <div class="cardTitle">上司からの返信・宿題</div>
+      <div class="mutedText">「現場ナビ 見守り」で上司が書いた返信と、班の打合せで決まった宿題は、Box の「返信」フォルダに届きます。「返信_〜.json」「宿題_〜.json」を選んで取り込むと、返信は気づき・疑問メモの下に、宿題はホームの「やること」に出ます（まとめて選んでOK。ほかの人あてのものは飛ばします）。</div>
+      <button id="settingsReplyBtn" class="btn btnOutline" type="button">返信・宿題を取り込む</button>
     </div>
     <div class="card" id="manualCard">
       <div class="cardTitle">マニュアル</div>
@@ -493,6 +493,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=64"></script>
+<script src="app.js?v=65"></script>
 </body>
 </html>
