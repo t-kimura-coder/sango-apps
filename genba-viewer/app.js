@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1780,6 +1780,78 @@ function renderSite(key) {
 }
 
 /* ---------- 設定 ---------- */
+/* ---------- 現場ナビのバックアップ（JSON）から写真を取り出す ----------
+   バックアップ・写真の片付けのファイルの中の写真（data URL）を、選んだフォルダに「現場名／工程」ごとの JPG で書き出す。
+   PC の中だけで処理し、どこにも送らない */
+const SHORT_PROC = ["解体仮設", "基礎", "足場", "建方上棟", "屋根下地", "外壁下地断熱", "内部下地", "造作建具", "屋根板金", "電気設備", "塗装", "クロス", "床タイル", "外壁", "美装検査", "外構", "引渡し"];
+let extractFiles = [];
+async function extractBackupPhotos() {
+  if (!extractFiles.length) return alert("先に、現場ナビのバックアップ（JSON）を選んでください。");
+  if (!("showDirectoryPicker" in window)) return alert("このブラウザでは保存先のフォルダを選べません。Edge か Chrome で開いてください。");
+  let out;
+  try {
+    out = await showDirectoryPicker({ mode: "readwrite" });
+  } catch (e) {
+    return; // やめた
+  }
+  showLoading("写真を取り出しています...");
+  let written = 0;
+  let skipped = 0;
+  const seen = new Map();
+  try {
+    for (const f of extractFiles) {
+      let j;
+      try {
+        j = JSON.parse(await f.text());
+      } catch (e) {
+        skipped++;
+        continue;
+      }
+      const names = new Map((j.sites || []).map((s) => [s.id, s.name]));
+      if (j.site_only) names.set(j.site_only.id, j.site_only.name);
+      for (const p of j.photos || []) {
+        const m = /^data:image\/(\w+);base64,/.exec(p.blob || "");
+        if (!m) {
+          skipped++;
+          continue;
+        }
+        const site = safeName(names.get(p.siteId) || `現場_${String(p.siteId || "").slice(0, 6)}`);
+        const no = parseInt(String(p.processId || "").replace(/\D/g, ""), 10);
+        const proc = safeName(SHORT_PROC[no - 1] || "工程なし");
+        const t = new Date(p.takenAt || p.dateKey || Date.now());
+        const base = `${dayKey(t)}_${String(t.getHours()).padStart(2, "0")}${String(t.getMinutes()).padStart(2, "0")}_${p.kind === "record" ? "品質" : "報告"}`;
+        const key = `${site}/${proc}/${base}`;
+        const n = (seen.get(key) || 0) + 1;
+        seen.set(key, n);
+        const name = `${base}${n > 1 ? "_" + n : ""}.${m[1] === "jpeg" ? "jpg" : m[1]}`;
+        const blob = await (await fetch(p.blob)).blob();
+        const d = await (await out.getDirectoryHandle(site, { create: true })).getDirectoryHandle(proc, { create: true });
+        const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+        await w.write(blob);
+        await w.close();
+        written++;
+        if (written % 20 === 0) showLoading(`写真を取り出しています... ${written}枚`);
+      }
+    }
+    toast(`写真 ${written}枚を「${out.name}」に書き出しました${skipped ? `（読めなかったもの ${skipped}件）` : ""}`);
+  } catch (e) {
+    console.error(e);
+    alert("書き出せませんでした。保存先のフォルダへの書き込みが許可されているか確認してください。");
+  } finally {
+    hideLoading();
+  }
+}
+function extractCardHtml() {
+  return (
+    `<div class="card setCard"><h2>現場ナビのバックアップから写真を取り出す</h2>` +
+    `<p class="sub">現場ナビの「バックアップ」や「写真を片付ける」で保存したファイル（JSON）から、写真を JPG にして取り出します。` +
+    `保存先に「現場名／工程」のフォルダを作って、撮った日付の名前で並べます。PC の中だけで処理し、どこにも送りません。</p>` +
+    `<div class="btnRow"><label class="btn btnOutline">${icon("folder", 18)}バックアップを選ぶ<input type="file" id="extractInput" accept="application/json,.json" multiple hidden></label>` +
+    `<button class="btn btnPrimary" id="extractBtn"${extractFiles.length ? "" : " disabled"}>${icon("photo", 18)}保存先を選んで取り出す</button></div>` +
+    `<div id="extractInfo" class="mutedText">${extractFiles.length ? `${extractFiles.length}個のファイルを選んでいます` : "片付けで分けて保存したファイルも、まとめて選べます。"}</div></div>`
+  );
+}
+
 function teamCardHtml() {
   const team = teamList();
   const inTeam = (name) => team.some((x) => normName(x) === normName(name));
@@ -1816,6 +1888,7 @@ function renderSettings() {
     `<div class="card setCard"><h2>表示の色</h2><div class="themeSeg">${[["auto", "端末と同じ"], ["light", "ライト"], ["dark", "ダーク"]]
       .map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${(getLS("theme") || "auto") === k ? "on" : ""}">${l}</button>`)
       .join("")}</div><p class="sub">「端末と同じ」は、Windows の「個人用設定 → 色」に合わせて切り替わります。</p></div>` +
+    extractCardHtml() +
     `<div class="card setCard"><h2>アプリとして使う</h2><p class="sub">Edge / Chrome のアドレスバー右端の「アプリをインストール」から入れると、スタートメニューやタスクバーから開けます。</p></div>` +
     `<div class="mutedText">${esc(APP_NAME)} ver.${APP_VERSION}</div>`;
   main.querySelectorAll("[data-theme-set]").forEach((b) =>
@@ -1837,6 +1910,12 @@ function renderSettings() {
       if (cnt) cnt.textContent = names.size ? `${names.size}人を選んでいます` : "選んでいません（全員を表示）";
     })
   );
+  $("extractInput").addEventListener("change", (e) => {
+    extractFiles = [...e.target.files];
+    $("extractInfo").textContent = extractFiles.length ? `${extractFiles.length}個のファイルを選んでいます` : "";
+    $("extractBtn").disabled = !extractFiles.length;
+  });
+  $("extractBtn").addEventListener("click", extractBackupPhotos);
   $("myName").addEventListener("change", (e) => {
     setLS("name", e.target.value.trim());
     toast("名前を保存しました");
