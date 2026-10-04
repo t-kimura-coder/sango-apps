@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "feature", text: "「管理者に報告する」を、ボタン1つで自動送信にしました（メールの共有画面は不要）。電波が悪くて送れない時は、症例は端末に残り、もう一度送るか、メールで送れます（予備）。設定の「報告の送り方」で、つながるか確認できます。" },
   { date: "2026-10-05", type: "fix", text: "最終バグチェックで見つかった点を直しました（古い値で上書きして最新の変更を消す問題、削除途中の失敗、iPhoneでのコピー、写真ファイル名の取り違えなど）。" },
   { date: "2026-10-05", type: "feature", text: "症例を「LINEで連絡する」ボタンを追加しました（文章と写真をLINEに送れます）。LINEで送った内容は管理ページには載らないので、受け取った方が登録し直してください。送ると症例に「LINE連絡済み」の印が付きます。管理ページに載せたいときは、これまでどおり「管理者に報告する」を押します。" },
   { date: "2026-10-05", type: "feature", text: "「報告済み」「完了」を一覧で見分けられるようにしました（報告済みは薄く、完了はさらに薄く表示）。解決したら症例の詳細から「完了にする」を押してください。写真は「カメラで撮る」「撮影済みを選ぶ」から追加できます（撮影日時も読み取ります）。送信先アドレスのコピーボタンも付けました。" },
@@ -113,6 +114,7 @@ const entryOf = (b, c) => (master && master.entries.find((e) => e.b === b && e.c
 function normMaster(data) {
   if (!data || data.kind !== "sango-support-master" || !Array.isArray(data.buildings) || !Array.isArray(data.categories) || !Array.isArray(data.entries)) throw new Error("山郷サポート用のマスターデータではありません");
   if (data.buildings.some((b) => !b || !b.id || !b.name) || data.categories.some((c) => !c || !c.id || !c.label)) throw new Error("マスターデータの建物または分類の情報が足りません");
+  if (data.api && !(typeof data.api.url === "string" && /^https:\/\/script\.google\.com\//.test(data.api.url) && typeof data.api.token === "string" && data.api.token)) data.api = null; // 送り先は、Google Apps Script のURLだけ許可
   data.entries = data.entries.filter((e) => e && e.b && e.c).map((e) => ({ ...e, companies: Array.isArray(e.companies) ? e.companies.filter(Boolean) : [] }));
   return data;
 }
@@ -367,7 +369,7 @@ async function viewCategory(main, bid, cid) {
 function askReport(rec) {
   openSheet("報告しますか？", (body, close) => {
     body.innerHTML = `<div class="mutedText" style="margin-bottom:12px">症例を保存しました。管理者へ報告すると、管理ページにのって、管理者がまとめて見られます。LINEで連絡した場合は、管理ページには載りません（受け取った方が登録し直します）。あとで「自分の症例」からでも報告できます。</div>
-      <div class="btnCol"><button class="btn btnPrimary twoLine" id="arGo"><span>${icon("send")}管理者に報告する</span><small>管理ページに載ります（メールでBoxへ）</small></button>
+      <div class="btnCol"><button class="btn btnPrimary twoLine" id="arGo"><span>${icon("send")}管理者に報告する</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>
         <button class="btn twoLine" id="arLine"><span>${icon("send")}LINEで連絡する</span><small>管理ページには載りません</small></button>
         <button class="btn" id="arLater">あとで</button></div>`;
     $("arLater").onclick = close;
@@ -648,9 +650,10 @@ async function viewDetail(main, id) {
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
-      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります（メールでBoxへ）</small></button>`}
+      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（すぐ送信）" : "（メールでBoxへ）"}</small></button>`}
       ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
       ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "対応中に戻す" : "完了にする（解決した）"}</button>`}
+      ${r.draft || !hasApi() ? "" : `<button class="btn" id="dMail" style="min-height:40px;font-weight:400">メールで送る（予備）</button>`}
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
     </div>`;
@@ -659,6 +662,7 @@ async function viewDetail(main, id) {
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };
   const ds = $("dSend"); if (ds) ds.onclick = () => sendRecords([r]);
   const dl = $("dLine"); if (dl) dl.onclick = () => sendLine(r);
+  const dm = $("dMail"); if (dm) dm.onclick = () => sendByMail([r]);
   const dd = $("dDone");
   if (dd) dd.onclick = async () => {
     const wasDone = !!r.doneAt;
@@ -684,6 +688,7 @@ async function copyText(text) {
 function boxEmail() { return BOX_UPLOAD_EMAIL || getSetting("box"); }
 async function buildReport(list) {
   const files = [];
+  const jobs = [];
   const outRecs = [];
   let bytes = 0;
   for (const r of list) {
@@ -696,6 +701,7 @@ async function buildReport(list) {
       if (!img) continue;
       const name = safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${p.id.slice(-6)}.jpg`); // 写真IDを入れる（差し替えても別の名前になり、古い写真と取り違えない）
       files.push(new File([img.blob], name, { type: "image/jpeg" }));
+      jobs.push({ name, record_id: r.id, taken_at: new Date(p.takenAt).toISOString(), blob: img.blob });
       bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
     }
@@ -705,9 +711,70 @@ async function buildReport(list) {
   const hms = (() => { const d = new Date(); return pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); })();
   const jsonName = safeName(`症例_${getSetting("name")}_${ymd(Date.now())}_${hms}_${list.length}件.json`); // 時刻を入れる（同じ日に同じ件数を2回送っても、同名で上書きされない）
   const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
-  return { all: [jsonFile, ...files], photoCount: files.length, bytes, jsonName };
+  return { all: [jsonFile, ...files], photoCount: files.length, bytes, jsonName, recs: outRecs, jobs };
 }
+const hasApi = () => !!(master && master.api && master.api.url && master.api.token);
+async function apiCall(body, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms || 40000);
+  try {
+    const res = await fetch(master.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: master.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "送信に失敗しました");
+    return j;
+  } finally { clearTimeout(timer); }
+}
+const blobToBase64 = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1] || ""); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+let apiSending = false;
+
+/** 「管理者に報告する」：窓口（GAS）へ症例と写真を自動で送る。窓口が無い／失敗した時は、メールで送る（予備） */
 async function sendRecords(list) {
+  if (!getSetting("name")) { toast("先に設定で名前を入れてください"); return go("#/settings"); }
+  if (!hasApi()) return sendByMail(list);
+  if (apiSending) return toast("いま送信中です。少しお待ちください");
+  apiSending = true;
+  let status;
+  const showStatus = (msg) => { if (status && status.isConnected) status.textContent = msg; };
+  openSheet("管理者に報告しています", (body) => { body.innerHTML = `<div class="mutedText" id="apiStatus" style="font-size:15px;padding:8px 0">準備しています...</div><div class="mutedText">この画面を開いたまま、少しお待ちください。</div>`; status = $("apiStatus"); });
+  try {
+    if (navigator.onLine === false) throw new Error("オフライン");
+    const prep = await buildReport(list);
+    showStatus(`症例 ${list.length}件を送っています...`);
+    await apiCall({ action: "submit", sender: getSetting("name"), sender_id: deviceId(), app_version: APP_VERSION, records: prep.recs });
+    let done = 0, next = 0;
+    const total = prep.jobs.length;
+    const worker = async () => { // 3枚ずつ並行して送る（1枚ずつより速い）
+      while (next < total) {
+        const job = prep.jobs[next++];
+        await apiCall({ action: "putPhoto", name: job.name, record_id: job.record_id, taken_at: job.taken_at, data: await blobToBase64(job.blob) });
+        done++;
+        showStatus(`写真を送っています（${done}/${total}枚）...`);
+      }
+    };
+    if (total) showStatus(`写真を送っています（0/${total}枚）...`);
+    await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
+    const now = Date.now();
+    for (const r of list) { const cur = await dbGet("records", r.id); if (cur) await dbPut("records", { ...cur, sentAt: now }); }
+    $("sheetRoot").innerHTML = "";
+    toast("管理者に報告しました");
+    render();
+  } catch (e) {
+    console.error(e);
+    $("sheetRoot").innerHTML = "";
+    const offline = navigator.onLine === false || /Failed to fetch|NetworkError|abort|オフライン|Load failed/i.test(String(e && (e.message || e.name)));
+    openSheet("送れませんでした", (body, close) => {
+      body.innerHTML = `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">${offline ? "電波が弱いか、つながっていないようです。" : esc(String(e && e.message || e))}</div>
+        <div class="mutedText" style="margin:10px 0">症例は、この端末に保存されています。電波が良い所で、もう一度送れます。急ぐ時は、メールで送れます（予備）。</div>
+        <div class="btnCol"><button class="btn btnPrimary" id="apiRetry">${icon("send")}もう一度送る</button><button class="btn" id="apiMail">メールで送る（予備）</button><button class="btn" id="apiClose">閉じる</button></div>`;
+      $("apiClose").onclick = close;
+      $("apiRetry").onclick = () => { close(); sendRecords(list); };
+      $("apiMail").onclick = () => { close(); sendByMail(list); };
+    });
+  } finally { apiSending = false; }
+}
+
+/** メールで送る（予備）：共有画面から、Boxのアップロード用メールアドレス宛に送る */
+async function sendByMail(list) {
   const email = boxEmail();
   if (!email) { toast("先に設定で管理者の送信先を入れてください"); return go("#/settings"); }
   if (!getSetting("name")) { toast("先に設定で名前を入れてください"); return go("#/settings"); }
@@ -751,11 +818,13 @@ async function viewSettings(main) {
       <div style="margin:10px 0">${meta ? `<span class="statusOk">取り込み済み</span>　版 ${esc(meta.data.version)}／建物${meta.data.buildings.length}／${fmtDate(meta.importedAt)}` : `<span class="statusWarn">未取り込み</span>`}</div>
       <button class="btn btnPrimary" id="sImport" style="width:100%">データを取り込む</button></div></div>
     <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
-    <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
+    <div class="settingSec"><h3>報告の送り方</h3><div class="formCard"><div id="apiLine">${hasApi() ? `<span class="statusOk">自動で送信</span>（ボタン1つで、症例と写真が管理者に届きます）` : `<span class="statusWarn">メールで送信</span>（業者データに送り先が入っていません）`}</div>${hasApi() ? `<button class="btn wide" id="apiPing" style="margin-top:8px">つながるか確認する</button>` : ""}</div></div>
+    <div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
       1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま「管理者に報告」（管理ページに載ります）。LINEで連絡することもできますが、その場合は管理ページには載らないので、受け取った方が登録し直します<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
+  const ap = $("apiPing"); if (ap) ap.onclick = async () => { toast("確認しています..."); try { const j = await apiCall({ action: "ping" }, 20000); toast("つながっています（" + j.role + "）"); } catch (e) { toast("つながりませんでした：" + String(e && e.message || e).slice(0, 60)); } };
   $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
   $("sName").onchange = (e) => { setSetting("name", e.target.value.trim()); toast("保存しました"); };
   $("sBox").onchange = (e) => { if (!BOX_UPLOAD_EMAIL) { setSetting("box", e.target.value.trim()); toast("保存しました"); } };

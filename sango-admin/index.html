@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header class="appHeader">
@@ -19,6 +19,7 @@
   <span class="brandCopy">現場の症例を整理して知識にする</span>
   <div class="headerSpacer"></div>
   <label class="headerSearch"><span data-icon="search"></span><input id="globalSearch" type="search" placeholder="症例を検索（キーワード・内容・建物名など）" autocomplete="off"></label>
+  <span id="syncInfo" class="syncInfo"></span>
   <span id="modeBadge" class="modeBadge"></span>
   <button id="reloadBtn" class="iconBtn" title="フォルダを読み直す" aria-label="読み直す"></button>
 </header>
@@ -36,6 +37,6 @@
 <div id="toast" hidden></div>
 <input type="file" id="folderInput" webkitdirectory multiple hidden>
 <script src="demo.js?v=1"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

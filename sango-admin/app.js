@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -38,7 +38,7 @@ const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${IC
 const fillIcons = (root) => root.querySelectorAll("[data-icon]").forEach((e) => { if (!e.firstChild) e.innerHTML = icon(e.dataset.icon); });
 
 /* ---------- 状態 ---------- */
-const S = { records: [], admin: { kind: "sango-support-admin", schema: 1, items: {} }, photoGetters: new Map(), dirHandle: null, source: null, demo: false, writable: false };
+const S = { fileRecs: [], fileAdmin: null, fileGetters: new Map(), api: null, apiRecs: [], apiAdmin: null, apiGetters: new Map(), syncedAt: 0, syncError: "", records: [], admin: { kind: "sango-support-admin", schema: 1, items: {} }, photoGetters: new Map(), dirHandle: null, source: null, demo: false, writable: false };
 const F = { src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null, showHidden: false };
 let SUM = { period: "365", src: "all" };
 
@@ -90,11 +90,22 @@ async function ingest(entries) {
       } catch (err) { console.warn("読めないJSON", e.name, err); }
     }
   }
-  S.records = [...recs.values()];
-  S.admin = mergeAdmins(admins);
+  S.fileRecs = [...recs.values()];
+  S.fileAdmin = mergeAdmins(admins);
   if (newer) setTimeout(() => toast("新しい形式のファイルがあります。ビューアが古いかもしれません（読み込めない項目があるかもしれません）"), 500);
-  S.photoGetters = getters;
+  S.fileGetters = getters;
   clearUrls();
+  rebuild();
+}
+/** Boxのフォルダ由来と窓口（GAS）由来を合わせて、画面が使う S.records／S.admin／S.photoGetters を作る（デモの時は窓口を混ぜない） */
+function rebuild() {
+  const recs = new Map();
+  const put = (n) => { const old = recs.get(n.id); if (!old || n.updated >= old.updated) recs.set(n.id, n); };
+  S.fileRecs.forEach(put);
+  if (!S.demo) S.apiRecs.forEach(put);
+  S.records = [...recs.values()];
+  S.admin = mergeAdmins([S.fileAdmin || { items: {} }, ...(S.demo ? [] : [S.apiAdmin || { items: {} }])]);
+  S.photoGetters = new Map([...S.fileGetters, ...(S.demo ? [] : S.apiGetters)]);
   // 読み直しで無くなった建物・分類・担当を絞り込みから外す（0件になって見えなくなるのを防ぐ）
   const ids = (k) => new Set(S.records.map((r) => r[k]));
   const bs = ids("buildingId"), cs = ids("categoryId"), ls = ids("sender");
@@ -102,6 +113,56 @@ async function ingest(entries) {
   [...F.cats].forEach((x) => { if (!cs.has(x)) F.cats.delete(x); });
   if (F.leader && !ls.has(F.leader)) F.leader = "";
 }
+
+/* ---------- 窓口（GAS）：スマホから送られた症例を自動で受け取る ---------- */
+function loadApiCfg() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } }
+async function apiCall(body, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms || 60000);
+  try {
+    const res = await fetch(S.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: S.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "窓口からの返事が不正です");
+    return j;
+  } finally { clearTimeout(timer); }
+}
+function b64ToBlob(b64, mime) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return new Blob([u8], { type: mime || "image/jpeg" }); }
+let apiLoading = false;
+async function loadApiRecords(manual) {
+  if (!S.api || S.demo || apiLoading) return false;
+  apiLoading = true;
+  try {
+    const j = await apiCall({ action: "list" });
+    const recs = [];
+    (j.records || []).forEach((r) => { try { if (r && r.id) recs.push(norm(r, r.sender)); } catch (e) { console.warn("読めない症例", e); } });
+    const g = new Map();
+    recs.forEach((r) => r.photos.forEach((name) => g.set(name, async () => { const x = await apiCall({ action: "getPhoto", name }, 60000); return b64ToBlob(x.data, x.mime); })));
+    S.apiRecs = recs;
+    S.apiAdmin = j.admin && j.admin.items ? j.admin : { items: {} };
+    S.apiGetters = g;
+    S.syncedAt = Date.now(); S.syncError = "";
+    rebuild();
+    return true;
+  } catch (e) {
+    S.syncError = String(e && e.message || e);
+    if (manual) toast("窓口からの読み込みに失敗しました：" + S.syncError.slice(0, 60));
+    return false;
+  } finally { apiLoading = false; renderSync(); }
+}
+function renderSync() {
+  const el = $("syncInfo"); if (!el) return;
+  if (!S.api || S.demo) { el.textContent = ""; return; }
+  el.textContent = S.syncError ? "窓口につながりません" : S.syncedAt ? `自動更新 ${fmtTime(S.syncedAt)}` : "読み込み中…";
+  el.className = "syncInfo" + (S.syncError ? " bad" : "");
+}
+/** 自動更新のあと、いま開いている画面を新しいデータで描き直す（入力中の詳細画面は触らない） */
+function refreshView() {
+  const name = route().name;
+  if (name === "list" && $("listBody")) { renderFilters(); renderListBody(); }
+  else if (name === "summary") { viewSummary($("main")); fillIcons($("main")); }
+  else if (name === "settings") { viewSettings($("main")); fillIcons($("main")); }
+}
+async function autoRefresh() { if (S.api && !S.demo && !document.hidden && await loadApiRecords(false)) refreshView(); else renderSync(); }
 function mergeAdmins(list) { // 項目ごとに、更新が新しい方を残す
   const out = { kind: "sango-support-admin", schema: 1, items: {}, updated_at: "" };
   for (const a of list) {
@@ -178,9 +239,10 @@ async function startDemo() {
   showLoading("デモデータを作っています...");
   const d = await makeDemo();
   S.demo = true; S.dirHandle = null; S.writable = false;
-  S.records = [...d.records.map((r) => norm(r, d.senderOf(r))), ...d.past.map((r) => norm(r, ""))];
-  S.admin = { kind: "sango-support-admin", schema: 1, items: {} };
-  S.photoGetters = new Map([...d.photoFiles].map(([n, f]) => [n, async () => f]));
+  S.fileRecs = [...d.records.map((r) => norm(r, d.senderOf(r))), ...d.past.map((r) => norm(r, ""))];
+  S.fileAdmin = { kind: "sango-support-admin", schema: 1, items: {} };
+  S.fileGetters = new Map([...d.photoFiles].map(([n, f]) => [n, async () => f]));
+  rebuild();
   S.source = { name: "デモ（架空のデータ）", at: Date.now(), files: 0 };
   clearUrls();
   hideLoading();
@@ -197,6 +259,14 @@ async function saveItem(r, patch) {
   if (!canEdit()) { toast("閲覧専用です。編集は設定で「編集する」を入れたPCだけです"); return false; }
   saveBusy = true;
   try {
+    if (S.api && !S.demo) { // 窓口へ保存する
+      const j = await apiCall({ action: "adminSave", id: r.id, patch, by: getLS("name") }, 40000);
+      S.apiAdmin = S.apiAdmin || { items: {} };
+      S.apiAdmin.items = { ...S.apiAdmin.items, [r.id]: j.item };
+      rebuild();
+      toast("保存しました");
+      return true;
+    }
     const items = { ...S.admin.items };
     if (S.dirHandle) { // 他のPCが書いた分を取り込んでから書く（同じ症例は新しい方を残す）
       if ((await S.dirHandle.queryPermission({ mode: "readwrite" })) !== "granted" && (await S.dirHandle.requestPermission({ mode: "readwrite" })) !== "granted") { toast("書き込みの許可がありません"); return false; }
@@ -206,19 +276,19 @@ async function saveItem(r, patch) {
     items[r.id] = { ...(items[r.id] || {}), ...patch, at: Date.now(), by: getLS("name") };
     const next = { ...S.admin, kind: "sango-support-admin", schema: 1, updated_at: new Date().toISOString(), items };
     const text = JSON.stringify(next, null, 1);
-    if (S.demo) { S.admin = next; toast("デモなので保存はされません（画面の上では反映されます）"); return true; }
+    if (S.demo) { S.fileAdmin = next; rebuild(); toast("デモなので保存はされません（画面の上では反映されます）"); return true; }
     if (S.dirHandle) {
       const fh = await S.dirHandle.getFileHandle(ADMIN_FILE, { create: true });
       const w = await fh.createWritable();
       try { await w.write(text); await w.close(); } catch (err) { try { await w.abort(); } catch (e2) {} throw err; }
-      S.admin = next;
+      S.fileAdmin = next; rebuild();
       toast("保存しました");
     } else {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
       a.download = ADMIN_FILE;
       a.click();
-      S.admin = next;
+      S.fileAdmin = next; rebuild();
       toast("このブラウザではフォルダに書けないため、ファイルを保存しました。Boxのフォルダに入れてください");
     }
     return true;
@@ -285,10 +355,10 @@ function render() {
 
 function viewEmpty(main) {
   main.innerHTML = `<div class="empty panel"><h3>症例がまだ読み込まれていません</h3>
-    <p>リーダーが報告した症例が入っているフォルダ（Box Drive の受け取りフォルダ）を選んでください。</p>
-    <p><button class="btn primary" id="emPick">フォルダを選ぶ</button> <button class="btn" id="emDemo">デモデータで見てみる</button></p>
+    <p>設定の「窓口につなぐ」で、スマホから送られた症例を自動で受け取れます。Boxのフォルダ（過去履歴・予備）を選ぶこともできます。</p>
+    <p><button class="btn primary" id="emApi">設定を開く</button> <button class="btn" id="emPick">Boxのフォルダを選ぶ</button> <button class="btn" id="emDemo">デモデータで見てみる</button></p>
     ${S.dirHandle ? `<p><button class="btn" id="emReopen">前回のフォルダを開く</button></p>` : ""}</div>`;
-  $("emPick").onclick = pickFolder; $("emDemo").onclick = startDemo;
+  $("emApi").onclick = () => (location.hash = "#/settings"); $("emPick").onclick = pickFolder; $("emDemo").onclick = startDemo;
   const re = $("emReopen"); if (re) re.onclick = reopenFolder;
 }
 
@@ -491,8 +561,14 @@ function viewSettings(main) {
   const hiddenN = S.records.filter(isHidden).length;
   const n = S.records.length - hiddenN, todo = S.records.filter(isTodo).length, past = S.records.filter((r) => r.src === "past" && !isHidden(r)).length;
   main.innerHTML = `<div class="settingBox"><div class="listTop"><h2>設定</h2></div>
-    <div class="panel"><h3>症例のフォルダ</h3>
-      <p class="note">リーダーが「報告」した症例（JSONと写真）が入っているフォルダ（Box Drive の受け取りフォルダ）を選びます。</p>
+    <div class="panel"><h3>窓口につなぐ（自動で最新になります）</h3>
+      <p class="note">スマホから送られた症例が、数十秒おきに自動で入ります。管理者から教えてもらった、窓口のURLと「管理用の合言葉」を入れてください（この PC のブラウザにだけ保存されます）。</p>
+      <p><input id="apiUrl" class="fSelect" placeholder="窓口のURL（https://script.google.com/macros/s/…/exec）" value="${esc(S.api ? S.api.url : "")}"></p>
+      <p><input id="apiToken" class="fSelect" type="password" placeholder="管理用の合言葉" value="${esc(S.api ? S.api.token : "")}" autocomplete="off"></p>
+      <p><button class="btn primary" id="apiSave">つないで読み込む</button> ${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</p>
+      <p class="note">${S.api ? (S.syncError ? `<span class="statusWarn">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="statusOk">つながっています</span>　最終更新 ${fmtDate(S.syncedAt)} ${fmtTime(S.syncedAt)}　症例 ${S.apiRecs.length}件` : "読み込み中…") : "未接続"}</p></div>
+    <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
+      <p class="note">過去履歴（過去履歴.json）や、メールでBoxに届いた報告が入っているフォルダ（Box Drive の「8.山郷サポート」）を選びます。窓口につないでいれば、新しい症例は窓口から入ります。</p>
       <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
       <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
       ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>
@@ -502,6 +578,19 @@ function viewSettings(main) {
       <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>
     <div class="panel"><h3>原因の分類</h3><p class="note">${CAUSES.join("・")}</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　症例のデータはこのアプリには含まれず、選んだフォルダから毎回読みます。</p></div></div>`;
+  $("apiSave").onclick = async () => {
+    const url = $("apiUrl").value.trim(), token = $("apiToken").value.trim();
+    if (!/^https:\/\/script\.google\.com\//.test(url) || !token) return alert("窓口のURL（https://script.google.com/…）と、管理用の合言葉を入れてください");
+    S.api = { url, token };
+    try { await apiCall({ action: "ping" }, 30000); } catch (e) { S.api = loadApiCfg(); return alert("つながりませんでした：" + String(e && e.message || e)); }
+    setLS("api", JSON.stringify({ url, token }));
+    showLoading("窓口から読み込んでいます...");
+    await loadApiRecords(true);
+    hideLoading();
+    toast("窓口につながりました");
+    renderHeader(); viewSettings($("main")); fillIcons($("main"));
+  };
+  const off = $("apiOff"); if (off) off.onclick = () => { if (!confirm("窓口につなぐのをやめますか？（窓口の症例は、この画面から消えます。再びつなげば戻ります）")) return; setLS("api", ""); S.api = null; S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); rebuild(); renderSync(); viewSettings($("main")); fillIcons($("main")); };
   $("sPick").onclick = pickFolder; $("sReload").onclick = reopenFolder; $("sDemo").onclick = startDemo;
   $("sEdit").onchange = (e) => { setLS("edit", e.target.checked ? "1" : "0"); renderHeader(); toast(e.target.checked ? "編集モードにしました" : "閲覧専用にしました"); };
   $("sName").onchange = (e) => setLS("name", e.target.value.trim());
@@ -510,13 +599,18 @@ function viewSettings(main) {
 /* ---------- 起動 ---------- */
 $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (route().name !== "list") location.hash = "#/list"; else if ($("listBody")) renderListBody(); });
 $("reloadBtn").innerHTML = icon("reload");
-$("reloadBtn").onclick = reopenFolder;
+$("reloadBtn").onclick = async () => { if (S.api && !S.demo) { await loadApiRecords(true); refreshView(); } if (S.dirHandle || S.demo) await reopenFolder(); };
 window.addEventListener("hashchange", render);
 fillIcons(document.body);
 (async () => {
+  S.api = loadApiCfg();
+  if (S.api) await loadApiRecords(false); // 窓口から先に読む
   try { S.dirHandle = (await kvGet("dir")) || null; } catch (e) {}
   if (S.dirHandle) {
     try { if ((await S.dirHandle.queryPermission({ mode: "readwrite" })) === "granted") { await loadFromHandle(); } else boot(); } catch (e) { boot(); }
   } else boot();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  renderSync();
+  setInterval(autoRefresh, 45000); // 開いている間、45秒おきに最新にする
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 })();

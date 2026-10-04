@@ -198,3 +198,7 @@ main { padding: 16px 18px 40px; min-width: 0; }
 /* 非表示の症例 */
 .chip.hid { background: #dcdcd3; color: #6b6f68; }
 .tbl tr.row.isHidden td { opacity: 0.5; }
+
+/* 自動更新の表示 */
+.syncInfo { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.syncInfo.bad { color: var(--warn); font-weight: 700; }
