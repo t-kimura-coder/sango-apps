@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "fix", text: "自動送信の安全性を高めました（送信中は画面を閉じられない、失敗したら残りの写真の送信も止める、送信中に編集した症例は報告済みにしない、窓口のエラーを分かりやすく表示）。" },
   { date: "2026-10-05", type: "feature", text: "「管理者に報告する」を、ボタン1つで自動送信にしました（メールの共有画面は不要）。電波が悪くて送れない時は、症例は端末に残り、もう一度送るか、メールで送れます（予備）。設定の「報告の送り方」で、つながるか確認できます。" },
   { date: "2026-10-05", type: "fix", text: "最終バグチェックで見つかった点を直しました（古い値で上書きして最新の変更を消す問題、削除途中の失敗、iPhoneでのコピー、写真ファイル名の取り違えなど）。" },
   { date: "2026-10-05", type: "feature", text: "症例を「LINEで連絡する」ボタンを追加しました（文章と写真をLINEに送れます）。LINEで送った内容は管理ページには載らないので、受け取った方が登録し直してください。送ると症例に「LINE連絡済み」の印が付きます。管理ページに載せたいときは、これまでどおり「管理者に報告する」を押します。" },
@@ -213,7 +214,7 @@ function openSheet(title, build, onClose) {
   back.appendChild(sheet);
   const close = () => { back.remove(); if (onClose) onClose(); };
   head.querySelector("button").onclick = close;
-  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  back.addEventListener("click", (e) => { if (e.target === back && !back.dataset.locked) close(); });
   $("sheetRoot").appendChild(back);
   build(body, close);
   fillIcons(body);
@@ -715,11 +716,14 @@ async function buildReport(list) {
 }
 const hasApi = () => !!(master && master.api && master.api.url && master.api.token);
 async function apiCall(body, ms) {
+  const api = master && master.api; // 送信中にマスターが入れ替わっても、この送り先を使い続ける
+  if (!api) throw new Error("送り先が設定されていません（業者データを取り込み直してください）");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 40000);
   try {
-    const res = await fetch(master.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: master.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
-    const j = await res.json();
+    const res = await fetch(api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: api.token, ...body }), signal: ctl.signal, redirect: "follow" });
+    let j;
+    try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。電波、またはURL・公開の設定を確認してください"); }
     if (!j.ok) throw new Error(j.error || "送信に失敗しました");
     return j;
   } finally { clearTimeout(timer); }
@@ -733,20 +737,22 @@ async function sendRecords(list) {
   if (!hasApi()) return sendByMail(list);
   if (apiSending) return toast("いま送信中です。少しお待ちください");
   apiSending = true;
-  let status;
+  let status, closeStatus = () => {};
   const showStatus = (msg) => { if (status && status.isConnected) status.textContent = msg; };
-  openSheet("管理者に報告しています", (body) => { body.innerHTML = `<div class="mutedText" id="apiStatus" style="font-size:15px;padding:8px 0">準備しています...</div><div class="mutedText">この画面を開いたまま、少しお待ちください。</div>`; status = $("apiStatus"); });
+  closeStatus = openSheet("管理者に報告しています", (body) => { body.innerHTML = `<div class="mutedText" id="apiStatus" style="font-size:15px;padding:8px 0">準備しています...</div><div class="mutedText">この画面を開いたまま、少しお待ちください。</div>`; status = $("apiStatus"); const back = body.closest(".sheetBack"); back.dataset.locked = "1"; const x = back.querySelector(".sheetHead button"); if (x) x.hidden = true; }); // 送信中は閉じられない
   try {
     if (navigator.onLine === false) throw new Error("オフライン");
     const prep = await buildReport(list);
     showStatus(`症例 ${list.length}件を送っています...`);
-    await apiCall({ action: "submit", sender: getSetting("name"), sender_id: deviceId(), app_version: APP_VERSION, records: prep.recs });
-    let done = 0, next = 0;
+    await apiCall({ action: "submit", sender: getSetting("name"), sender_id: deviceId(), app_version: APP_VERSION, records: prep.recs }, 60000);
+    let done = 0, next = 0, failed = false;
     const total = prep.jobs.length;
-    const worker = async () => { // 3枚ずつ並行して送る（1枚ずつより速い）
-      while (next < total) {
+    const worker = async () => { // 3枚ずつ並行して送る（1枚ずつより速い）。1枚でも失敗したら、残りの送信も止める
+      while (!failed && next < total) {
         const job = prep.jobs[next++];
-        await apiCall({ action: "putPhoto", name: job.name, record_id: job.record_id, taken_at: job.taken_at, data: await blobToBase64(job.blob) });
+        try {
+          await apiCall({ action: "putPhoto", name: job.name, record_id: job.record_id, taken_at: job.taken_at, data: await blobToBase64(job.blob) });
+        } catch (e) { failed = true; throw e; }
         done++;
         showStatus(`写真を送っています（${done}/${total}枚）...`);
       }
@@ -754,13 +760,20 @@ async function sendRecords(list) {
     if (total) showStatus(`写真を送っています（0/${total}枚）...`);
     await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
     const now = Date.now();
-    for (const r of list) { const cur = await dbGet("records", r.id); if (cur) await dbPut("records", { ...cur, sentAt: now }); }
-    $("sheetRoot").innerHTML = "";
-    toast("管理者に報告しました");
+    let edited = 0;
+    for (const r of list) {
+      const cur = await dbGet("records", r.id);
+      if (!cur) continue;
+      const sent = prep.recs.find((x) => x.id === r.id);
+      if (sent && new Date(cur.updatedAt || cur.createdAt).toISOString() !== sent.updated_at) { edited++; continue; } // 送信中に編集された症例は、報告済みにしない（もう一度報告が必要）
+      await dbPut("records", { ...cur, sentAt: now });
+    }
+    closeStatus();
+    toast(edited ? "報告しました。送信中に変えた症例は、もう一度報告してください" : "管理者に報告しました");
     render();
   } catch (e) {
     console.error(e);
-    $("sheetRoot").innerHTML = "";
+    closeStatus();
     const offline = navigator.onLine === false || /Failed to fetch|NetworkError|abort|オフライン|Load failed/i.test(String(e && (e.message || e.name)));
     openSheet("送れませんでした", (body, close) => {
       body.innerHTML = `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">${offline ? "電波が弱いか、つながっていないようです。" : esc(String(e && e.message || e))}</div>
