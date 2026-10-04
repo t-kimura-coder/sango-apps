@@ -2,10 +2,11 @@
 /* 設備サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const ART_V = 1; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = ""; // 管理者の受け取り用Boxアドレス。空なら設定で入力（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "電話ボタンを押すと、相手の名前と番号を確認してから電話をかけるようにしました。" },
   { date: "2026-10-04", type: "feature", text: "ホーム画面のアプリアイコンを新しくしました（追加し直すと反映されます）。" },
   { date: "2026-10-04", type: "fix", text: "電話ボタンをカードの下に移し、設備名が読みやすくなりました。" },
   { date: "2026-10-04", type: "fix", text: "設定ボタンを歯車の形にしました。" },
@@ -239,7 +240,7 @@ async function viewBuilding(main, bid) {
       return `<div class="catCard${e.none ? " none" : ""}" data-c="${esc(c.id)}" role="button" tabindex="0">
         <div class="catIcon">${catIconHtml(c)}</div>
         <div class="catBody"><div class="catLabel">${esc(c.label)}</div><div class="catSub ${s.cls}">${esc(s.text)}</div></div>
-        ${solo ? `<a class="callBtn" href="${telHref(solo.phone)}" data-stop="1">${icon("phone")}電話</a>` : e.companies.length > 1 ? `<span class="chipN">${e.companies.length}社</span>` : ""}
+        ${solo ? `<a class="callBtn" href="${telHref(solo.phone)}" data-stop="1" data-name="${esc(solo.name)}" data-phone="${esc(solo.phone)}">${icon("phone")}電話</a>` : e.companies.length > 1 ? `<span class="chipN">${e.companies.length}社</span>` : ""}
       </div>`;
     }).join("")}</div>
     <div class="sectionHead"><h3>過去の記録</h3><span class="rule"></span><span class="count">${recs.length}件</span></div>
@@ -257,17 +258,31 @@ function openCategory(bid, cid) {
     e.companies.forEach((co) => {
       h += `<div class="vendorCard"><div class="vName">${esc(co.name)}</div>
         <div class="vSub">${co.contact ? "担当：" + esc(co.contact) : "担当者名は未登録"}</div>
-        ${co.phone ? `<a class="callBtn big" href="${telHref(co.phone)}">${icon("phone")}${esc(co.phone)}</a>` : `<span class="callBtn big off">電話番号は未登録</span>`}</div>`;
+        ${co.phone ? `<a class="callBtn big" href="${telHref(co.phone)}" data-name="${esc(co.name + (co.contact ? "（" + co.contact + "）" : ""))}" data-phone="${esc(co.phone)}">${icon("phone")}${esc(co.phone)}</a>` : `<span class="callBtn big off">電話番号は未登録</span>`}</div>`;
     });
     if (!e.none && !e.companies.length) h += `<div class="empty">この設備の担当業者はまだ登録されていません。</div>`;
     if (e.note) h += `<div class="vendorCard"><div class="vSub" style="margin:0">備考</div><ul class="noteList">${e.note.split("／").map((n) => `<li>${esc(n.trim())}</li>`).join("")}</ul></div>`;
     const hq = master.hq || {};
-    if (hq.phone) h += `<div class="vendorCard"><div class="vName">${esc(hq.name || "本社")}</div><div class="vSub">迷ったら・大工が必要な時は本社へ</div><a class="callBtn big" href="${telHref(hq.phone)}">${icon("phone")}${esc(hq.phone)}</a></div>`;
+    if (hq.phone) h += `<div class="vendorCard"><div class="vName">${esc(hq.name || "本社")}</div><div class="vSub">迷ったら・大工が必要な時は本社へ</div><a class="callBtn big" href="${telHref(hq.phone)}" data-name="${esc(hq.name || "本社")}" data-phone="${esc(hq.phone)}">${icon("phone")}${esc(hq.phone)}</a></div>`;
     h += `<div class="btnCol"><button class="btn btnPrimary" id="shAdd">${icon("plus")}この設備の記録を追加</button></div>`;
     body.innerHTML = h;
     $("shAdd").onclick = () => { close(); go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`); };
   });
 }
+
+/* ---------- 電話の確認（誤タップ対策：押してもすぐには電話せず、確認してから） ---------- */
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a.callBtn[href^='tel:']");
+  if (!a || a.dataset.confirmed) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openSheet("電話をかけますか？", (body, close) => {
+    body.innerHTML = `<div class="vendorCard"><div class="vName">${esc(a.dataset.name || "")}</div><div class="vSub" style="margin:2px 0 0">${esc(a.dataset.phone || "")}</div></div>
+      <div class="btnCol"><a class="btn btnPrimary" id="callGo" href="${esc(a.getAttribute("href"))}">${icon("phone")}電話する</a><button class="btn" id="callNo">やめる</button></div>`;
+    $("callNo").onclick = close;
+    $("callGo").onclick = () => setTimeout(close, 300);
+  });
+}, true);
 
 /* ---------- 記録リスト（共通） ---------- */
 async function fillRecList(box, recs, emptyText) {
