@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -170,6 +170,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
   data.people = new Map();
   data.notes = new Map();
   data.replies = new Map();
+  const mineReplies = [];
   data.statuses = statuses.filter((x) => x && x.status && x.at);
   const valid = reports.filter((r) => r && r.kind === "genba-photo-report" && r.period).sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
   koujiBySiteId = new Map();
@@ -205,6 +206,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
       (c.notes || []).forEach((n) => {
         const typeId = n.type_id || TYPE_BY_LABEL[n.type] || "notice";
         const id = n.id || `${sk}|${c.item}|${n.at}|${n.text}`; // 古い報告のメモには番号が無い
+        (n.replies_mine || []).forEach((x) => x && x.id && mineReplies.push({ kind: "genba-reply", id: x.id, note_id: id, from: n.by || r.sender || "", from_role: "監督", text: x.text || "", at: x.at || r.sent_at }));
         const prev = data.notes.get(id);
         const ver = n.updated_at || r.sent_at;
         if (prev && prev._ver > ver) return; // 古い報告に入っていた同じメモは、新しい方を使う
@@ -237,6 +239,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
   data.sites.forEach((s) => s.reports.sort((a, b) => (a.period.end < b.period.end ? 1 : a.period.end > b.period.end ? -1 : a.sent_at < b.sent_at ? 1 : -1)));
   data.people.forEach((p) => p.reports.sort((a, b) => (a.sent_at < b.sent_at ? 1 : -1)));
   (replies || []).forEach(addReplyToData);
+  mineReplies.forEach(addReplyToData);
   // 現場ナビからの知らせ（完工・進行中に戻す・休工・再開・アプリ外／報告なしの週）を時刻順に当てはめる。
   // 報告の中の休工の印（paused）も、その報告の時点の状態として使う
   data.sites.forEach((site) => {
@@ -296,10 +299,12 @@ function applyGas() {
     if (!p.note_id) return;
     if (p.deleted) return data.notes.delete(p.note_id);
     const sk = siteKeyOf({ kouji_no: p.kouji_no, site_id: p.site_id, site: p.site });
-    const pk = [...data.people.values()].find((x) => normName(x.name) === normName(m.from)) ? [...data.people.values()].find((x) => normName(x.name) === normName(m.from)).key : "name:" + m.from;
-    if (!data.sites.has(sk)) data.sites.set(sk, { key: sk, name: p.site || "（現場名なし）", koujiNo: p.kouji_no || "", personKey: pk, personName: m.from, persons: new Map([[pk, m.from]]), members: new Set(), reports: [] });
-    else data.sites.get(sk).persons.set(pk, data.sites.get(sk).persons.get(pk) || m.from);
-    if (!data.people.has(pk)) data.people.set(pk, { key: pk, name: m.from, sites: new Set([sk]), reports: [] });
+    const byName = [...data.people.values()].find((x) => normName(x.name) === normName(p.sender || m.from));
+    const pk = p.sender_id && data.people.has(p.sender_id) ? p.sender_id : byName ? byName.key : p.sender_id || "name:" + m.from;
+    const pname = (data.people.get(pk) || {}).name || p.sender || m.from;
+    if (!data.sites.has(sk)) data.sites.set(sk, { key: sk, name: p.site || "（現場名なし）", koujiNo: p.kouji_no || "", personKey: pk, personName: pname, persons: new Map([[pk, pname]]), members: new Set(), reports: [] });
+    else data.sites.get(sk).persons.set(pk, data.sites.get(sk).persons.get(pk) || pname);
+    if (!data.people.has(pk)) data.people.set(pk, { key: pk, name: pname, sites: new Set([sk]), reports: [] });
     else data.people.get(pk).sites.add(sk);
     const prev = data.notes.get(p.note_id);
     const ver = p.updated_at || m.at;
@@ -322,7 +327,8 @@ function applyGas() {
       siteId: p.site_id || "",
       siteName: p.site || "",
       personKey: pk,
-      personName: m.from,
+      personName: pname,
+      gasFrom: m.from, // 合言葉の名前（返信の宛先に使う）
       itemId: p.item_id || "",
       item: p.item || "",
       itemNo: p.item_no || "",
@@ -346,6 +352,10 @@ async function syncGas(manual = false) {
   try {
     for (let round = 0; round < 10; round++) {
       const j = await gasCall({ action: "sync", since: gasStore.cursor || 0 });
+      if (j.reset) {
+        gasStore.cursor = 0;
+        continue;
+      }
       (j.messages || []).forEach((m) => {
         if (m.kind === "note") {
           if (!gasStore.notes[m.id] && normName(m.from) !== me) fresh++;
@@ -439,10 +449,10 @@ function addReplyToData(rp) {
 // 状態：疑問は 未回答 → 返信済み → 解決済み（解決は監督が現場ナビで付ける）。
 // 職人さんの要望も返事が要ることが多いので、返信するまで「未回答」に数える。気づきは返信したら「返信済み」
 function noteStatus(n) {
-  if (n.type === "contact") return n.contact && n.contact.pending ? "waiting" : "resolved"; // その場で解決して残したもの
   if (n.type === "question" && n.status === "resolved") return "resolved";
   const reps = data.replies.get(n.id) || [];
-  if (reps.length && reps[reps.length - 1].from_role === "監督" && (n.type === "question" || n.type === "request")) return "open"; // 監督が書き足した＝また答えを待っている
+  if (reps.length && reps[reps.length - 1].from_role === "監督") return "open"; // 監督が書き足した＝また答えを待っている（種類に関わらず）
+  if (n.type === "contact") return n.contact && n.contact.pending ? "waiting" : "resolved"; // その場で解決して残したもの
   if (reps.length) return "replied";
   return n.type === "question" || n.type === "request" ? "open" : "";
 }
@@ -1378,8 +1388,8 @@ async function sendReply(n, text) {
   const fileName = safeName(`返信_${n.siteName}_${n.personName}_${stamp()}_${rp.id.slice(0, 6)}.json`);
   const body = JSON.stringify(rp, null, 2);
   // GAS で届いた疑問への返信は、サンプル表示中でも本物として送る
-  const viaGas = (!demoMode || n.viaGas) && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.personName, payload: rp }));
-  if (viaGas && (n.viaGas || !(dirHandle && data.source && data.source.writable))) {
+  const viaGas = (!demoMode || n.viaGas) && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.gasFrom || n.personName, payload: rp }));
+  if (viaGas && n.viaGas) {
     addReplyToData(rp);
     toast("返信を送りました（監督の現場ナビにすぐ届きます）");
     return true;

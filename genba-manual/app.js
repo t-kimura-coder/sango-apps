@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 71;
+const APP_VERSION = 72;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "fix", text: "上司とのやりとりまわりを直しました（届いた返信が消えることがある、書きかけのメモが消える、合言葉なしの人の書き足しが上司に届かない、など）" },
   { date: "2026-10-05", type: "feature", text: "上司とのやりとりが、すぐ届くようになりました（設定の「上司とのやりとり」で合言葉を入れた人）。疑問・やりとりは週の報告を待たずに上司に届き、上司からの返信と宿題は開いた時に自動で受け取ります。疑問には「書き足す」で返事を続けられます（文字だけ。写真はこれまで通り報告で）" },
   { date: "2026-10-04", type: "fix", text: "報告の取り消しまわりを直しました（取り消せるのは一番新しい報告だけ、写真付きの「アプリ外で報告」を取り消しても写真が残る、済んだ週に追加で送った写真も報告済みにできる）。やりとりの書きかけが消えることがあったのも直しました" },
   { date: "2026-10-04", type: "feature", text: "その週の報告が済んでいる時は、報告タブの下のボタンが「✓ 今週は報告済み」になります。送り間違えた時は、そこか「過去の報告」から報告を取り消して、写真を「送る写真」に戻して送り直せます（上司の画面では新しい方に置き換わります）" },
@@ -2575,6 +2576,7 @@ async function buildCheckSummary(siteId, start, end) {
         text: n.text,
         at: n.at,
         by: n.by || "",
+        replies_mine: (n.replies || []).filter((r) => r.mine).map((r) => ({ id: r.id, text: r.text, at: r.at })),
       }));
     const naChecks = Object.entries(rec.naChecks || {})
       .filter(([, v]) => !v.off && inPeriod(v.at))
@@ -3754,7 +3756,7 @@ function renderMemoSection(it) {
           `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc(noteLabel(n))}</span>` +
           `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
           (n.type === "question"
-            ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).length ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).length ? "返信あり" : "回答待ち"}</button>`
+            ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).some((r) => !r.mine) ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).some((r) => !r.mine) ? "返信あり" : "回答待ち"}</button>`
             : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
           (n.type !== "notice" || (n.replies || []).length ? `<button class="noteMore" data-more="${esc(n.id)}">${icon(ICONS.reply, 14)}書き足す</button>` : "") +
@@ -3982,6 +3984,9 @@ function resolveContact(it, id) {
     body.appendChild(ta);
     body.appendChild(
       sheetButton("残す", "btnPrimary btnLarge", async () => {
+        const rec = checkRecOf(it.id);
+        const n = (rec.notes || []).find((x) => x.id === id);
+        if (!n || !n.contact) return close();
         n.contact.result = ta.value.trim();
         n.contact.pending = false;
         n.contact.resolvedAt = new Date().toISOString();
@@ -4215,9 +4220,20 @@ async function flushGas() {
   try {
     for (let i = 0; i < box.length; i += 20) {
       const part = box.slice(i, i + 20);
-      await gasCall({ action: "postMany", msgs: part });
-      const sent = new Set(part.map((m) => m.kind + "|" + m.id + "|" + m.ver));
-      setGasOutbox(gasOutbox().filter((m) => !sent.has(m.kind + "|" + m.id + "|" + m.ver)));
+      const j = await gasCall({ action: "postMany", msgs: part });
+      const results = j.results || part.map((m) => ({ kind: m.kind, id: m.id, ok: true }));
+      const key = (m) => m.kind + "|" + m.id;
+      const okKeys = new Set(results.filter((r) => r.ok).map(key));
+      const ngKeys = new Set(results.filter((r) => !r.ok).map(key));
+      const sentVer = new Map(part.map((m) => [key(m), m.ver]));
+      let dropped = 0;
+      setGasOutbox(
+        gasOutbox()
+          .filter((m) => !(okKeys.has(key(m)) && sentVer.get(key(m)) === m.ver)) // 送った版が届いた（送信中に直した新しい版は残す）
+          .map((m) => (ngKeys.has(key(m)) && sentVer.get(key(m)) === m.ver ? { ...m, tries: (m.tries || 0) + 1 } : m))
+          .filter((m) => ((m.tries || 0) >= 5 ? (dropped++, false) : true))
+      );
+      if (dropped) toast(`送れないやりとりが${dropped}件ありました（中身が大きすぎる等）。上司に直接伝えてください`);
     }
   } catch (e) {
     console.warn("やりとりを送れませんでした（あとで送り直します）", e);
@@ -4246,6 +4262,8 @@ function notePayload(it, n, extra = {}) {
     text: n.text,
     at: n.at,
     by: n.by || getSetting(USER_NAME_KEY),
+    sender: getSetting(USER_NAME_KEY),
+    sender_id: deviceId(),
     updated_at: n.updatedAt || n.at,
     contact: n.type === "contact" && c ? { who: c.who, side: c.side, via: c.via, result: c.result || "", pending: !!c.pending, in_line: !!c.inLine, photo_ids: c.photoIds || [], resolved_at: c.resolvedAt || "" } : null,
     ...extra,
@@ -4267,12 +4285,17 @@ async function syncGas(manual = false) {
     for (let round = 0; round < 10; round++) {
       const since = Number(getSetting(GAS_CURSOR_KEY) || 0);
       const j = await gasCall({ action: "sync", since });
+      if (j.reset) {
+        setSetting(GAS_CURSOR_KEY, "0"); // 窓口のシートが作り直された時は最初から
+        continue;
+      }
       const msgs = j.messages || [];
       const fromOthers = msgs.filter((m) => normPersonName(m.from) !== me);
       // 返信：元の疑問（この端末にあるメモ）に付ける
       const reps = fromOthers.filter((m) => m.kind === "reply");
       if (reps.length) {
-        const recs = await dbGetAll("checks");
+        // 今の現場の分は、画面が持っているメモに直接付ける（別のコピーに付けて、画面側の保存で上書きされないように）
+        const recs = (await dbGetAll("checks")).map((r) => (r.siteId === currentSiteId && siteCheckRecs[r.itemId] ? siteCheckRecs[r.itemId] : r));
         const byNote = new Map();
         recs.forEach((r) => (r.notes || []).forEach((n) => byNote.set(n.id, { r, n })));
         const changed = new Set();
@@ -4295,9 +4318,12 @@ async function syncGas(manual = false) {
       if (!j.more) break;
     }
     if (replies || tasks) {
-      await loadSiteChecks();
       toast(`上司から${[replies ? `返信 ${replies}件` : "", tasks ? `宿題 ${tasks}件` : ""].filter(Boolean).join("・")}が届きました`);
-      rerenderCurrentView();
+      const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "") || !$("sheet").hidden;
+      if (!typing) {
+        await loadSiteChecks();
+        rerenderCurrentView();
+      }
     } else if (manual) toast("新しい返信・宿題はありません");
     $("gasStatus") && ($("gasStatus").textContent = `最後に受け取った時刻：${fmtDateTime(new Date().toISOString())}`);
   } catch (e) {
@@ -4320,13 +4346,16 @@ function addNoteFollowup(it, id) {
     if (!gasOn()) {
       const w = document.createElement("div");
       w.className = "mutedText";
-      w.textContent = "設定の「上司とのやりとり」で合言葉を入れると、すぐ上司に届きます。入れていない時は、次の週の報告で届きます。";
+      w.textContent = "設定の「上司とのやりとり」で合言葉を入れると、すぐ上司に届きます。入れていない時は、次の週の報告と一緒に届きます。";
       body.appendChild(w);
     }
     body.appendChild(
       sheetButton("書き足す", "btnPrimary btnLarge", async () => {
         const text = ta.value.trim();
         if (!text) return ta.focus();
+        const rec = checkRecOf(it.id); // 開いている間に返信が届いていても消さないよう、今のメモを取り直す
+        const n = (rec.notes || []).find((x) => x.id === id);
+        if (!n) return close();
         const me = getSetting(USER_NAME_KEY);
         const r = { id: newId(), from: me, text, at: new Date().toISOString(), readAt: new Date().toISOString(), mine: true };
         n.replies = n.replies || [];
