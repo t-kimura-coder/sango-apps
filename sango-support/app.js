@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "fix", text: "最終バグチェックで見つかった点を直しました（古い値で上書きして最新の変更を消す問題、削除途中の失敗、iPhoneでのコピー、写真ファイル名の取り違えなど）。" },
   { date: "2026-10-05", type: "feature", text: "症例を「LINEで連絡する」ボタンを追加しました（文章と写真をLINEに送れます）。LINEで送った内容は管理ページには載らないので、受け取った方が登録し直してください。送ると症例に「LINE連絡済み」の印が付きます。管理ページに載せたいときは、これまでどおり「管理者に報告する」を押します。" },
   { date: "2026-10-05", type: "feature", text: "「報告済み」「完了」を一覧で見分けられるようにしました（報告済みは薄く、完了はさらに薄く表示）。解決したら症例の詳細から「完了にする」を押してください。写真は「カメラで撮る」「撮影済みを選ぶ」から追加できます（撮影日時も読み取ります）。送信先アドレスのコピーボタンも付けました。" },
   { date: "2026-10-04", type: "fix", text: "バグチェックで見つかった点を直しました（報告の送り方を「準備→メールを開く」の2段階にして、iPhoneで共有画面が開かない問題を避けるなど）。" },
@@ -415,7 +416,7 @@ async function sendLine(r) {
     $("lnCopy").onclick = () => copyText(text).then((ok) => toast(ok ? "文章をコピーしました" : "コピーできませんでした"));
     const go = (data, copy) => { // 押した直後に共有を呼ぶ
       if (copy) copyText(text);
-      if (navigator.canShare && !navigator.canShare(data)) { alert("この端末ではこの形では共有できません。「文章だけ」「写真だけ」を試してください。"); return; }
+      if (!navigator.share || (navigator.canShare && !navigator.canShare(data))) { alert("この端末ではこの形では共有できません。「文章だけ」「写真だけ」を試してください。"); return; }
       navigator.share(data).then(async () => {
         if (marked) return;
         if (confirm("LINEで送れましたか？\n送れていたら「OK」で、「LINE連絡済み」の印を付けます。")) {
@@ -453,8 +454,9 @@ document.addEventListener("click", (e) => {
 /* ---------- 症例リスト（共通） ---------- */
 function stateTag(r) { // 下書き／完了／報告済み／未報告
   if (r.draft) return `<span class="tag warn">下書き</span>`;
-  if (r.doneAt) return `<span class="tag done">完了</span>`;
-  return (r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`) + (r.lineAt ? `<span class="tag line">LINE連絡済み</span>` : "");
+  const line = r.lineAt ? `<span class="tag line">LINE連絡済み</span>` : "";
+  if (r.doneAt) return `<span class="tag done">完了</span>` + line;
+  return (r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`) + line;
 }
 async function fillRecList(box, recs, emptyText) {
   if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
@@ -482,13 +484,14 @@ function takePrefill() {
   try { const v = sessionStorage.getItem(P + "prefill") || ""; sessionStorage.removeItem(P + "prefill"); return v; } catch (e) { return ""; }
 }
 async function viewForm(main, r) {
+  if (!master) { toast("先に設定で業者データを取り込んでください"); goReplace("#/settings"); return; }
   const editId = r.q.get("id");
   if (!form || form.key !== location.hash) {
     if (editId) {
       const rec = await dbGet("records", editId);
       if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
-      const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: (await dbGet("images", p.id)).blob, saved: true })));
+      const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: ((await dbGet("images", p.id)) || {}).blob || p.thumb, saved: true })));
       form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, photos: full, removed: [] };
     } else {
       form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
@@ -578,7 +581,7 @@ async function viewForm(main, r) {
     saving = false;
     const bid = f.buildingId;
     form = null;
-    toast(draft ? "下書きを保存しました" : "保存しました");
+    toast(draft ? "下書きを保存しました" : f.sentAt ? "保存しました。内容を変えたので、管理者にも伝えるには、もう一度「管理者に報告する」を押してください" : "保存しました");
     const cid = rec.categoryId;
     goReplace(draft ? "#/mine" : cid ? `#/b/${encodeURIComponent(bid)}/c/${encodeURIComponent(cid)}` : "#/b/" + encodeURIComponent(bid));
     if (!draft) setTimeout(() => askReport(rec), 400);
@@ -652,21 +655,22 @@ async function viewDetail(main, id) {
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
     </div>`;
   const box = $("dPhotos");
-  if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => showLightbox((await dbGet("images", p.id)).blob); box.appendChild(im); });
+  if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => { const img = await dbGet("images", p.id); showLightbox(img ? img.blob : p.thumb); }; box.appendChild(im); });
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };
   const ds = $("dSend"); if (ds) ds.onclick = () => sendRecords([r]);
   const dl = $("dLine"); if (dl) dl.onclick = () => sendLine(r);
   const dd = $("dDone");
   if (dd) dd.onclick = async () => {
     const wasDone = !!r.doneAt;
-    await dbPut("records", { ...r, doneAt: wasDone ? null : Date.now(), updatedAt: Date.now() });
+    const cur = (await dbGet("records", id)) || r;
+    await dbPut("records", { ...cur, doneAt: wasDone ? null : Date.now(), updatedAt: Date.now() });
     toast(wasDone ? "対応中に戻しました" : "完了にしました。管理者にも伝えるには、もう一度「管理者へ報告する」を押してください");
     render();
   };
   $("dDel").onclick = async () => {
     if (!confirm("この症例を削除しますか？写真も消えます。")) return;
-    for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
     await dbDel("records", id);
+    for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
     toast("削除しました");
     goReplace("#/mine");
   };
@@ -675,7 +679,7 @@ async function viewDetail(main, id) {
 /* ---------- 管理者へ報告する（Boxのメール宛 ＋ 共有シート） ---------- */
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* 次の方法へ */ }
-  try { const t = document.createElement("textarea"); t.value = text; t.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(t); t.select(); const ok = document.execCommand("copy"); t.remove(); return ok; } catch (e) { return false; }
+  try { const t = document.createElement("textarea"); t.value = text; t.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px"; document.body.appendChild(t); t.focus(); t.select(); t.setSelectionRange(0, text.length); const ok = document.execCommand("copy"); t.remove(); return ok; } catch (e) { return false; }
 }
 function boxEmail() { return BOX_UPLOAD_EMAIL || getSetting("box"); }
 async function buildReport(list) {
@@ -690,7 +694,7 @@ async function buildReport(list) {
       n++;
       const img = await dbGet("images", p.id);
       if (!img) continue;
-      const name = safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${n}.jpg`);
+      const name = safeName(`${r.buildingName}_${r.categoryName || "分類"}_${mmdd(r.createdAt)}_${r.id.slice(-4)}_${p.id.slice(-6)}.jpg`); // 写真IDを入れる（差し替えても別の名前になり、古い写真と取り違えない）
       files.push(new File([img.blob], name, { type: "image/jpeg" }));
       bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
@@ -698,7 +702,8 @@ async function buildReport(list) {
     outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
   }
   const payload = { kind: "sango-support-records", schema: 1, app_version: APP_VERSION, master_version: master ? master.version : "", sent_at: new Date().toISOString(), sender: getSetting("name"), sender_id: deviceId(), records: outRecs };
-  const jsonName = safeName(`症例_${getSetting("name")}_${ymd(Date.now())}_${list.length}件.json`);
+  const hms = (() => { const d = new Date(); return pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); })();
+  const jsonName = safeName(`症例_${getSetting("name")}_${ymd(Date.now())}_${hms}_${list.length}件.json`); // 時刻を入れる（同じ日に同じ件数を2回送っても、同名で上書きされない）
   const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
   return { all: [jsonFile, ...files], photoCount: files.length, bytes, jsonName };
 }
@@ -726,7 +731,7 @@ async function sendRecords(list) {
         close();
         if (confirm("メールを送れましたか？\n送れていたら「OK」で、報告済みにします。")) {
           const now = Date.now();
-          for (const r of list) await dbPut("records", { ...r, sentAt: now });
+          for (const r of list) { const cur = await dbGet("records", r.id); if (cur) await dbPut("records", { ...cur, sentAt: now }); } // 最新の内容に印だけ付ける（古い値で上書きしない）
           toast("報告済みにしました");
           render();
         } else toast("報告済みにはしていません");

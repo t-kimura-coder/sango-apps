@@ -5,3 +5,12 @@ desktop.ini
 *.pdf
 *.xls
 *.xlsx
+# 社内データの誤コミット防止（マスターパック・過去履歴・管理データ・CSVなど）
+*.json
+*.csv
+design_originals/
+master_pack/
+admin_pack/
+過去履歴*
+マスター_*
+管理データ*

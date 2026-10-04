@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -48,11 +48,12 @@ function hideLoading() { $("loading").hidden = true; }
 const canEdit = () => getLS("edit") === "1";
 
 /* ---------- データの取り込み ---------- */
+const str = (v) => (v == null ? "" : String(v));
 function norm(r, sender) {
   return {
     id: r.id, src: r.source === "past" ? "past" : "new", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
-    what: r.what || "", how: r.how || "", vendor: r.vendor || "", reporter: r.reporter || "", sender: String(sender || "").trim(), t: Date.parse(r.created_at) || 0,
-    updated: Date.parse(r.updated_at || r.created_at) || 0, done: r.done_at ? Date.parse(r.done_at) || 0 : 0, photos: (r.photos || []).map((p) => p.file), amount0: r.amount == null ? "" : r.amount, cause0: r.cause || "", memo0: r.memo || "",
+    what: str(r.what), how: str(r.how), vendor: str(r.vendor), reporter: str(r.reporter), sender: str(sender).trim(), t: Date.parse(r.created_at) || 0,
+    updated: Date.parse(r.updated_at || r.created_at) || 0, done: r.done_at ? Date.parse(r.done_at) || 0 : 0, photos: Array.isArray(r.photos) ? r.photos.map((p) => p && p.file).filter(Boolean) : [], amount0: r.amount == null ? "" : r.amount, cause0: str(r.cause), memo0: str(r.memo),
   };
 }
 const adm = (r) => {
@@ -67,6 +68,7 @@ async function ingest(entries) {
   const recs = new Map();
   const admins = [];
   const getters = new Map();
+  let newer = 0;
   const put = (r, sender, past) => { // 壊れた1件で、同じファイルの残りが捨てられないようにする
     try {
       if (!r || !r.id) return;
@@ -81,6 +83,7 @@ async function ingest(entries) {
     else if (lower.endsWith(".json")) {
       try {
         const j = JSON.parse(await (await e.get()).text());
+        if (j && j.schema > 1 && String(j.kind || "").startsWith("sango-support-")) newer++;
         if (j.kind === "sango-support-records") (j.records || []).forEach((r) => put(r, j.sender, false));
         else if (j.kind === "sango-support-past") (j.records || []).forEach((r) => put(r, "", true));
         else if (j.kind === "sango-support-admin" && j.items) admins.push(j);
@@ -89,6 +92,7 @@ async function ingest(entries) {
   }
   S.records = [...recs.values()];
   S.admin = mergeAdmins(admins);
+  if (newer) setTimeout(() => toast("新しい形式のファイルがあります。ビューアが古いかもしれません（読み込めない項目があるかもしれません）"), 500);
   S.photoGetters = getters;
   clearUrls();
   // 読み直しで無くなった建物・分類・担当を絞り込みから外す（0件になって見えなくなるのを防ぐ）
@@ -112,7 +116,7 @@ function clearUrls() { urlCache.forEach((p) => p.then((u) => u && URL.revokeObje
 function photoUrl(name) {
   if (urlCache.has(name)) return urlCache.get(name);
   const g = S.photoGetters.get(name);
-  const p = g ? Promise.resolve().then(g).then((f) => URL.createObjectURL(f)).catch(() => "") : Promise.resolve("");
+  const p = g ? Promise.resolve().then(g).then((f) => URL.createObjectURL(f)).catch(() => "").then((u) => { if (!u) urlCache.delete(name); return u; }) : Promise.resolve("");
   urlCache.set(name, p);
   return p;
 }
@@ -187,8 +191,11 @@ async function startDemo() {
 async function readDiskAdmin() {
   try { const fh = await S.dirHandle.getFileHandle(ADMIN_FILE); return JSON.parse(await (await fh.getFile()).text()); } catch (e) { return null; }
 }
+let saveBusy = false;
 async function saveItem(r, patch) {
+  if (saveBusy) { toast("保存中です。少しお待ちください"); return false; }
   if (!canEdit()) { toast("閲覧専用です。編集は設定で「編集する」を入れたPCだけです"); return false; }
+  saveBusy = true;
   try {
     const items = { ...S.admin.items };
     if (S.dirHandle) { // 他のPCが書いた分を取り込んでから書く（同じ症例は新しい方を残す）
@@ -219,6 +226,8 @@ async function saveItem(r, patch) {
     console.error(err);
     alert("保存できませんでした。Boxの同期中・ファイルのロック・容量を確認して、もう一度試してください。\n（" + (err && err.message ? err.message : err) + "）");
     return false;
+  } finally {
+    saveBusy = false;
   }
 }
 
@@ -250,7 +259,7 @@ function catImg(id) { return `<img src="art/${esc(catNo(id))}.webp" alt="" data-
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG" && t.dataset.fb) t.style.visibility = "hidden"; }, true);
 
 /* ---------- ルーティング ---------- */
-const route = () => { const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean); return { name: parts[0] || "list", id: parts[1] ? decodeURIComponent(parts[1]) : "" }; };
+const route = () => { const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean); return { name: parts[0] || "list", id: parts[1] ? (() => { try { return decodeURIComponent(parts[1]); } catch (e) { return parts[1]; } })() : "" }; };
 function boot() { renderHeader(); render(); }
 function renderHeader() {
   const b = $("modeBadge");
@@ -286,7 +295,13 @@ function viewEmpty(main) {
 /* ---------- 左：絞り込み ---------- */
 function renderFilters() {
   const bs = new Map(), cs = new Map(), leaders = new Set();
-  S.records.filter((r) => !isHidden(r)).forEach((r) => {
+  const shown = S.records.filter((r) => F.showHidden || !isHidden(r));
+  const idsOf = (k) => new Set(shown.map((r) => r[k]));
+  const sb = idsOf("buildingId"), sc = idsOf("categoryId"), sl = idsOf("sender");
+  [...F.blds].forEach((x) => { if (!sb.has(x)) F.blds.delete(x); }); // 見えていない建物・分類・担当の絞り込みは外す（0件になって戻せなくなるのを防ぐ）
+  [...F.cats].forEach((x) => { if (!sc.has(x)) F.cats.delete(x); });
+  if (F.leader && !sl.has(F.leader)) F.leader = "";
+  shown.forEach((r) => {
     if (r.buildingId) { const b = bs.get(r.buildingId) || { name: r.building, n: 0 }; b.n++; bs.set(r.buildingId, b); }
     if (r.categoryId) { const c = cs.get(r.categoryId) || { name: r.category, n: 0 }; c.n++; cs.set(r.categoryId, c); }
     if (r.sender) leaders.add(r.sender);
@@ -296,7 +311,7 @@ function renderFilters() {
   $("sideExtra").innerHTML = `
     <div class="fGroup"><div class="fTitle">${icon("home")}建物</div>${bl.map(([id, b]) => `<label class="fRow"><input type="checkbox" data-b="${esc(id)}" ${F.blds.has(id) ? "checked" : ""}>${bldImg(id)}<span class="fn">${esc(b.name)}</span><span class="fc">${b.n}</span></label>`).join("")}</div>
     <div class="fGroup"><div class="fTitle">${icon("tool")}分類</div><div class="fGrid">${cl.map(([id, c]) => `<label class="fRow"><input type="checkbox" data-c="${esc(id)}" ${F.cats.has(id) ? "checked" : ""}><span class="fn">${esc(c.name)}</span></label>`).join("")}</div></div>
-    <div class="fGroup"><div class="fTitle">${icon("user")}担当リーダー</div><select class="fSelect" id="fLeader"><option value="">すべて</option>${[...leaders].sort().map((l) => `<option ${F.leader === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+    <div class="fGroup"><div class="fTitle">${icon("user")}担当リーダー</div><select class="fSelect" id="fLeader"><option value="">すべて</option>${[...leaders].sort().map((l) => `<option value="${esc(l)}" ${F.leader === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
     <div class="fGroup"><div class="fTitle">${icon("cal")}期間</div><select class="fSelect" id="fPeriod">${[["all", "すべての期間"], ["30", "過去30日"], ["90", "過去3か月"], ["365", "過去1年"]].map(([v, l]) => `<option value="${v}" ${F.period === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <label class="fRow"><input type="checkbox" id="fTodo" ${F.todo ? "checked" : ""}><span class="fn"><b>未整理だけ</b></span></label>
     ${S.records.some(isHidden) ? `<label class="fRow"><input type="checkbox" id="fHidden" ${F.showHidden ? "checked" : ""}><span class="fn">非表示の症例も表示（${S.records.filter(isHidden).length}件）</span></label>` : ""}`;
@@ -396,7 +411,7 @@ async function viewDetail(main, id) {
     <aside class="panel"><h3>似た症例</h3>${sim2.length ? sim2.map((x) => `<div class="simItem" data-id="${esc(x.id)}">${bldImg(x.buildingId)}<div class="t"><b>${esc(titleOf(x))}</b>${esc(x.building)}｜${esc(x.category)}｜${fmtDate(x.t)}</div>${stateChip(x)}</div>`).join("") : `<div class="note">同じ分類の症例はまだありません。</div>`}</aside></div>`;
   main.querySelectorAll(".simItem").forEach((el) => (el.onclick = () => (location.hash = "#/r/" + encodeURIComponent(el.dataset.id))));
   const tok = viewTok;
-  const read = () => ({ amount: $("eAmt").value === "" ? "" : Number($("eAmt").value), cause: $("eCause").value, memo: $("eMemo").value.trim() });
+  const read = () => ({ amount: $("eAmt").value === "" ? (typeof a.amount === "string" && a.amount !== "" && isNaN(Number(a.amount)) ? a.amount : "") : Number($("eAmt").value), cause: $("eCause").value, memo: $("eMemo").value.trim() });
   const done = async (patch) => {
     if (!(await saveItem(r, patch))) return;
     if (tok === viewTok && route().name === "r" && route().id === id) { viewDetail(main, id); fillIcons(main); } // 保存中に別の画面へ移っていたら描き直さない
@@ -460,9 +475,9 @@ function viewSummary(main) {
 }
 function exportCsv(list) {
   const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-  const qs = (v) => q(/^[=+@]|^-(?!\d)/.test(String(v == null ? "" : v)) ? "'" + v : v); // 文字の先頭が = + @ - だと、Excelが数式と解釈するため先頭に ' を付ける
+  const qs = (v) => q(/^[=+@\t\r]|^-(?!\d+(\.\d+)?$)/.test(String(v == null ? "" : v)) ? "'" + v : v); // 文字の先頭が = + @ - だと、Excelが数式と解釈するため先頭に ' を付ける
   const head = ["区分", "日付", "建物", "分類", "何が起きたか", "どう対応したか", "対応した業者", "報告した人", "担当リーダー", "写真", "金額", "原因の分類", "メモ", "状態", "現場の状況"];
-  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [qs(r.src === "past" ? "過去" : "新規"), qs(fmtDate(r.t)), qs(r.building), qs(r.category), qs(r.what), qs(r.how), qs(r.vendor), qs(r.reporter), qs(r.sender), q(r.photos.length), q(a.amount), qs(a.cause), qs(a.memo), qs(r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理"), qs(fieldState(r))].join(","); });
+  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [qs(r.src === "past" ? "過去" : "新規"), qs(fmtDate(r.t)), qs(r.building), qs(r.category), qs(r.what), qs(r.how), qs(r.vendor), qs(r.reporter), qs(r.sender), q(r.photos.length), typeof a.amount === "number" ? q(a.amount) : qs(a.amount), qs(a.cause), qs(a.memo), qs(r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理"), qs(fieldState(r))].join(","); });
   const blob = new Blob(["﻿" + [head.map(q).join(","), ...rows].join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -493,7 +508,7 @@ function viewSettings(main) {
 }
 
 /* ---------- 起動 ---------- */
-$("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (route().name !== "list") location.hash = "#/list"; else renderListBody(); });
+$("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (route().name !== "list") location.hash = "#/list"; else if ($("listBody")) renderListBody(); });
 $("reloadBtn").innerHTML = icon("reload");
 $("reloadBtn").onclick = reopenFolder;
 window.addEventListener("hashchange", render);
