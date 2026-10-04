@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -14,6 +14,7 @@ const REPLY_DIR = "返信";
 const $ = (id) => document.getElementById(id);
 
 const ICONS = {
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   report: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/>',
   back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
@@ -115,8 +116,14 @@ const NOTE_TYPES = {
   question: { label: "疑問", icon: "chat", cls: "q" },
   notice: { label: "気づき", icon: "bulb", cls: "n" },
   request: { label: "職人さんの要望", short: "要望", icon: "wrench", cls: "r" },
+  contact: { label: "やりとり", icon: "phone", cls: "c" }, // 電話・LINEで聞いたこと・業者に頼んだこと（現場ナビ v67〜）
 };
-const TYPE_BY_LABEL = { 疑問: "question", 気づき: "notice", 職人さんの要望: "request" };
+const TYPE_BY_LABEL = { 疑問: "question", 気づき: "notice", 職人さんの要望: "request", やりとり: "contact" };
+// やりとりの1行（「電話・課長 → 答え」）
+function contactLine(n) {
+  const c = n.contact || {};
+  return `${c.via || ""}・${c.who || ""}${c.side === "業者" ? "（業者）" : ""} → ${c.pending ? "返事待ち" : c.result || "（答えの記録なし）"}`;
+}
 
 // 同じ現場を二人以上で担当していると、現場ナビ側では別々の現場として届く。工事番号があればそれでまとめる
 let koujiBySiteId = new Map(); // site_id → 工事番号（後から番号を入れた現場の、番号が無い頃の報告もまとめるため）
@@ -204,6 +211,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
           id,
           type: typeOverrides()[id] || typeId, // 上司が「疑問として扱う」にしたものは疑問として数える
           origType: typeId,
+          contact: n.contact || null,
           text: n.text || "",
           at: n.at,
           by: n.by || r.sender || "",
@@ -264,6 +272,7 @@ function addReplyToData(rp) {
 // 状態：疑問は 未回答 → 返信済み → 解決済み（解決は監督が現場ナビで付ける）。
 // 職人さんの要望も返事が要ることが多いので、返信するまで「未回答」に数える。気づきは返信したら「返信済み」
 function noteStatus(n) {
+  if (n.type === "contact") return n.contact && n.contact.pending ? "waiting" : "resolved"; // その場で解決して残したもの
   if (n.type === "question" && n.status === "resolved") return "resolved";
   if ((data.replies.get(n.id) || []).length) return "replied";
   return n.type === "question" || n.type === "request" ? "open" : "";
@@ -287,7 +296,7 @@ function toggleAsQuestion(n) {
   route();
   openNote(n.id);
 }
-const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み" };
+const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み", waiting: "返事待ち" };
 
 /* ---------- 自分の班（班の打合せ用に、班のメンバーの報告・疑問だけを出す） ----------
    見せ方だけの絞り込み（Box の権限は変わらない）。この PC に覚える。監督は名前で覚える（端末を替えても同じ人になるように） */
@@ -522,7 +531,7 @@ function siteVoicesHtml(s, prog, order = "old") {
   const other = [];
   notes.forEach((n) => (byGroup.get(PROC_GROUP[n.process]) || other).push(n));
   const row = (n) => {
-    const rest = restText(n.text);
+    const rest = n.type === "contact" ? contactLine(n) : restText(n.text);
     return (
       `<button class="voiceRow ${noteStatus(n)}" data-note="${esc(n.id)}"><span class="vBadges">${typeBadge(n.type, n.origType)}${statusBadge(n)}</span>` +
       `<span class="vWho">${avatar(n.personName, 22)}${esc(n.personName)}</span>` +
@@ -1446,7 +1455,7 @@ function renderNotes(params) {
     bindCommon(main);
     return;
   }
-  const types = [["all", "すべて"], ["question", "疑問"], ["notice", "気づき"], ["request", "職人さんの要望"]];
+  const types = [["all", "すべて"], ["question", "疑問"], ["notice", "気づき"], ["request", "職人さんの要望"], ["contact", "やりとり"]];
   const sts = [["all", "すべて"], ["open", "未回答"], ["replied", "返信済み"], ["resolved", "解決済み"]];
   html +=
     `<div class="card filterCard"><div class="filterRow"><span class="fLabel">種類</span>${types
@@ -1485,7 +1494,7 @@ function renderNotes(params) {
 function noteRow(n) {
   const st = noteStatus(n);
   const t = NOTE_TYPES[n.type] || NOTE_TYPES.notice;
-  const rest = restText(n.text);
+  const rest = n.type === "contact" ? contactLine(n) : restText(n.text);
   return (
     `<div class="noteRow ${st === "open" ? "open" : ""} ${t.cls}"><div class="noteIcon ${t.cls}">${icon(t.icon, 26, 1.8)}</div>` +
     `<div class="noteMain"><div class="noteBadges">${typeBadge(n.type, n.origType)}${statusBadge(n)}</div><div class="noteTitle">${esc(headline(n.text))}</div>` +
@@ -1526,6 +1535,13 @@ function openNote(id) {
     `<dl class="origMeta"><dt>${icon("user", 16)}監督名</dt><dd>${esc(n.personName)}</dd><dt>${icon("building", 16)}現場名</dt><dd>${esc(n.siteName)}</dd>` +
     `<dt>${icon("list", 16)}工程・項目</dt><dd>${esc(shortProc(n.process))} › ${esc(n.item || "")}</dd><dt>${icon("clock", 16)}投稿日</dt><dd>${fmtDateTime(n.at)}</dd></dl>` +
     `<div class="origText">${esc(n.text)}</div>` +
+    (n.contact
+      ? `<div class="contactBox"><div><b>${esc(n.contact.via || "")}</b>で <b>${esc(n.contact.who || "")}</b>${n.contact.side === "業者" ? "（業者）" : ""} に${n.contact.side === "業者" ? "投げかけ" : "確認"}</div>` +
+        `<div class="contactResult">${n.contact.pending ? "返事待ち" : esc(n.contact.result || "（答えの記録なし）")}</div>` +
+        (n.contact.in_line ? `<div class="mutedText">写真はLINEにあり（${fmtMD(n.at)}）</div>` : "") +
+        ((n.contact.photo_ids || []).length ? `<div class="mutedText">現場ナビの写真 ${n.contact.photo_ids.length}枚を指しています（報告で送った写真なら、週ごとの報告に出ています）</div>` : "") +
+        `</div>`
+      : "") +
     (photos.length
       ? `<div class="origPhotosLabel">同じ項目の品質写真</div><div class="origPhotos">${photos
           .slice(0, 8)

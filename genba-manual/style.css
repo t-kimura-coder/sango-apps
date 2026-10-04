@@ -1142,3 +1142,27 @@ img.imgBroken { visibility: hidden; }
 /* 取り消しボタン付きのお知らせ */
 .toast:has(.toastBtn) { display: flex; align-items: center; gap: 12px; }
 .toastBtn { flex: none; min-height: 36px; padding: 0 14px; border: none; border-radius: 18px; background: var(--color-bg); color: var(--color-heading); font-weight: 800; font-size: var(--fs-sm); }
+
+/* 電話・LINEのやりとり */
+.memoOpenRow { display: flex; flex-direction: column; gap: 8px; }
+.noteBadge.contact { background: var(--color-sky, #e3eef9); color: #2f6f9f; }
+.contactForm { display: flex; flex-direction: column; gap: 8px; padding: var(--space-md); border-radius: var(--radius-sm); background: var(--color-bg); border: 1px solid var(--color-border); }
+.cLabel { margin-top: 4px; font-size: var(--fs-xs); font-weight: 800; color: var(--color-text-sub); }
+.cSeg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 3px; border-radius: 12px; background: var(--color-surface-sub); }
+.cSeg button { min-height: 40px; border: none; border-radius: 9px; background: none; font-weight: 700; color: var(--color-text-sub); }
+.cSeg button.on { background: var(--color-surface); color: var(--color-heading); box-shadow: var(--shadow-card); }
+.cChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cChip { min-height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--fs-sm); font-weight: 700; color: var(--color-heading); }
+.contactForm textarea:disabled { opacity: 0.5; }
+.cMeta { margin-top: 4px; font-size: var(--fs-xs); font-weight: 700; color: #2f6f9f; }
+.cWait { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.cWait span { padding: 1px 8px; border-radius: 6px; background: var(--color-wood-soft); color: var(--color-wood-text); font-size: 12px; font-weight: 800; }
+.cPhotoNote { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: var(--fs-xs); color: var(--color-text-sub); }
+.cThumbs { display: flex; gap: 6px; margin-top: 6px; }
+.cThumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; cursor: pointer; background: var(--color-surface-sub); }
+.cPickGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: var(--space-md); }
+.cPick { position: relative; aspect-ratio: 1; padding: 0; border: none; border-radius: 6px; overflow: hidden; background: var(--color-surface-sub); }
+.cPick img { width: 100%; height: 100%; object-fit: cover; }
+.cPickMark { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 11px; border: 2px solid #fff; background: rgba(0, 0, 0, 0.25); color: transparent; display: flex; align-items: center; justify-content: center; }
+.cPick.on { outline: 3px solid var(--color-primary); outline-offset: -3px; }
+.cPick.on .cPickMark { background: var(--color-primary); color: #fff; }

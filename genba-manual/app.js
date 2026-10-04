@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 66;
+const APP_VERSION = 67;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "feature", text: "電話やLINEで聞いたこと・業者に頼んだことを「やりとり」として残せるようになりました（工程マニュアルの項目の「電話・LINEのやりとりを残す」から）。相手は次から候補で選べます。写真はLINEにある印か、アプリの写真を指すだけなので二重に保存しません。業者の返事待ちはホームの「やること」に出ます" },
   { date: "2026-10-04", type: "fix", text: "バックアップを戻した時に、「該当なし」で外したチェックが戻ってきてしまうのを直しました。宿題を済にした直後は「元に戻す」で取り消せます。品質写真で最後のチェックが付いた時も「完了」をお知らせします" },
   { date: "2026-10-04", type: "feature", text: "班の打合せで上司が決めた「宿題」を受け取れるようになりました。上司からの返信と一緒に取り込むと、ホームの「やること」に期限付きで出ます。押して「済にする」と、次の報告で上司に届きます" },
   { date: "2026-10-04", type: "fix", text: "事前準備にチェックを入れただけで、まだ撮れない写真が「撮り忘れ」に出ていたのを直しました。チェックの右のボタンも「該当なし」「撮影不要」と書き分けました" },
@@ -2555,9 +2556,10 @@ async function buildCheckSummary(siteId, start, end) {
       .filter((n) => inPeriod(n.at) || inPeriod(n.updatedAt))
       .map((n) => ({
         id: n.id,
-        type: (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label,
+        type: noteLabel(n),
         type_id: n.type,
-        status: n.type === "question" ? n.status || "open" : "",
+        status: n.type === "question" ? n.status || "open" : n.type === "contact" ? (n.contact && n.contact.pending ? "waiting" : "resolved") : "",
+        contact: n.type === "contact" && n.contact ? { who: n.contact.who, side: n.contact.side, via: n.contact.via, result: n.contact.result || "", pending: !!n.contact.pending, in_line: !!n.contact.inLine, photo_ids: n.contact.photoIds || [], resolved_at: n.contact.resolvedAt || "" } : null,
         resolved_at: n.resolvedAt || "",
         resolved_by: n.resolvedBy || "",
         updated_at: n.updatedAt || n.at,
@@ -3642,6 +3644,7 @@ const NOTE_TYPES = [
   { id: "request", label: "職人さんの要望", hint: "職人さんから" },
 ];
 let memoType = null; // 選び間違い（疑問のつもりが気づき）を防ぐため、毎回選んでもらう
+let memoMode = "memo"; // "memo"＝気づき・疑問メモ、"contact"＝電話・LINEのやりとり
 let memoOpenFor = null; // 「メモを書く」を開いている項目
 
 function renderMemoSection(it) {
@@ -3653,7 +3656,10 @@ function renderMemoSection(it) {
   sec.innerHTML =
     `<div class="secHead">${icon(ICONS.edit || ICONS.report, 22)}気づき・疑問メモ<span class="secRight">${notes.length ? notes.length + "件" : ""}</span></div>` +
     (currentSiteId && memoOpenFor !== it.id
-      ? `<button id="memoOpenBtn" class="btn btnOutline memoOpenBtn">${icon(ICONS.plus, 18)}メモを書く</button>`
+      ? `<div class="memoOpenRow"><button id="memoOpenBtn" class="btn btnOutline memoOpenBtn">${icon(ICONS.plus, 18)}メモを書く</button>` +
+        `<button id="contactOpenBtn" class="btn btnOutline memoOpenBtn">${icon(ICONS.reply, 18)}電話・LINEのやりとりを残す</button></div>`
+      : currentSiteId && memoMode === "contact"
+      ? contactFormHtml()
       : currentSiteId
       ? `<div class="noteTypeLabel">種類を選んでから書いてください</div>` +
         `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}"><b>${t.label}</b><small>${t.hint}</small></button>`).join("")}</div>` +
@@ -3663,13 +3669,13 @@ function renderMemoSection(it) {
     `<div class="noteList">${notes
       .map(
         (n) =>
-          `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc((NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label)}</span>` +
+          `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc(noteLabel(n))}</span>` +
           `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
           (n.type === "question"
             ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).length ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).length ? "返信あり" : "回答待ち"}</button>`
             : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
-          `</div><div class="noteText">${esc(n.text)}</div>` +
+          `</div>${n.type === "contact" ? contactBodyHtml(n) : `<div class="noteText">${esc(n.text)}</div>`}` +
           (n.replies || [])
             .map(
               (r) =>
@@ -3691,15 +3697,30 @@ function renderMemoSection(it) {
   if (openBtn)
     openBtn.addEventListener("click", () => {
       memoOpenFor = it.id;
+      memoMode = "memo";
       memoType = null;
       renderMemoSection(it);
       $("memoInput").focus();
     });
+  const cOpen = $("contactOpenBtn");
+  if (cOpen)
+    cOpen.addEventListener("click", () => {
+      memoOpenFor = it.id;
+      memoMode = "contact";
+      contactDraft = newContactDraft();
+      renderMemoSection(it);
+      $("cWho").focus();
+    });
+  if (memoOpenFor === it.id && memoMode === "contact" && $("cSaveBtn")) bindContactForm(it);
+  sec.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => resolveContact(it, b.dataset.resolve)));
+  fillContactPhotos(sec);
   const cancel = $("memoCancelBtn");
   if (cancel)
     cancel.addEventListener("click", () => {
-      if ($("memoInput").value.trim() && !confirm("書きかけのメモを消しますか？")) return;
+      const typed = memoMode === "contact" ? ($("cText").value.trim() || $("cResult").value.trim()) : $("memoInput").value.trim();
+      if (typed && !confirm("書きかけを消しますか？")) return;
       memoOpenFor = null;
+      contactDraft = null;
       renderMemoSection(it);
     });
   const save = $("memoSaveBtn");
@@ -3716,6 +3737,217 @@ function renderMemoSection(it) {
     unread.forEach((r) => (r.readAt = now));
     saveCheckRec(rec);
   }
+}
+
+/* ---------- 電話・LINEのやりとりの記録（note.type = "contact"） ----------
+   その場では電話やLINEで解決するので、ここは「後から見返せるように残す」場所。
+   note.contact = { who, side: "社内"|"業者", via: "電話"|"LINE"|"その場", result, pending, inLine, photoIds, resolvedAt } */
+const CONTACT_HISTORY_KEY = "genba-photo-contact-history";
+const CONTACT_VIAS = ["電話", "LINE", "その場"];
+function contactHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(CONTACT_HISTORY_KEY) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+function addContactHistory(who, side) {
+  const list = [{ who, side }, ...contactHistory().filter((x) => x.who !== who)].slice(0, 20);
+  try {
+    localStorage.setItem(CONTACT_HISTORY_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+let contactDraft = null;
+function newContactDraft() {
+  const last = contactHistory()[0];
+  return { who: "", side: last ? last.side : "社内", via: "電話", text: "", result: "", pending: false, inLine: false, photoIds: [] };
+}
+function noteLabel(n) {
+  if (n.type === "contact") return "やりとり";
+  return (NOTE_TYPES.find((t) => t.id === n.type) || NOTE_TYPES[0]).label;
+}
+function contactFormHtml() {
+  const d = contactDraft;
+  const seg = (name, list, cur) => `<div class="cSeg">${list.map((v) => `<button type="button" class="${v === cur ? "on" : ""}" data-${name}="${esc(v)}">${esc(v)}</button>`).join("")}</div>`;
+  const hist = contactHistory().slice(0, 8);
+  return (
+    `<div class="contactForm">` +
+    `<div class="cLabel">相手</div>${seg("side", ["社内", "業者"], d.side)}` +
+    `<input id="cWho" class="input" placeholder="${d.side === "業者" ? "会社名・担当者（例：〇〇建材 田中さん）" : "名前・役職（例：課長、山田さん）"}" value="${esc(d.who)}">` +
+    (hist.length ? `<div class="cChips">${hist.map((h) => `<button type="button" class="cChip" data-who="${esc(h.who)}" data-whoside="${esc(h.side)}">${esc(h.who)}</button>`).join("")}</div>` : "") +
+    `<div class="cLabel">方法</div>${seg("via", CONTACT_VIAS, d.via)}` +
+    `<div class="cLabel">${d.side === "業者" ? "頼んだこと・聞いたこと" : "聞いたこと"}</div>` +
+    `<textarea id="cText" class="sheetTextarea memoInput" placeholder="1行でOK（例：サッシ上部の防水テープの重ね方）。キーボードのマイクで話しても入れられます">${esc(d.text)}</textarea>` +
+    `<div class="cLabel">${d.side === "業者" ? "結果・返事" : "答え"}</div>` +
+    `<textarea id="cResult" class="sheetTextarea memoInput" placeholder="${d.side === "業者" ? "例：明日の午前中に納品と回答" : "例：上から下へ重ねる。写真の通りでOK"}"${d.pending ? " disabled" : ""}>${esc(d.result)}</textarea>` +
+    `<label class="checkOpt"><input type="checkbox" id="cPending"${d.pending ? " checked" : ""}>返事待ち（ホームの「やること」に出します）</label>` +
+    `<div class="cLabel">写真（任意）</div>` +
+    `<label class="checkOpt"><input type="checkbox" id="cInLine"${d.inLine ? " checked" : ""}>写真はLINEにある（日付を手がかりにLINEで探せます）</label>` +
+    `<button type="button" id="cPickPh" class="btn btnOutline">${icon(ICONS.photo || ICONS.camera, 18)}アプリの写真から選ぶ${d.photoIds.length ? `（${d.photoIds.length}枚）` : ""}</button>` +
+    `<div class="memoBtns"><button id="memoCancelBtn" class="btn btnSecondary">やめる</button><button id="cSaveBtn" class="btn btnPrimary">残す</button></div>` +
+    `</div>`
+  );
+}
+function readContactForm() {
+  const d = contactDraft;
+  d.who = $("cWho").value.trim();
+  d.text = $("cText").value.trim();
+  d.result = $("cResult").value.trim();
+  d.pending = $("cPending").checked;
+  d.inLine = $("cInLine").checked;
+}
+function bindContactForm(it) {
+  const sec = $("memoSection");
+  const rerender = () => {
+    readContactForm();
+    renderMemoSection(it);
+  };
+  sec.querySelectorAll("[data-side]").forEach((b) => b.addEventListener("click", () => (readContactForm(), (contactDraft.side = b.dataset.side), renderMemoSection(it))));
+  sec.querySelectorAll("[data-via]").forEach((b) => b.addEventListener("click", () => (readContactForm(), (contactDraft.via = b.dataset.via), renderMemoSection(it))));
+  sec.querySelectorAll("[data-who]").forEach((b) =>
+    b.addEventListener("click", () => {
+      readContactForm();
+      contactDraft.who = b.dataset.who;
+      contactDraft.side = b.dataset.whoside || contactDraft.side;
+      renderMemoSection(it);
+    })
+  );
+  $("cPending").addEventListener("change", rerender);
+  $("cPickPh").addEventListener("click", () => {
+    readContactForm();
+    pickAppPhotos(it);
+  });
+  $("cSaveBtn").addEventListener("click", () => saveContact(it));
+}
+// その現場のアプリの写真から選ぶ（コピーせず、写真の番号だけを持つ）
+async function pickAppPhotos(it) {
+  const photos = (await getSitePhotos(currentSiteId)).filter((p) => !p.imageRemoved).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1)).slice(0, 60);
+  const picked = new Set(contactDraft.photoIds);
+  releaseUrls("cpick");
+  openSheet("アプリの写真から選ぶ", (body, close) => {
+    if (!photos.length) {
+      body.innerHTML = `<div class="mutedText">この現場の写真はまだありません。</div>`;
+      body.appendChild(sheetButton("閉じる", "btnGhost", close));
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "cPickGrid";
+    photos.forEach((p) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cPick" + (picked.has(p.id) ? " on" : "");
+      b.innerHTML = `<img src="${blobUrl("cpick", p.thumb)}" alt=""><span class="cPickMark">${icon(ICONS.check, 14, 3)}</span>`;
+      b.addEventListener("click", () => {
+        if (picked.has(p.id)) picked.delete(p.id);
+        else if (picked.size >= 4) return toast("写真は4枚までです");
+        else picked.add(p.id);
+        b.classList.toggle("on", picked.has(p.id));
+      });
+      grid.appendChild(b);
+    });
+    body.appendChild(grid);
+    body.appendChild(
+      sheetButton("これにする", "btnPrimary btnLarge", () => {
+        contactDraft.photoIds = [...picked];
+        close();
+        renderMemoSection(it);
+      })
+    );
+    body.appendChild(sheetButton("やめる", "btnGhost", close));
+  });
+}
+async function saveContact(it) {
+  readContactForm();
+  const d = contactDraft;
+  if (!d.text) {
+    toast("聞いたこと・頼んだことを入れてください");
+    return $("cText").focus();
+  }
+  if (!d.who) {
+    toast("相手を入れてください");
+    return $("cWho").focus();
+  }
+  const rec = checkRecOf(it.id);
+  rec.notes = rec.notes || [];
+  const now = new Date().toISOString();
+  rec.notes.push({
+    id: newId(),
+    type: "contact",
+    text: d.text,
+    at: now,
+    by: getSetting(USER_NAME_KEY),
+    contact: { who: d.who, side: d.side, via: d.via, result: d.pending ? "" : d.result, pending: d.pending, inLine: d.inLine, photoIds: d.photoIds, resolvedAt: d.pending ? "" : now },
+  });
+  await saveCheckRec(rec);
+  addContactHistory(d.who, d.side);
+  contactDraft = null;
+  memoOpenFor = null;
+  renderMemoSection(it);
+  toast(d.pending ? "やりとりを残しました（返事待ちはホームの「やること」に出ます）" : "やりとりを残しました");
+}
+// 返事が来た時：結果を書いて「返事待ち」を外す
+function resolveContact(it, id) {
+  const rec = checkRecOf(it.id);
+  const n = (rec.notes || []).find((x) => x.id === id);
+  if (!n || !n.contact) return;
+  openSheet("返事が来た", (body, close) => {
+    const ta = document.createElement("textarea");
+    ta.className = "sheetTextarea";
+    ta.placeholder = "結果・返事（例：明日の午前中に納品）";
+    body.appendChild(ta);
+    body.appendChild(
+      sheetButton("残す", "btnPrimary btnLarge", async () => {
+        n.contact.result = ta.value.trim();
+        n.contact.pending = false;
+        n.contact.resolvedAt = new Date().toISOString();
+        n.updatedAt = n.contact.resolvedAt;
+        await saveCheckRec(rec);
+        close();
+        renderMemoSection(it);
+        toast("返事を残しました");
+      })
+    );
+    body.appendChild(sheetButton("やめる", "btnGhost", close));
+    setTimeout(() => ta.focus(), 300);
+  });
+}
+function contactBodyHtml(n) {
+  const c = n.contact || {};
+  return (
+    `<div class="cMeta">${esc(c.via || "")}・${esc(c.who || "")}${c.side === "業者" ? "（業者）" : ""}</div>` +
+    `<div class="noteText">${esc(n.text)}</div>` +
+    (c.pending
+      ? `<div class="cWait"><span>返事待ち</span><button class="miniBtn" data-resolve="${esc(n.id)}">返事が来た</button></div>`
+      : c.result
+      ? `<div class="noteReply"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(c.who || "")}</b>${c.resolvedAt ? `<span>${esc(fmtDateTime(c.resolvedAt))}</span>` : ""}</div><div class="noteText">${esc(c.result)}</div></div>`
+      : "") +
+    (c.inLine ? `<div class="cPhotoNote">${icon(ICONS.camera, 14)}写真はLINEにあり（${esc(fmtDate(toDateKey(new Date(n.at))))}）</div>` : "") +
+    ((c.photoIds || []).length ? `<div class="cThumbs">${c.photoIds.map((pid) => `<img data-cph="${esc(pid)}" alt="">`).join("")}</div>` : "")
+  );
+}
+// アプリの写真を指している時は、後から小さな写真を入れる
+async function fillContactPhotos(sec) {
+  const imgs = [...sec.querySelectorAll("[data-cph]")];
+  if (!imgs.length) return;
+  releaseUrls("cthumb");
+  for (const img of imgs) {
+    const p = await dbGet("photos", img.dataset.cph);
+    if (!p) {
+      img.replaceWith(Object.assign(document.createElement("span"), { className: "mutedText", textContent: "（写真は消されています）" }));
+      continue;
+    }
+    img.src = blobUrl("cthumb", p.thumb);
+    img.addEventListener("click", async () => {
+      const full = await dbGet("photos", p.id);
+      openPhotoViewer(full && full.blob);
+    });
+  }
+}
+// 返事待ちのやりとり（全現場）。ホームの「やること」に出す
+function pendingContacts(sums) {
+  return sums
+    .flatMap((x) => Object.values(x.recs || {}).flatMap((r) => (r.notes || []).filter((n) => n.type === "contact" && n.contact && n.contact.pending).map((n) => ({ site: x.site, rec: r, n }))))
+    .sort((a, b) => (a.n.at < b.n.at ? -1 : 1));
 }
 
 async function saveMemo(it) {
@@ -4434,6 +4666,25 @@ async function renderDash() {
   // ---- やること（その時に必要なものだけ） ----
   const todo = [];
   if (unread.length) todo.push({ icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
+  // 返事待ちのやりとり（古い順に2件まで）
+  const waits = pendingContacts(sums);
+  waits.slice(0, 2).forEach(({ site, rec, n }) =>
+    todo.push({
+      icon: ICONS.reply,
+      cls: "wood",
+      html: `返事待ち：${esc(n.text)}<small>${sites.length > 1 ? esc(site.name) + "・" : ""}${esc(n.contact.who)}・${esc(fmtDate(toDateKey(new Date(n.at))))}から</small>`,
+      go: async () => {
+        if (site.id !== currentSiteId) await setCurrentSite(site.id);
+        const it = allManualItems().find((x) => x.id === rec.itemId);
+        if (it) {
+          currentMTab = "check";
+          await openGroup(groupOfProcess(it.cat).id, it.id);
+          setTimeout(() => $("memoSection") && $("memoSection").scrollIntoView({ block: "start", behavior: "smooth" }), 300);
+        }
+      },
+    })
+  );
+  if (waits.length > 2) todo.push({ icon: ICONS.reply, cls: "muted", html: `ほかの返事待ち <b>${waits.length - 2}件</b>`, go: () => toast("返事待ちは、それぞれの項目の「気づき・疑問メモ」に出ています") });
   // 打合せの宿題（期限の近い順に3件まで）
   const tasks = openTasks(sites);
   tasks.slice(0, 3).forEach(({ s, t }) =>

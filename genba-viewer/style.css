@@ -766,3 +766,14 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .spRow .tBadge { flex: none; }
 .spRow:hover, .spRow.sel { background: var(--color-primary-soft); }
 .spEmpty { padding: 14px 12px; font-size: 14px; color: var(--color-text-muted); }
+
+/* やりとり（電話・LINEで聞いたこと・業者への投げかけ） */
+.tBadge.c { background: #e3eef9; color: #2a5d8f; }
+.noteIcon.c { background: #e3eef9; color: #2a5d8f; }
+.sBadge.waiting { background: var(--color-wood-soft); color: var(--color-wood-text); }
+.chip.t-contact:not(.on) { color: #2a5d8f; background: #e3eef9; border-color: transparent; }
+.contactBox { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #eef4fb; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.contactResult { padding-left: 10px; border-left: 3px solid #2a5d8f; color: var(--color-heading); white-space: pre-wrap; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tBadge.c, :root:not([data-theme="light"]) .noteIcon.c { background: #23384d; color: #9cc3ea; } :root:not([data-theme="light"]) .contactBox { background: #1f2c38; } }
+:root[data-theme="dark"] .tBadge.c, :root[data-theme="dark"] .noteIcon.c { background: #23384d; color: #9cc3ea; }
+:root[data-theme="dark"] .contactBox { background: #1f2c38; }
