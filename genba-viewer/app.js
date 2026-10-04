@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -411,7 +411,7 @@ function bindGasCard(main) {
     try {
       const j = await gasCall({ action: "whoami" });
       $("gasStatus").textContent = `つながりました：${j.me.name}（${j.me.role}${j.me.team ? "・" + j.me.team : ""}）`;
-      if (j.me.role !== "上司") alert("この合言葉は「監督」用です。見守りでは「上司」用の合言葉を入れてください。");
+      if (j.me.role !== "上司" && j.me.role !== "設計者") alert("この合言葉は「監督」用です。見守りでは「上司」用の合言葉を入れてください。");
       if (getLS("name") && normName(j.me.name) !== normName(getLS("name"))) alert(`合言葉の名前（${j.me.name}）と、設定の「あなたの名前」（${getLS("name")}）が違います。合わせておくと、自分の書いたものが新着に数えられません。`);
       syncGas(true);
     } catch (e) {
