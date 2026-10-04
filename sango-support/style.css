@@ -219,3 +219,12 @@ textarea { min-height: 84px; }
 .stepHead .count { font-size: 13px; color: var(--muted); }
 .stepNo { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--green); color: #fff; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .btn.wide { width: 100%; }
+
+/* 右上のボタンは右寄せ */
+.topActions { margin-left: auto; }
+/* 報告済み・完了の表示 */
+.recItem.isSent { background: #f0eee5; opacity: 0.85; }
+.recItem.isDone { background: #e9e8e0; opacity: 0.6; }
+.tag.done { background: #d9ecd2; color: var(--green); }
+/* 写真の追加ボタン */
+.photoAdd { width: 96px; font-size: 11px; line-height: 1.25; text-align: center; padding: 4px; }

@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -18,6 +18,7 @@ const fmtDate = (t) => { if (!t) return "—"; const d = new Date(t); return `${
 const fmtTime = (t) => { if (!t) return ""; const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const yen = (n) => (n === "" || n == null || isNaN(Number(n)) ? "—" : Number(n).toLocaleString("ja-JP") + "円");
 const catNo = (id) => String(id || "").toLowerCase();
+const fieldState = (r) => (r.src === "past" ? "—" : r.done ? "完了 " + fmtDate(r.done) : "対応中"); // リーダーが付けた「完了」
 
 const ICONS = {
   search: '<circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/>',
@@ -51,7 +52,7 @@ function norm(r, sender) {
   return {
     id: r.id, src: r.source === "past" ? "past" : "new", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
     what: r.what || "", how: r.how || "", vendor: r.vendor || "", reporter: r.reporter || "", sender: String(sender || "").trim(), t: Date.parse(r.created_at) || 0,
-    updated: Date.parse(r.updated_at || r.created_at) || 0, photos: (r.photos || []).map((p) => p.file), amount0: r.amount == null ? "" : r.amount, cause0: r.cause || "", memo0: r.memo || "",
+    updated: Date.parse(r.updated_at || r.created_at) || 0, done: r.done_at ? Date.parse(r.done_at) || 0 : 0, photos: (r.photos || []).map((p) => p.file), amount0: r.amount == null ? "" : r.amount, cause0: r.cause || "", memo0: r.memo || "",
   };
 }
 const adm = (r) => {
@@ -345,7 +346,7 @@ async function renderPreview() {
   if (!r) { box.innerHTML = `<div class="note">症例を選ぶと、ここに内容が出ます。</div>`; return; }
   const a = adm(r);
   box.innerHTML = `<div class="pvHero">${bldImg(r.buildingId)}${stateChip(r)}</div>
-    <dl class="facts"><dt>建物</dt><dd>${esc(r.building)}</dd><dt>分類</dt><dd>${esc(r.category)}</dd><dt>件名</dt><dd>${esc(titleOf(r))}</dd><dt>報告日</dt><dd>${fmtDate(r.t)} ${fmtTime(r.t)}</dd><dt>報告した人</dt><dd>${esc(r.reporter || "—")}</dd><dt>担当リーダー</dt><dd>${esc(r.sender || "—")}</dd></dl>
+    <dl class="facts"><dt>建物</dt><dd>${esc(r.building)}</dd><dt>分類</dt><dd>${esc(r.category)}</dd><dt>件名</dt><dd>${esc(titleOf(r))}</dd><dt>報告日</dt><dd>${fmtDate(r.t)} ${fmtTime(r.t)}</dd><dt>報告した人</dt><dd>${esc(r.reporter || "—")}</dd><dt>担当リーダー</dt><dd>${esc(r.sender || "—")}</dd><dt>現場の状況</dt><dd>${esc(fieldState(r))}</dd></dl>
     <div class="sub">何が起きたか</div><div class="pvText">${esc(r.what)}</div>
     ${r.how ? `<div class="sub">どう対応したか</div><div class="pvText">${esc(r.how)}</div>` : ""}
     ${r.photos.length ? `<div class="sub">写真 ${r.photos.length}枚</div><div class="thumbs" id="pvThumbs"></div>` : ""}
@@ -368,7 +369,7 @@ async function viewDetail(main, id) {
   main.innerHTML = `<div class="detailTop"><a class="backLink" href="#/list">← 一覧に戻る</a></div>
     <div class="detailLayout"><div>
       <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>
-        <div class="dFacts"><div><span>分類</span>${esc(r.category)}</div><div><span>件名</span>${esc(titleOf(r))}</div><div><span>報告日</span>${fmtDate(r.t)} ${fmtTime(r.t)}</div><div><span>報告した人</span>${esc(r.reporter || "—")}</div><div><span>担当リーダー</span>${esc(r.sender || "—")}</div><div><span>対応した業者</span>${esc(r.vendor || "—")}</div></div></div></div></div>
+        <div class="dFacts"><div><span>分類</span>${esc(r.category)}</div><div><span>件名</span>${esc(titleOf(r))}</div><div><span>報告日</span>${fmtDate(r.t)} ${fmtTime(r.t)}</div><div><span>報告した人</span>${esc(r.reporter || "—")}</div><div><span>担当リーダー</span>${esc(r.sender || "—")}</div><div><span>対応した業者</span>${esc(r.vendor || "—")}</div><div><span>現場の状況</span>${esc(fieldState(r))}</div></div></div></div></div>
       <div class="two"><div class="panel"><h3>何が起きたか</h3><div class="pvText">${esc(r.what)}</div></div><div class="panel"><h3>どう対応したか</h3><div class="pvText">${esc(r.how || "（まだ書かれていません）")}</div></div></div>
       ${r.photos.length ? `<div class="panel" style="margin-top:12px"><h3>写真 <span class="note">計 ${r.photos.length} 枚</span></h3><div class="photoGrid" id="dPhotos"></div></div>` : ""}
       <div class="panel" style="margin-top:12px"><h3>管理者による整理${edit ? "" : "　<span class=\"note\">（閲覧専用です。編集は山郷側の管理者のPCで行います）</span>"}</h3>
@@ -437,8 +438,8 @@ function viewSummary(main) {
 function exportCsv(list) {
   const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
   const qs = (v) => q(/^[=+@]|^-(?!\d)/.test(String(v == null ? "" : v)) ? "'" + v : v); // 文字の先頭が = + @ - だと、Excelが数式と解釈するため先頭に ' を付ける
-  const head = ["区分", "日付", "建物", "分類", "何が起きたか", "どう対応したか", "対応した業者", "報告した人", "担当リーダー", "写真", "金額", "原因の分類", "メモ", "状態"];
-  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [qs(r.src === "past" ? "過去" : "新規"), qs(fmtDate(r.t)), qs(r.building), qs(r.category), qs(r.what), qs(r.how), qs(r.vendor), qs(r.reporter), qs(r.sender), q(r.photos.length), q(a.amount), qs(a.cause), qs(a.memo), qs(r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理")].join(","); });
+  const head = ["区分", "日付", "建物", "分類", "何が起きたか", "どう対応したか", "対応した業者", "報告した人", "担当リーダー", "写真", "金額", "原因の分類", "メモ", "状態", "現場の状況"];
+  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [qs(r.src === "past" ? "過去" : "新規"), qs(fmtDate(r.t)), qs(r.building), qs(r.category), qs(r.what), qs(r.how), qs(r.vendor), qs(r.reporter), qs(r.sender), q(r.photos.length), q(a.amount), qs(a.cause), qs(a.memo), qs(r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理"), qs(fieldState(r))].join(","); });
   const blob = new Blob(["﻿" + [head.map(q).join(","), ...rows].join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);

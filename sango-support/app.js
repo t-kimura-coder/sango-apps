@@ -2,10 +2,11 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "feature", text: "「報告済み」「完了」を一覧で見分けられるようにしました（報告済みは薄く、完了はさらに薄く表示）。解決したら症例の詳細から「完了にする」を押してください。写真は「カメラで撮る」「撮影済みを選ぶ」から追加できます（撮影日時も読み取ります）。送信先アドレスのコピーボタンも付けました。" },
   { date: "2026-10-04", type: "fix", text: "バグチェックで見つかった点を直しました（報告の送り方を「準備→メールを開く」の2段階にして、iPhoneで共有画面が開かない問題を避けるなど）。" },
   { date: "2026-10-04", type: "feature", text: "管理者への報告の送信先を、最初から設定済みにしました（設定で入力する必要はありません）。" },
   { date: "2026-10-04", type: "feature", text: "アプリの名前を「山郷サポート」にしました（ホーム画面に追加し直すと、アイコンの名前も変わります）。分類の一覧から電話ボタンを外し、分類を開いて症例を見てから連絡先に進む形にしました。" },
@@ -43,6 +44,7 @@ const telHref = (p) => "tel:" + String(p).replace(/[^\d+]/g, "");
 /* ---------- アイコン ---------- */
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  check: '<path d="M5 12l5 5 9-10"/>',
   doc: '<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 13h6M10 17h6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   bell: '<path d="M6 16v-5a6 6 0 0112 0v5l2 2H4z"/><path d="M10 21h4"/>',
@@ -126,6 +128,38 @@ async function importMaster(file) {
 }
 
 /* ---------- 画像 ---------- */
+// JPEGのEXIFから撮影日時を読む（縮小するとEXIFは消えるので、縮小前の元ファイルから）。読めなければ null
+async function readExifDate(file) {
+  try {
+    const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+    if (v.getUint16(0) !== 0xffd8) return null;
+    let off = 2;
+    while (off + 4 < v.byteLength) {
+      const marker = v.getUint16(off), size = v.getUint16(off + 2);
+      if (marker === 0xffe1 && v.getUint32(off + 4) === 0x45786966) return parseTiffDate(v, off + 10);
+      if ((marker & 0xff00) !== 0xff00) return null;
+      off += 2 + size;
+    }
+  } catch (e) { /* 読めなければ撮影日不明として扱う */ }
+  return null;
+}
+function parseTiffDate(v, tiff) {
+  const le = v.getUint16(tiff) === 0x4949;
+  const u16 = (o) => v.getUint16(o, le), u32 = (o) => v.getUint32(o, le);
+  const readIfd = (ifdOff) => {
+    const entries = {};
+    const n = u16(tiff + ifdOff);
+    for (let i = 0; i < n; i++) { const e = tiff + ifdOff + 2 + i * 12; entries[u16(e)] = { count: u32(e + 4), value: u32(e + 8) }; }
+    return entries;
+  };
+  const readAscii = (en) => { let s = ""; for (let i = 0; i < en.count - 1; i++) s += String.fromCharCode(v.getUint8(tiff + en.value + i)); return s; };
+  const ifd0 = readIfd(u32(tiff + 4));
+  let str = null;
+  if (ifd0[0x8769]) { const exif = readIfd(ifd0[0x8769].value); if (exif[0x9003]) str = readAscii(exif[0x9003]); }
+  if (!str && ifd0[0x0132]) str = readAscii(ifd0[0x0132]);
+  const m = str && str.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+}
 async function resizeImage(file, maxEdge) {
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
@@ -352,6 +386,11 @@ document.addEventListener("click", (e) => {
 }, true);
 
 /* ---------- 症例リスト（共通） ---------- */
+function stateTag(r) { // 下書き／完了／報告済み／未報告
+  if (r.draft) return `<span class="tag warn">下書き</span>`;
+  if (r.doneAt) return `<span class="tag done">完了</span>`;
+  return r.sentAt ? `<span class="tag">報告済み</span>` : `<span class="tag gray">未報告</span>`;
+}
 async function fillRecList(box, recs, emptyText) {
   if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
   const photos = await dbAll("photos");
@@ -361,9 +400,9 @@ async function fillRecList(box, recs, emptyText) {
   recs.forEach((r) => {
     const p = firstThumb[r.id];
     const btn = document.createElement("button");
-    btn.className = "recItem";
+    btn.className = "recItem" + (r.doneAt ? " isDone" : r.sentAt && !r.draft ? " isSent" : "");
     btn.innerHTML = `<div class="recThumb">${p && p.thumb ? `<img src="${blobUrl(p.thumb)}" alt="">` : icon("image")}</div>
-      <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? "" : `<span class="tag gray">未報告</span>`}</div>
+      <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${stateTag(r)}</div>
       <div class="recTitle">${esc(r.what || "（内容なし）")}</div>
       <div class="recSub">${esc([r.buildingName, r.how].filter(Boolean).join(" ／ "))}</div></div>${icon("chevron")}`;
     btn.lastElementChild.style.cssText = "width:18px;height:18px;color:var(--muted);flex:none";
@@ -385,7 +424,7 @@ async function viewForm(main, r) {
       if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: (await dbGet("images", p.id)).blob, saved: true })));
-      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", photos: full, removed: [] };
+      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, photos: full, removed: [] };
     } else {
       form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
     }
@@ -401,7 +440,7 @@ async function viewForm(main, r) {
       <div class="formCard"><div class="fieldLabel">写真<span class="opt">複数枚OK</span></div><div class="photoStrip" id="strip"></div></div>
       <button class="pickRow" id="pkV"><div class="pickIcon">${icon("person")}</div><div class="pickText"><div class="pickLabel">対応した業者</div><div class="pickValue${form.vendor ? "" : " ph"}">${form.vendor ? esc(form.vendor) : "選んでください（任意）"}</div></div>${icon("chevron")}</button>
       <div class="formCard"><div class="fieldLabel">報告した人<span class="opt">LINEで受けた報告なら名前</span></div><input class="textInput" id="fRep" maxlength="40" placeholder="例）佐藤さん（自分で見つけた時は空欄）" value="${esc(form.reporter)}"></div>
-      <div class="infoBar">${icon("info")}この症例はこの端末に保存されます。管理者へは「自分の症例」から送れます。</div>
+      <div class="infoBar">${icon("info")}この症例はこの端末に保存されます。管理者へは、保存した直後か「自分の症例」から報告できます。</div>
       <div class="formActions"><button class="btn" id="fDraft">下書き保存</button><button class="btn btnPrimary" id="fSave">保存する</button></div>`;
     fillIcons(main);
     drawStrip();
@@ -424,8 +463,8 @@ async function viewForm(main, r) {
       strip.appendChild(d);
     });
     const add = (label, ic, input) => { const a = document.createElement("button"); a.className = "photoAdd"; a.innerHTML = `${icon(ic)}${label}`; a.onclick = () => input.click(); strip.appendChild(a); };
-    add("撮影", "camera", $("shootInput"));
-    add("選ぶ", "image", $("pickInput"));
+    add("カメラで撮る", "camera", $("shootInput"));
+    add("撮影済みを選ぶ", "image", $("pickInput"));
   };
   window.__formDraw = draw;
   const pickBuilding = () => openSheet("建物を選ぶ", (body, close) => {
@@ -459,7 +498,7 @@ async function viewForm(main, r) {
     const f = form;
     const rec = {
       id: f.id, buildingId: f.buildingId, buildingName: b() ? b().name : f.buildingName || "", categoryId: f.categoryId, categoryName: c() ? c().label : f.categoryName || "",
-      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, by: getSetting("name"),
+      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, by: getSetting("name"),
     };
     try {
       for (const p of f.photos) if (!p.saved) { await dbPut("images", { id: p.id, blob: p.blob }); await dbPut("photos", { id: p.id, recordId: f.id, takenAt: p.takenAt, thumb: p.thumb }); }
@@ -486,9 +525,10 @@ async function addPhotos(files) {
   if (!target) return;
   for (const f of files) {
     try {
+      const taken = ((await readExifDate(f)) || (f.lastModified ? new Date(f.lastModified) : new Date())).getTime();
       const [blob, thumb] = [await resizeImage(f, 1600), await resizeImage(f, 360)];
       if (form !== target) return; // 追加中に別の画面へ移った
-      target.photos.push({ id: uid(), takenAt: f.lastModified || Date.now(), blob, thumb, saved: false });
+      target.photos.push({ id: uid(), takenAt: taken, blob, thumb, saved: false });
     } catch (e) { toast("読み込めない写真がありました"); }
   }
   if (form === target && window.__formDraw) window.__formDraw();
@@ -506,7 +546,7 @@ async function viewMine(main) {
   main.innerHTML = `
     <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例です。他の人の症例は出ません。</div>
     <div class="searchRow">${icon("search")}<input id="mQ" type="search" placeholder="建物・分類・内容で探す" value="${esc(mineQuery)}"></div>
-    <div class="chips">${[["all", "すべて"], ["unsent", "未報告"], ["draft", "下書き"]].map(([k, l]) => `<button class="chip${mineFilter === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
+    <div class="chips">${[["all", "すべて"], ["unsent", "未報告"], ["sent", "報告済み"], ["done", "完了"], ["draft", "下書き"]].map(([k, l]) => `<button class="chip${mineFilter === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
     ${unsent.length ? `<div class="sendBar"><button class="btn btnPrimary" id="sendAll">${icon("send")}未報告${unsent.length}件を管理者へ報告する</button></div>` : ""}
     <div class="recList" id="mList"></div>
     <button class="fab" id="fabAdd">${icon("plus")}症例を追加</button>`;
@@ -514,6 +554,8 @@ async function viewMine(main) {
     const q = mineQuery.trim().toLowerCase();
     let list = all;
     if (mineFilter === "unsent") list = unsent;
+    if (mineFilter === "sent") list = all.filter((r) => !r.draft && r.sentAt && !r.doneAt);
+    if (mineFilter === "done") list = all.filter((r) => !r.draft && r.doneAt);
     if (mineFilter === "draft") list = all.filter((r) => r.draft);
     if (q) list = list.filter((r) => [r.buildingName, r.categoryName, r.what, r.how, r.vendor].join(" ").toLowerCase().includes(q));
     await fillRecList($("mList"), list, all.length ? "該当する症例がありません。" : "まだ症例がありません。建物を選んで、右下の「症例を追加」から残せます。");
@@ -533,12 +575,13 @@ async function viewDetail(main, id) {
   const ps = (await photosOf(id)).sort((a, b) => a.takenAt - b.takenAt);
   main.innerHTML = `
     <div class="formCard">
-      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}</div>
+      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>` : `<span class="tag gray">未報告</span>`}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
       <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
       ${r.draft ? "" : `<button class="btn btnPrimary" id="dSend">${icon("send")}管理者へ報告する${r.sentAt ? "（もう一度）" : ""}</button>`}
+      ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "対応中に戻す" : "完了にする（解決した）"}</button>`}
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
     </div>`;
@@ -546,6 +589,13 @@ async function viewDetail(main, id) {
   if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => showLightbox((await dbGet("images", p.id)).blob); box.appendChild(im); });
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };
   const ds = $("dSend"); if (ds) ds.onclick = () => sendRecords([r]);
+  const dd = $("dDone");
+  if (dd) dd.onclick = async () => {
+    const wasDone = !!r.doneAt;
+    await dbPut("records", { ...r, doneAt: wasDone ? null : Date.now(), updatedAt: Date.now() });
+    toast(wasDone ? "対応中に戻しました" : "完了にしました。管理者にも伝えるには、もう一度「管理者へ報告する」を押してください");
+    render();
+  };
   $("dDel").onclick = async () => {
     if (!confirm("この症例を削除しますか？写真も消えます。")) return;
     for (const p of ps) { await dbDel("photos", p.id); await dbDel("images", p.id); }
@@ -556,6 +606,10 @@ async function viewDetail(main, id) {
 }
 
 /* ---------- 管理者へ報告する（Boxのメール宛 ＋ 共有シート） ---------- */
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* 次の方法へ */ }
+  try { const t = document.createElement("textarea"); t.value = text; t.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(t); t.select(); const ok = document.execCommand("copy"); t.remove(); return ok; } catch (e) { return false; }
+}
 function boxEmail() { return BOX_UPLOAD_EMAIL || getSetting("box"); }
 async function buildReport(list) {
   const files = [];
@@ -574,7 +628,7 @@ async function buildReport(list) {
       bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
     }
-    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
+    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
   }
   const payload = { kind: "sango-support-records", schema: 1, app_version: APP_VERSION, master_version: master ? master.version : "", sent_at: new Date().toISOString(), sender: getSetting("name"), sender_id: deviceId(), records: outRecs };
   const jsonName = safeName(`症例_${getSetting("name")}_${ymd(Date.now())}_${list.length}件.json`);
@@ -588,14 +642,18 @@ async function sendRecords(list) {
   toast("送る準備をしています...");
   let prep;
   try { prep = await buildReport(list); } catch (e) { console.error(e); return toast("送る準備ができませんでした。もう一度試してください"); }
+  $("toast").hidden = true;
   openSheet("管理者へ報告する", (body, close) => {
     const mb = (prep.bytes / 1048576).toFixed(1);
     body.innerHTML = `<div class="mutedText" style="margin-bottom:10px">症例 ${list.length}件・写真 ${prep.photoCount}枚（約${mb}MB）を、メールで管理者へ送ります。<br>「メールを開く」を押すと、送信先のアドレスをコピーして共有画面が開きます。メールを選び、宛先に貼り付けて送信してください。</div>
+      <div class="vendorCard"><div class="vSub" style="margin:0">送信先のアドレス</div><div style="word-break:break-all;font-weight:700;margin:4px 0 8px">${esc(email)}</div>
+        <button class="btn wide" id="rpCopy">アドレスをコピー</button><div class="mutedText" id="rpCopied" style="margin-top:6px" hidden>コピーしました。メールの宛先に貼り付けてください。</div></div>
       ${prep.bytes > MAIL_WARN_BYTES ? `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">写真が15MBを超えています。メールの容量上限で送れないかもしれません。件数を分けて報告してください。</div>` : ""}
       <div class="btnCol"><button class="btn btnPrimary" id="rpGo">${icon("send")}メールを開く</button><button class="btn" id="rpNo">やめる</button></div>`;
     $("rpNo").onclick = close;
+    $("rpCopy").onclick = () => copyText(email).then((ok) => { $("rpCopied").hidden = !ok; toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"); });
     $("rpGo").onclick = () => { // 押した直後に共有を呼ぶ（間に待ち時間を入れない）
-      if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+      copyText(email).then((ok) => { if (ok) $("rpCopied").hidden = false; }); // 共有画面が開く前にコピー（共有画面の裏にも「コピーしました」が残る）
       if (!(navigator.canShare && navigator.canShare({ files: prep.all }))) { alert("この端末では共有機能が使えないため送信できません。iPhoneのホーム画面から開いてください。"); return; }
       navigator.share({ files: prep.all, title: prep.jsonName }).then(async () => {
         close();
@@ -621,11 +679,12 @@ async function viewSettings(main) {
       <div style="margin:10px 0">${meta ? `<span class="statusOk">取り込み済み</span>　版 ${esc(meta.data.version)}／建物${meta.data.buildings.length}／${fmtDate(meta.importedAt)}` : `<span class="statusWarn">未取り込み</span>`}</div>
       <button class="btn btnPrimary" id="sImport" style="width:100%">データを取り込む</button></div></div>
     <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
-    <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
+    <div class="settingSec"><h3>管理者への送信先</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
       1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま管理者へ報告<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
+  $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
   $("sName").onchange = (e) => { setSetting("name", e.target.value.trim()); toast("保存しました"); };
   $("sBox").onchange = (e) => { if (!BOX_UPLOAD_EMAIL) { setSetting("box", e.target.value.trim()); toast("保存しました"); } };
 }
