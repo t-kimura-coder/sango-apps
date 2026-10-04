@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -14,6 +14,7 @@ const REPLY_DIR = "返信";
 const $ = (id) => document.getElementById(id);
 
 const ICONS = {
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   report: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/>',
@@ -257,7 +258,165 @@ function buildData(reports, replies, statuses = [], meetings = []) {
       const p = data.people.get(personKeyOf(x));
       if (p) p.lastNoticeAt = !p.lastNoticeAt || x.at > p.lastNoticeAt ? x.at : p.lastNoticeAt;
     });
+  applyGas();
+}
+
+/* ---------- 上司とのやりとり（GAS の窓口。文字だけを、週の報告を待たずにすぐやりとりする） ----------
+   合言葉（人ごと）は設定で入れる（コードには書かない）。開いている間は2分ごとに新着を確かめる。
+   受け取るもの：監督の疑問・やりとり（note）、監督の書き足し（reply）。送るもの：返信（reply）・宿題（task） */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwaj8aDwI3wsIcq58YksGB9JImyknVyio7b24v3QKjCKO5yGKIXlJshIa39G2VLYhehPw/exec";
+let gasStore = { cursor: 0, notes: {}, replies: {} };
+function gasOn() {
+  return !!getLS("gasToken");
+}
+async function gasCall(body) {
+  const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getLS("gasToken") }) });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || "error");
+  return j;
+}
+async function loadGasStore() {
+  try {
+    const v = await kvGet("gas");
+    if (v && v.notes) gasStore = v;
+  } catch (e) {}
+}
+// GAS で届いた疑問・書き足しを、報告から作ったデータに重ねる（報告より新しければ中身を差し替える）
+function applyGas() {
+  Object.values(gasStore.notes).forEach((m) => {
+    const p = m.payload || {};
+    if (!p.note_id) return;
+    if (p.deleted) return data.notes.delete(p.note_id);
+    const sk = siteKeyOf({ kouji_no: p.kouji_no, site_id: p.site_id, site: p.site });
+    const pk = [...data.people.values()].find((x) => normName(x.name) === normName(m.from)) ? [...data.people.values()].find((x) => normName(x.name) === normName(m.from)).key : "name:" + m.from;
+    if (!data.sites.has(sk)) data.sites.set(sk, { key: sk, name: p.site || "（現場名なし）", koujiNo: p.kouji_no || "", personKey: pk, personName: m.from, persons: new Map([[pk, m.from]]), members: new Set(), reports: [] });
+    else data.sites.get(sk).persons.set(pk, data.sites.get(sk).persons.get(pk) || m.from);
+    if (!data.people.has(pk)) data.people.set(pk, { key: pk, name: m.from, sites: new Set([sk]), reports: [] });
+    else data.people.get(pk).sites.add(sk);
+    const prev = data.notes.get(p.note_id);
+    const ver = p.updated_at || m.at;
+    if (prev && prev._ver > ver) return;
+    const typeId = p.type_id || TYPE_BY_LABEL[p.type] || "notice";
+    data.notes.set(p.note_id, {
+      ...(prev || {}),
+      id: p.note_id,
+      type: typeOverrides()[p.note_id] || typeId,
+      origType: typeId,
+      contact: p.contact || null,
+      text: p.text || "",
+      at: p.at || m.at,
+      by: p.by || m.from,
+      status: p.status || "",
+      resolvedAt: p.resolved_at || "",
+      resolvedBy: p.resolved_by || "",
+      noId: false,
+      siteKey: sk,
+      siteId: p.site_id || "",
+      siteName: p.site || "",
+      personKey: pk,
+      personName: m.from,
+      itemId: p.item_id || "",
+      item: p.item || "",
+      itemNo: p.item_no || "",
+      process: p.process || "",
+      _ver: ver,
+      viaGas: true,
+    });
+  });
+  Object.values(gasStore.replies).forEach((m) => {
+    const p = m.payload || {};
+    addReplyToData({ kind: "genba-reply", id: m.id, note_id: m.thread, from: m.from, from_role: p.from_role || "", text: p.text || "", at: m.at });
+  });
   updateNavBadge();
+}
+let gasSyncing = false;
+async function syncGas(manual = false) {
+  if (!gasOn() || gasSyncing) return;
+  gasSyncing = true;
+  const me = normName(getLS("name"));
+  let fresh = 0;
+  try {
+    for (let round = 0; round < 10; round++) {
+      const j = await gasCall({ action: "sync", since: gasStore.cursor || 0 });
+      (j.messages || []).forEach((m) => {
+        if (m.kind === "note") {
+          if (!gasStore.notes[m.id] && normName(m.from) !== me) fresh++;
+          gasStore.notes[m.id] = m; // 同じ疑問の出し直しは新しい方
+        } else if (m.kind === "reply") {
+          if (!gasStore.replies[m.id] && normName(m.from) !== me) fresh++;
+          gasStore.replies[m.id] = m;
+        }
+      });
+      gasStore.cursor = j.cursor || gasStore.cursor;
+      if (!j.more) break;
+    }
+    await kvSet("gas", gasStore);
+    if (!noData()) applyGas();
+    if (fresh) {
+      toast(`現場から新しいやりとりが ${fresh}件 届きました`);
+      if (document.hidden && "Notification" in window && Notification.permission === "granted") new Notification("現場ナビ 見守り", { body: `現場から新しいやりとりが ${fresh}件 届きました`, icon: "icon-192.png?v=2" });
+      // 入力中は画面を描き直さない（打っている文字が消えないように）
+      const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "");
+      if (!typing && $("drawer").hidden && !noData()) route();
+    } else if (manual) toast("新しいやりとりはありません");
+    const st = $("gasStatus");
+    if (st) st.textContent = `最後に確かめた時刻：${fmtDateTime(new Date().toISOString())}`;
+  } catch (e) {
+    console.warn(e);
+    if (manual) toast(e.message === "unauthorized" ? "合言葉が違うか、止められています" : "つながりませんでした");
+  } finally {
+    gasSyncing = false;
+  }
+}
+async function postGas(msg) {
+  if (!gasOn()) return false;
+  try {
+    await gasCall({ action: "post", msg });
+    return true;
+  } catch (e) {
+    console.warn(e);
+    return false;
+  }
+}
+function gasCardHtml() {
+  return (
+    `<div class="card setCard"><h2>現場とのやりとり（すぐ届く）</h2>` +
+    `<p class="sub">合言葉を入れると、監督の疑問・やりとりが週の報告を待たずに届き、返信と宿題も監督の現場ナビにすぐ届きます（文字だけ。写真と報告はこれまで通り Box）。開いている間は2分ごとに新着を確かめます。</p>` +
+    `<input id="gasToken" class="input" type="password" placeholder="合言葉" value="${esc(getLS("gasToken"))}" autocomplete="off">` +
+    `<div class="btnRow"><button class="btn btnOutline" id="gasCheck">${icon("check", 18)}つながるか確かめる</button><button class="btn btnOutline" id="gasNow">${icon("reload", 18)}今すぐ確かめる</button>` +
+    ("Notification" in window ? `<button class="btn btnOutline" id="gasNotify">${icon("bell", 18)}${Notification.permission === "granted" ? "通知はオン" : "新着をPCに通知する"}</button>` : "") +
+    `</div><div id="gasStatus" class="mutedText"></div></div>`
+  );
+}
+function bindGasCard(main) {
+  const inp = main.querySelector("#gasToken");
+  if (!inp) return;
+  inp.addEventListener("change", () => {
+    setLS("gasToken", inp.value.trim());
+    gasStore = { cursor: 0, notes: {}, replies: {} };
+    kvSet("gas", gasStore);
+    toast(inp.value.trim() ? "合言葉を保存しました" : "合言葉を消しました");
+  });
+  main.querySelector("#gasCheck").addEventListener("click", async () => {
+    setLS("gasToken", inp.value.trim());
+    if (!gasOn()) return toast("合言葉を入れてください");
+    try {
+      const j = await gasCall({ action: "whoami" });
+      $("gasStatus").textContent = `つながりました：${j.me.name}（${j.me.role}${j.me.team ? "・" + j.me.team : ""}）`;
+      if (j.me.role !== "上司") alert("この合言葉は「監督」用です。見守りでは「上司」用の合言葉を入れてください。");
+      if (getLS("name") && normName(j.me.name) !== normName(getLS("name"))) alert(`合言葉の名前（${j.me.name}）と、設定の「あなたの名前」（${getLS("name")}）が違います。合わせておくと、自分の書いたものが新着に数えられません。`);
+      syncGas(true);
+    } catch (e) {
+      $("gasStatus").textContent = e.message === "unauthorized" ? "合言葉が違うか、止められています" : "つながりませんでした";
+    }
+  });
+  main.querySelector("#gasNow").addEventListener("click", () => syncGas(true));
+  const nb = main.querySelector("#gasNotify");
+  if (nb)
+    nb.addEventListener("click", async () => {
+      const p = await Notification.requestPermission();
+      nb.innerHTML = `${icon("bell", 18)}${p === "granted" ? "通知はオン" : "通知は許可されていません"}`;
+    });
 }
 
 function addReplyToData(rp) {
@@ -274,7 +433,9 @@ function addReplyToData(rp) {
 function noteStatus(n) {
   if (n.type === "contact") return n.contact && n.contact.pending ? "waiting" : "resolved"; // その場で解決して残したもの
   if (n.type === "question" && n.status === "resolved") return "resolved";
-  if ((data.replies.get(n.id) || []).length) return "replied";
+  const reps = data.replies.get(n.id) || [];
+  if (reps.length && reps[reps.length - 1].from_role === "監督" && (n.type === "question" || n.type === "request")) return "open"; // 監督が書き足した＝また答えを待っている
+  if (reps.length) return "replied";
   return n.type === "question" || n.type === "request" ? "open" : "";
 }
 
@@ -855,7 +1016,11 @@ async function saveMeeting(s, week, d, idx) {
   if (!(dirHandle && data.source && data.source.writable)) return alert("このブラウザでは報告フォルダに書き込めません。Edge か Chrome で、設定から報告フォルダを選び直してください。");
   try {
     await writeToFolder([MEET_DIR], safeName(`打合せ_${s.name}_${week}.json`), JSON.stringify(m, null, 2));
-    for (const f of taskFiles) await writeToFolder([REPLY_DIR, f.dir], f.name, f.body);
+    for (const f of taskFiles) {
+      await writeToFolder([REPLY_DIR, f.dir], f.name, f.body);
+      const t = JSON.parse(f.body);
+      await postGas({ kind: "task", id: t.id, thread: t.id, to: t.to, payload: t });
+    }
     addMeetingToData(m);
     setMeetDraft(s.key, week, null);
     const n = taskFiles.filter((f) => f.open).length;
@@ -1201,8 +1366,15 @@ async function sendReply(n, text) {
     text,
     at: new Date().toISOString(),
   };
+  rp.from_role = "上司";
   const fileName = safeName(`返信_${n.siteName}_${n.personName}_${stamp()}_${rp.id.slice(0, 6)}.json`);
   const body = JSON.stringify(rp, null, 2);
+  const viaGas = !demoMode && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.personName, payload: rp }));
+  if (viaGas && !(dirHandle && data.source && data.source.writable)) {
+    addReplyToData(rp);
+    toast("返信を送りました（監督の現場ナビにすぐ届きます）");
+    return true;
+  }
   if (demoMode) {
     addReplyToData(rp);
     toast("サンプルなので、ファイルには書き出していません");
@@ -1572,8 +1744,8 @@ function openNote(id) {
     (st === "resolved" ? `<div class="resolvedNote">${icon("check", 18)}${esc(n.resolvedBy || n.personName)} さんが ${fmtDateTime(n.resolvedAt)} に解決済みにしました</div>` : "") +
     `</div>` +
     (replies.length
-      ? `<div class="card"><div class="origHead">${icon("reply", 20)}<span>これまでの返信</span></div>${replies
-          .map((r) => `<div class="pastReply"><div class="prMeta"><b>${esc(r.from)}</b>　${fmtDateTime(r.at)}</div><div class="prText">${esc(r.text)}</div></div>`)
+      ? `<div class="card"><div class="origHead">${icon("reply", 20)}<span>これまでのやりとり</span></div>${replies
+          .map((r) => `<div class="pastReply${r.from_role === "監督" ? " fromSite" : ""}"><div class="prMeta"><b>${esc(r.from)}</b>${r.from_role === "監督" ? "（監督）" : ""}　${fmtDateTime(r.at)}</div><div class="prText">${esc(r.text)}</div></div>`)
           .join("")}</div>`
       : "") +
     `<div class="card"><div class="origHead">${icon("save", 20)}<span>返信内容</span></div>` +
@@ -1907,6 +2079,7 @@ function renderSettings() {
     `<button class="btn btnOutline" data-act="demo">サンプルデータで見る</button></div>` +
     (canPickFolder ? "" : `<p class="warn">このブラウザではフォルダに書き込めません。Edge か Chrome で開くと、返信をフォルダに直接書き出せます。</p>`) +
     `</div>` +
+    gasCardHtml() +
     teamCardHtml() +
     `<div class="card setCard"><h2>表示の色</h2><div class="themeSeg">${[["auto", "端末と同じ"], ["light", "ライト"], ["dark", "ダーク"]]
       .map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${(getLS("theme") || "auto") === k ? "on" : ""}">${l}</button>`)
@@ -1939,6 +2112,7 @@ function renderSettings() {
     $("extractBtn").disabled = !extractFiles.length;
   });
   $("extractBtn").addEventListener("click", extractBackupPhotos);
+  bindGasCard(main);
   $("myName").addEventListener("change", (e) => {
     setLS("name", e.target.value.trim());
     toast("名前を保存しました");
@@ -1974,6 +2148,10 @@ function applyTheme(t) {
 
 async function init() {
   applyTheme(getLS("theme") || "auto");
+  await loadGasStore();
+  setTimeout(() => syncGas(), 3000);
+  setInterval(() => !document.hidden && syncGas(), 2 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => !document.hidden && syncGas());
   document.title = APP_NAME;
   $("appName").textContent = APP_NAME;
   document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon, 22)));

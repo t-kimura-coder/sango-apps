@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 69;
+const APP_VERSION = 70;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-05", type: "feature", text: "上司とのやりとりが、すぐ届くようになりました（設定の「上司とのやりとり」で合言葉を入れた人）。疑問・やりとりは週の報告を待たずに上司に届き、上司からの返信と宿題は開いた時に自動で受け取ります。疑問には「書き足す」で返事を続けられます（文字だけ。写真はこれまで通り報告で）" },
   { date: "2026-10-04", type: "fix", text: "報告の取り消しまわりを直しました（取り消せるのは一番新しい報告だけ、写真付きの「アプリ外で報告」を取り消しても写真が残る、済んだ週に追加で送った写真も報告済みにできる）。やりとりの書きかけが消えることがあったのも直しました" },
   { date: "2026-10-04", type: "feature", text: "その週の報告が済んでいる時は、報告タブの下のボタンが「✓ 今週は報告済み」になります。送り間違えた時は、そこか「過去の報告」から報告を取り消して、写真を「送る写真」に戻して送り直せます（上司の画面では新しい方に置き換わります）" },
   { date: "2026-10-04", type: "feature", text: "電話やLINEで聞いたこと・業者に頼んだことを「やりとり」として残せるようになりました（工程マニュアルの項目の「電話・LINEのやりとりを残す」から）。相手は次から候補で選べます。写真はLINEにある印か、アプリの写真を指すだけなので二重に保存しません。業者の返事待ちはホームの「やること」に出ます" },
@@ -3756,11 +3757,12 @@ function renderMemoSection(it) {
             ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).length ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).length ? "返信あり" : "回答待ち"}</button>`
             : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
+          (n.type !== "notice" || (n.replies || []).length ? `<button class="noteMore" data-more="${esc(n.id)}">${icon(ICONS.reply, 14)}書き足す</button>` : "") +
           `</div>${n.type === "contact" ? contactBodyHtml(n) : `<div class="noteText">${esc(n.text)}</div>`}` +
           (n.replies || [])
             .map(
               (r) =>
-                `<div class="noteReply${r.readAt ? "" : " unread"}"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(r.from || "上司")}</b>` +
+                `<div class="noteReply${r.readAt ? "" : " unread"}${r.mine ? " mine" : ""}"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(r.mine ? "自分" : r.from || "上司")}</b>` +
                 `<span>${esc(fmtDateTime(r.at))}</span>${r.readAt ? "" : '<span class="newMark">新着</span>'}</div><div class="noteText">${esc(r.text)}</div></div>`
             )
             .join("") +
@@ -3794,6 +3796,7 @@ function renderMemoSection(it) {
     });
   if (memoOpenFor === it.id && memoMode === "contact" && $("cSaveBtn")) bindContactForm(it);
   sec.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => resolveContact(it, b.dataset.resolve)));
+  sec.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => addNoteFollowup(it, b.dataset.more)));
   fillContactPhotos(sec);
   const cancel = $("memoCancelBtn");
   if (cancel)
@@ -3960,6 +3963,7 @@ async function saveContact(it) {
     contact: { who: d.who, side: d.side, via: d.via, result: d.pending ? "" : d.result, pending: d.pending, inLine: d.inLine, photoIds: d.photoIds, resolvedAt: d.pending ? "" : now },
   });
   await saveCheckRec(rec);
+  sendNoteToGas(it, rec.notes[rec.notes.length - 1]);
   addContactHistory(d.who, d.side);
   contactDraft = null;
   memoOpenFor = null;
@@ -3983,6 +3987,7 @@ function resolveContact(it, id) {
         n.contact.resolvedAt = new Date().toISOString();
         n.updatedAt = n.contact.resolvedAt;
         await saveCheckRec(rec);
+        sendNoteToGas(it, n);
         close();
         renderMemoSection(it);
         toast("返事を残しました");
@@ -4052,6 +4057,7 @@ async function saveMemo(it) {
   if (memoType === "question") note.status = "open";
   rec.notes.push(note);
   await saveCheckRec(rec);
+  sendNoteToGas(it, note);
   memoType = null;
   memoOpenFor = null;
   renderMemoSection(it);
@@ -4158,6 +4164,207 @@ function openTaskList(sites) {
   });
 }
 
+/* ---------- 上司とのやりとり（GAS の窓口。文字だけを、週の報告を待たずにすぐ届ける） ----------
+   合言葉（人ごと）は設定で各自が入れる（コードには書かない）。送れなかった分は端末に貯めて、つながったら送る。
+   届くもの：上司からの返信（reply）・打合せの宿題（task）。送るもの：疑問・やりとり（note）・書き足し（reply） */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwaj8aDwI3wsIcq58YksGB9JImyknVyio7b24v3QKjCKO5yGKIXlJshIa39G2VLYhehPw/exec";
+const GAS_TOKEN_KEY = "genba-photo-gas-token";
+const GAS_CURSOR_KEY = "genba-photo-gas-cursor";
+const GAS_OUTBOX_KEY = "genba-photo-gas-outbox";
+function gasOn() {
+  return !!getSetting(GAS_TOKEN_KEY);
+}
+async function gasCall(body) {
+  const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getSetting(GAS_TOKEN_KEY) }) });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || "error");
+  return j;
+}
+function gasOutbox() {
+  try {
+    return JSON.parse(localStorage.getItem(GAS_OUTBOX_KEY) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+function setGasOutbox(list) {
+  try {
+    localStorage.setItem(GAS_OUTBOX_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+function enqueueGas(msg) {
+  if (!gasOn()) return;
+  // 同じメモを続けて直した時は、新しい方だけ送る
+  setGasOutbox([...gasOutbox().filter((m) => !(m.kind === msg.kind && m.id === msg.id)), msg]);
+  flushGas();
+}
+let gasFlushing = false;
+async function flushGas() {
+  if (!gasOn() || gasFlushing || (navigator.onLine === false)) return;
+  const box = gasOutbox();
+  if (!box.length) return;
+  gasFlushing = true;
+  try {
+    for (let i = 0; i < box.length; i += 20) {
+      const part = box.slice(i, i + 20);
+      await gasCall({ action: "postMany", msgs: part });
+      const sent = new Set(part.map((m) => m.kind + "|" + m.id + "|" + m.ver));
+      setGasOutbox(gasOutbox().filter((m) => !sent.has(m.kind + "|" + m.id + "|" + m.ver)));
+    }
+  } catch (e) {
+    console.warn("やりとりを送れませんでした（あとで送り直します）", e);
+  } finally {
+    gasFlushing = false;
+  }
+}
+// 疑問・やりとりを上司に送る形
+function notePayload(it, n, extra = {}) {
+  const site = currentSite() || {};
+  const c = n.contact;
+  return {
+    note_id: n.id,
+    site_id: site.id || "",
+    kouji_no: site.koujiNo || "",
+    site: site.name || "",
+    item_id: it.id,
+    item_no: it.no || "",
+    item: it.name,
+    process: processOf(it.cat).name,
+    type: noteLabel(n),
+    type_id: n.type,
+    status: n.type === "question" ? n.status || "open" : n.type === "contact" ? (c && c.pending ? "waiting" : "resolved") : "",
+    resolved_at: n.resolvedAt || "",
+    resolved_by: n.resolvedBy || "",
+    text: n.text,
+    at: n.at,
+    by: n.by || getSetting(USER_NAME_KEY),
+    updated_at: n.updatedAt || n.at,
+    contact: n.type === "contact" && c ? { who: c.who, side: c.side, via: c.via, result: c.result || "", pending: !!c.pending, in_line: !!c.inLine, photo_ids: c.photoIds || [], resolved_at: c.resolvedAt || "" } : null,
+    ...extra,
+  };
+}
+function sendNoteToGas(it, n, extra) {
+  enqueueGas({ kind: "note", id: n.id, thread: n.id, ver: new Date().toISOString(), payload: notePayload(it, n, extra) });
+}
+// 上司からの返信・宿題を受け取る
+let gasSyncing = false;
+async function syncGas(manual = false) {
+  if (!gasOn() || gasSyncing) return;
+  gasSyncing = true;
+  const me = normPersonName(getSetting(USER_NAME_KEY));
+  let replies = 0;
+  let tasks = 0;
+  try {
+    await flushGas();
+    for (let round = 0; round < 10; round++) {
+      const since = Number(getSetting(GAS_CURSOR_KEY) || 0);
+      const j = await gasCall({ action: "sync", since });
+      const msgs = j.messages || [];
+      const fromOthers = msgs.filter((m) => normPersonName(m.from) !== me);
+      // 返信：元の疑問（この端末にあるメモ）に付ける
+      const reps = fromOthers.filter((m) => m.kind === "reply");
+      if (reps.length) {
+        const recs = await dbGetAll("checks");
+        const byNote = new Map();
+        recs.forEach((r) => (r.notes || []).forEach((n) => byNote.set(n.id, { r, n })));
+        const changed = new Set();
+        reps.forEach((m) => {
+          const hit = byNote.get(m.thread);
+          if (!hit) return;
+          hit.n.replies = hit.n.replies || [];
+          if (hit.n.replies.some((y) => y.id === m.id)) return;
+          hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: null });
+          hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
+          changed.add(hit.r);
+          replies++;
+        });
+        if (changed.size) await dbPutMany("checks", [...changed]);
+      }
+      // 宿題：返信の取り込みと同じ形
+      const ts = fromOthers.filter((m) => m.kind === "task").map((m) => m.payload).filter((x) => x && x.id);
+      if (ts.length) tasks += await importTasks(ts);
+      setSetting(GAS_CURSOR_KEY, String(j.cursor || since));
+      if (!j.more) break;
+    }
+    if (replies || tasks) {
+      await loadSiteChecks();
+      toast(`上司から${[replies ? `返信 ${replies}件` : "", tasks ? `宿題 ${tasks}件` : ""].filter(Boolean).join("・")}が届きました`);
+      rerenderCurrentView();
+    } else if (manual) toast("新しい返信・宿題はありません");
+    $("gasStatus") && ($("gasStatus").textContent = `最後に受け取った時刻：${fmtDateTime(new Date().toISOString())}`);
+  } catch (e) {
+    console.warn(e);
+    if (manual) toast(e.message === "unauthorized" ? "合言葉が違うか、止められています" : "つながりませんでした（電波を確かめてください）");
+  } finally {
+    gasSyncing = false;
+  }
+}
+// 疑問への書き足し（上司とのやりとりを続ける）
+function addNoteFollowup(it, id) {
+  const rec = checkRecOf(it.id);
+  const n = (rec.notes || []).find((x) => x.id === id);
+  if (!n) return;
+  openSheet("書き足す", (body, close) => {
+    const ta = document.createElement("textarea");
+    ta.className = "sheetTextarea";
+    ta.placeholder = "上司への返事・追加で聞きたいこと";
+    body.appendChild(ta);
+    if (!gasOn()) {
+      const w = document.createElement("div");
+      w.className = "mutedText";
+      w.textContent = "設定の「上司とのやりとり」で合言葉を入れると、すぐ上司に届きます。入れていない時は、次の週の報告で届きます。";
+      body.appendChild(w);
+    }
+    body.appendChild(
+      sheetButton("書き足す", "btnPrimary btnLarge", async () => {
+        const text = ta.value.trim();
+        if (!text) return ta.focus();
+        const me = getSetting(USER_NAME_KEY);
+        const r = { id: newId(), from: me, text, at: new Date().toISOString(), readAt: new Date().toISOString(), mine: true };
+        n.replies = n.replies || [];
+        n.replies.push(r);
+        n.updatedAt = r.at;
+        await saveCheckRec(rec);
+        enqueueGas({ kind: "reply", id: r.id, thread: n.id, to: "上司", ver: r.at, payload: { note_id: n.id, text, from: me, from_role: "監督", at: r.at, site: (currentSite() || {}).name || "", item: it.name } });
+        close();
+        renderMemoSection(it);
+        toast(gasOn() ? "書き足しました（上司に届きます）" : "書き足しました");
+      })
+    );
+    body.appendChild(sheetButton("やめる", "btnGhost", close));
+    setTimeout(() => ta.focus(), 300);
+  });
+}
+function initGas() {
+  const input = $("gasTokenInput");
+  if (!input) return;
+  input.value = getSetting(GAS_TOKEN_KEY);
+  input.addEventListener("change", () => {
+    setSetting(GAS_TOKEN_KEY, input.value.trim());
+    setSetting(GAS_CURSOR_KEY, "0");
+    toast(input.value.trim() ? "合言葉を保存しました" : "合言葉を消しました");
+  });
+  $("gasCheckBtn").addEventListener("click", async () => {
+    setSetting(GAS_TOKEN_KEY, input.value.trim());
+    if (!gasOn()) return toast("合言葉を入れてください");
+    try {
+      const j = await gasCall({ action: "whoami" });
+      const app = getSetting(USER_NAME_KEY);
+      $("gasStatus").textContent = `つながりました：${j.me.name}（${j.me.role}${j.me.team ? "・" + j.me.team : ""}）`;
+      if (normPersonName(j.me.name) !== normPersonName(app)) alert(`合言葉の名前（${j.me.name}）と、このアプリの名前（${app || "未登録"}）が違います。返信が届かなくなるので、どちらかを合わせてください。`);
+      syncGas();
+    } catch (e) {
+      $("gasStatus").textContent = e.message === "unauthorized" ? "合言葉が違うか、止められています" : "つながりませんでした";
+    }
+  });
+  $("gasSyncBtn").addEventListener("click", () => syncGas(true));
+  // 開いた時・画面に戻った時・3分ごと（開いている間）に受け取る。電波が戻ったら送り直す
+  setTimeout(() => syncGas(), 2500);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && syncGas());
+  setInterval(() => document.visibilityState === "visible" && syncGas(), 3 * 60 * 1000);
+  window.addEventListener("online", () => flushGas());
+}
+
 /* ---------- 上司からの返信（現場ナビ 見守りが Box の「返信」フォルダに書き出す genba-reply JSON） ---------- */
 // どのメモへの返信かは note_id で探す。ほかの監督あての返信も同じフォルダに入るので、この端末に無いメモへの返信は黙って飛ばす
 async function onRepliesPicked() {
@@ -4250,12 +4457,15 @@ async function toggleNoteStatus(it, id) {
   }
   n.updatedAt = new Date().toISOString();
   await saveCheckRec(rec);
+  sendNoteToGas(it, n);
   renderMemoSection(it);
 }
 
 async function deleteMemo(it, id) {
   if (!confirm("このメモを削除しますか？")) return;
   const rec = checkRecOf(it.id);
+  const gone = (rec.notes || []).find((n) => n.id === id);
+  if (gone) sendNoteToGas(it, gone, { deleted: true });
   rec.notes = (rec.notes || []).filter((n) => n.id !== id);
   await saveCheckRec(rec);
   renderMemoSection(it);
@@ -5688,6 +5898,7 @@ function init() {
   $("replyInput").addEventListener("change", onRepliesPicked);
   $("checkPhotosBtn").addEventListener("click", checkPhotos);
   $("settingsReplyBtn").addEventListener("click", () => $("replyInput").click());
+  initGas();
   $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
   $("tourAgainBtn").addEventListener("click", startTour);
   $("helpTourBtn").addEventListener("click", startTour);

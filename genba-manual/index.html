@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=66">
+<link rel="stylesheet" href="style.css?v=67">
 </head>
 <body>
 
@@ -299,6 +299,13 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="mutedText">「現場ナビ 見守り」で上司が書いた返信と、班の打合せで決まった宿題は、Box の「返信」フォルダに届きます。「返信_〜.json」「宿題_〜.json」を選んで取り込むと、返信は気づき・疑問メモの下に、宿題はホームの「やること」に出ます（まとめて選んでOK。ほかの人あてのものは飛ばします）。</div>
       <button id="settingsReplyBtn" class="btn btnOutline" type="button">返信・宿題を取り込む</button>
     </div>
+    <div class="card">
+      <div class="cardTitle">上司とのやりとり（すぐ届ける）</div>
+      <div class="mutedText">合言葉を入れると、疑問・やりとりが週の報告を待たずに上司に届き、上司からの返信と宿題も開いた時に自動で受け取ります（文字だけ。写真はこれまで通り報告で）。合言葉は上司からもらってください。</div>
+      <input id="gasTokenInput" class="sheetInput" type="password" placeholder="合言葉" autocomplete="off">
+      <div class="btnRow"><button id="gasCheckBtn" class="btn btnOutline" type="button">つながるか確かめる</button><button id="gasSyncBtn" class="btn btnOutline" type="button">今すぐ受け取る</button></div>
+      <div id="gasStatus" class="mutedText"></div>
+    </div>
     <div class="card" id="manualCard">
       <div class="cardTitle">マニュアル</div>
       <div id="manualInfo" class="mutedText preLine"></div>
@@ -494,6 +501,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=69"></script>
+<script src="app.js?v=70"></script>
 </body>
 </html>

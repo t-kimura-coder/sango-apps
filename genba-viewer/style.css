@@ -777,3 +777,6 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tBadge.c, :root:not([data-theme="light"]) .noteIcon.c { background: #23384d; color: #9cc3ea; } :root:not([data-theme="light"]) .contactBox { background: #1f2c38; } }
 :root[data-theme="dark"] .tBadge.c, :root[data-theme="dark"] .noteIcon.c { background: #23384d; color: #9cc3ea; }
 :root[data-theme="dark"] .contactBox { background: #1f2c38; }
+
+/* 監督からの書き足し */
+.pastReply.fromSite { border-left: 3px solid var(--color-wood, #b07a3c); background: var(--color-wood-soft); }

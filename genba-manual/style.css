@@ -1169,3 +1169,8 @@ img.imgBroken { visibility: hidden; }
 
 /* 報告済みの週は、下のボタンを「済み」の見た目に */
 #markReportedBtn.doneState { border-color: var(--color-ok-text); background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; }
+
+/* 疑問への書き足し */
+.noteMore { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; min-height: 30px; padding: 0 10px; border-radius: 15px; border: 1px solid var(--color-primary); background: none; color: var(--color-primary); font-size: 12px; font-weight: 700; }
+.noteMore + .noteDel, .noteDel + .noteMore { margin-left: 6px; }
+.noteReply.mine { border-left-color: var(--color-wood, #b07a3c); background: var(--color-wood-soft); }
