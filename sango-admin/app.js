@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -14,8 +14,8 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 const getLS = (k, d = "") => { try { const v = localStorage.getItem(P + k); return v == null ? d : v; } catch (e) { return d; } };
 const setLS = (k, v) => { try { localStorage.setItem(P + k, v); } catch (e) {} };
 const pad = (n) => String(n).padStart(2, "0");
-const fmtDate = (t) => { const d = new Date(t); return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`; };
-const fmtTime = (t) => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtDate = (t) => { if (!t) return "—"; const d = new Date(t); return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`; };
+const fmtTime = (t) => { if (!t) return ""; const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const yen = (n) => (n === "" || n == null || isNaN(Number(n)) ? "—" : Number(n).toLocaleString("ja-JP") + "円");
 const catNo = (id) => String(id || "").toLowerCase();
 
@@ -50,46 +50,69 @@ const canEdit = () => getLS("edit") === "1";
 function norm(r, sender) {
   return {
     id: r.id, src: r.source === "past" ? "past" : "new", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
-    what: r.what || "", how: r.how || "", vendor: r.vendor || "", reporter: r.reporter || "", sender: sender || "", t: Date.parse(r.created_at) || 0,
+    what: r.what || "", how: r.how || "", vendor: r.vendor || "", reporter: r.reporter || "", sender: String(sender || "").trim(), t: Date.parse(r.created_at) || 0,
     updated: Date.parse(r.updated_at || r.created_at) || 0, photos: (r.photos || []).map((p) => p.file), amount0: r.amount == null ? "" : r.amount, cause0: r.cause || "", memo0: r.memo || "",
   };
 }
 const adm = (r) => {
   const it = S.admin.items[r.id] || {};
-  return { amount: it.amount != null && it.amount !== "" ? it.amount : r.amount0, cause: it.cause != null ? it.cause : r.cause0, memo: it.memo != null ? it.memo : r.memo0, status: it.status || (r.src === "past" ? "done" : ""), at: it.at || 0, by: it.by || "" };
+  return { amount: it.amount !== undefined && it.amount !== null ? it.amount : r.amount0, cause: it.cause != null ? it.cause : r.cause0, memo: it.memo != null ? it.memo : r.memo0, status: it.status || (r.src === "past" ? "done" : ""), at: it.at || 0, by: it.by || "" };
 };
 const isTodo = (r) => r.src === "new" && adm(r).status !== "done";
 const titleOf = (r) => (r.what.split(/\n/)[0] || "（内容なし）").slice(0, 40);
 
 async function ingest(entries) {
   const recs = new Map();
-  let admin = null;
+  const admins = [];
   const getters = new Map();
+  const put = (r, sender, past) => { // 壊れた1件で、同じファイルの残りが捨てられないようにする
+    try {
+      if (!r || !r.id) return;
+      const n = norm(past ? { ...r, source: "past" } : r, sender);
+      const old = recs.get(n.id);
+      if (past || !old || n.updated >= old.updated) recs.set(n.id, n);
+    } catch (err) { console.warn("読めない症例", err); }
+  };
   for (const e of entries) {
     const lower = e.name.toLowerCase();
     if (/\.(jpe?g|png|webp|heic)$/.test(lower)) getters.set(e.name, e.get);
     else if (lower.endsWith(".json")) {
       try {
         const j = JSON.parse(await (await e.get()).text());
-        if (j.kind === "sango-support-records") for (const r of j.records || []) { const n = norm(r, j.sender); const old = recs.get(n.id); if (!old || n.updated >= old.updated) recs.set(n.id, n); }
-        else if (j.kind === "sango-support-past") for (const r of j.records || []) { const n = norm({ ...r, source: "past" }, ""); recs.set(n.id, n); }
-        else if (j.kind === "sango-support-admin") { if (!admin || (j.updated_at || "") > (admin.updated_at || "")) admin = j; }
+        if (j.kind === "sango-support-records") (j.records || []).forEach((r) => put(r, j.sender, false));
+        else if (j.kind === "sango-support-past") (j.records || []).forEach((r) => put(r, "", true));
+        else if (j.kind === "sango-support-admin" && j.items) admins.push(j);
       } catch (err) { console.warn("読めないJSON", e.name, err); }
     }
   }
   S.records = [...recs.values()];
-  S.admin = admin && admin.items ? admin : { kind: "sango-support-admin", schema: 1, items: {} };
+  S.admin = mergeAdmins(admins);
   S.photoGetters = getters;
   clearUrls();
+  // 読み直しで無くなった建物・分類・担当を絞り込みから外す（0件になって見えなくなるのを防ぐ）
+  const ids = (k) => new Set(S.records.map((r) => r[k]));
+  const bs = ids("buildingId"), cs = ids("categoryId"), ls = ids("sender");
+  [...F.blds].forEach((x) => { if (!bs.has(x)) F.blds.delete(x); });
+  [...F.cats].forEach((x) => { if (!cs.has(x)) F.cats.delete(x); });
+  if (F.leader && !ls.has(F.leader)) F.leader = "";
+}
+function mergeAdmins(list) { // 項目ごとに、更新が新しい方を残す
+  const out = { kind: "sango-support-admin", schema: 1, items: {}, updated_at: "" };
+  for (const a of list) {
+    if ((a.updated_at || "") > out.updated_at) out.updated_at = a.updated_at || "";
+    for (const [id, it] of Object.entries(a.items || {})) { const cur = out.items[id]; if (!cur || (it.at || 0) > (cur.at || 0)) out.items[id] = it; }
+  }
+  return out;
 }
 
 const urlCache = new Map();
-function clearUrls() { urlCache.forEach((u) => URL.revokeObjectURL(u)); urlCache.clear(); }
-async function photoUrl(name) {
+function clearUrls() { urlCache.forEach((p) => p.then((u) => u && URL.revokeObjectURL(u))); urlCache.clear(); }
+function photoUrl(name) {
   if (urlCache.has(name)) return urlCache.get(name);
   const g = S.photoGetters.get(name);
-  if (!g) return "";
-  try { const u = URL.createObjectURL(await g()); urlCache.set(name, u); return u; } catch (e) { return ""; }
+  const p = g ? Promise.resolve().then(g).then((f) => URL.createObjectURL(f)).catch(() => "") : Promise.resolve("");
+  urlCache.set(name, p);
+  return p;
 }
 
 /* ---------- フォルダ（Box Drive） ---------- */
@@ -163,29 +186,37 @@ async function readDiskAdmin() {
   try { const fh = await S.dirHandle.getFileHandle(ADMIN_FILE); return JSON.parse(await (await fh.getFile()).text()); } catch (e) { return null; }
 }
 async function saveItem(r, patch) {
-  if (!canEdit()) return toast("閲覧専用です。編集は設定で「編集する」を入れたPCだけです");
-  if (S.dirHandle) { // 他のPCが書いた分を取り込んでから書く（同じ症例は新しい方を残す）
-    if ((await S.dirHandle.queryPermission({ mode: "readwrite" })) !== "granted" && (await S.dirHandle.requestPermission({ mode: "readwrite" })) !== "granted") return toast("書き込みの許可がありません");
-    const disk = await readDiskAdmin();
-    if (disk && disk.items) for (const [id, it] of Object.entries(disk.items)) { const mine = S.admin.items[id]; if (!mine || (it.at || 0) > (mine.at || 0)) S.admin.items[id] = it; }
-  }
-  S.admin.items[r.id] = { ...(S.admin.items[r.id] || {}), ...patch, at: Date.now(), by: getLS("name") };
-  S.admin.updated_at = new Date().toISOString();
-  S.admin.kind = "sango-support-admin"; S.admin.schema = 1;
-  const text = JSON.stringify(S.admin, null, 1);
-  if (S.demo) return toast("デモなので保存はされません（画面の上では反映されます）");
-  if (S.dirHandle) {
-    const fh = await S.dirHandle.getFileHandle(ADMIN_FILE, { create: true });
-    const w = await fh.createWritable();
-    await w.write(text);
-    await w.close();
-    toast("保存しました");
-  } else {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    a.download = ADMIN_FILE;
-    a.click();
-    toast("このブラウザではフォルダに書けないため、ファイルを保存しました。Boxのフォルダに入れてください");
+  if (!canEdit()) { toast("閲覧専用です。編集は設定で「編集する」を入れたPCだけです"); return false; }
+  try {
+    const items = { ...S.admin.items };
+    if (S.dirHandle) { // 他のPCが書いた分を取り込んでから書く（同じ症例は新しい方を残す）
+      if ((await S.dirHandle.queryPermission({ mode: "readwrite" })) !== "granted" && (await S.dirHandle.requestPermission({ mode: "readwrite" })) !== "granted") { toast("書き込みの許可がありません"); return false; }
+      const disk = await readDiskAdmin();
+      if (disk && disk.items) for (const [id, it] of Object.entries(disk.items)) { const mine = items[id]; if (!mine || (it.at || 0) > (mine.at || 0)) items[id] = it; }
+    }
+    items[r.id] = { ...(items[r.id] || {}), ...patch, at: Date.now(), by: getLS("name") };
+    const next = { ...S.admin, kind: "sango-support-admin", schema: 1, updated_at: new Date().toISOString(), items };
+    const text = JSON.stringify(next, null, 1);
+    if (S.demo) { S.admin = next; toast("デモなので保存はされません（画面の上では反映されます）"); return true; }
+    if (S.dirHandle) {
+      const fh = await S.dirHandle.getFileHandle(ADMIN_FILE, { create: true });
+      const w = await fh.createWritable();
+      try { await w.write(text); await w.close(); } catch (err) { try { await w.abort(); } catch (e2) {} throw err; }
+      S.admin = next;
+      toast("保存しました");
+    } else {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      a.download = ADMIN_FILE;
+      a.click();
+      S.admin = next;
+      toast("このブラウザではフォルダに書けないため、ファイルを保存しました。Boxのフォルダに入れてください");
+    }
+    return true;
+  } catch (err) {
+    console.error(err);
+    alert("保存できませんでした。Boxの同期中・ファイルのロック・容量を確認して、もう一度試してください。\n（" + (err && err.message ? err.message : err) + "）");
+    return false;
   }
 }
 
@@ -223,7 +254,9 @@ function renderHeader() {
   b.textContent = canEdit() ? "編集モード" : "閲覧専用";
   b.className = "modeBadge" + (canEdit() ? " edit" : "");
 }
+let viewTok = 0;
 function render() {
+  viewTok++;
   const r = route();
   document.querySelectorAll(".sideNav > a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name)));
   $("sideExtra").innerHTML = "";
@@ -348,16 +381,24 @@ async function viewDetail(main, id) {
     </div>
     <aside class="panel"><h3>似た症例</h3>${sim2.length ? sim2.map((x) => `<div class="simItem" data-id="${esc(x.id)}">${bldImg(x.buildingId)}<div class="t"><b>${esc(titleOf(x))}</b>${esc(x.building)}｜${esc(x.category)}｜${fmtDate(x.t)}</div>${stateChip(x)}</div>`).join("") : `<div class="note">同じ分類の症例はまだありません。</div>`}</aside></div>`;
   main.querySelectorAll(".simItem").forEach((el) => (el.onclick = () => (location.hash = "#/r/" + encodeURIComponent(el.dataset.id))));
-  const grid = $("dPhotos");
-  if (grid) for (const name of r.photos) { const im = document.createElement("img"); im.alt = ""; im.src = await photoUrl(name); im.onclick = () => showLightbox(im.src); grid.appendChild(im); }
+  const tok = viewTok;
   const read = () => ({ amount: $("eAmt").value === "" ? "" : Number($("eAmt").value), cause: $("eCause").value, memo: $("eMemo").value.trim() });
-  const done = async (patch) => { await saveItem(r, patch); viewDetail(main, id); fillIcons(main); };
+  const done = async (patch) => {
+    if (!(await saveItem(r, patch))) return;
+    if (tok === viewTok && route().name === "r" && route().id === id) { viewDetail(main, id); fillIcons(main); } // 保存中に別の画面へ移っていたら描き直さない
+  };
   if (edit) {
     $("eSave").onclick = () => done(read());
     $("eDone").onclick = () => done({ ...read(), status: "done" });
     const u = $("eUndo"); if (u) u.onclick = () => done({ ...read(), status: "" });
   }
   fillIcons(main);
+  const grid = $("dPhotos");
+  if (grid) for (const name of r.photos) {
+    const src = await photoUrl(name);
+    if (tok !== viewTok || !grid.isConnected) return; // 別の画面に移っていたら続けない
+    const im = document.createElement("img"); im.alt = ""; im.src = src; im.onclick = () => showLightbox(src); grid.appendChild(im);
+  }
 }
 
 /* ---------- まとめ ---------- */
@@ -366,7 +407,8 @@ function viewSummary(main) {
   const list = S.records.filter((r) => !days || now - r.t <= days * 86400000);
   const bs = new Map(), cs = new Map(), matrix = {}, vendors = new Map();
   list.forEach((r) => {
-    bs.set(r.buildingId, r.building); cs.set(r.categoryId, r.category);
+    if (r.buildingId) bs.set(r.buildingId, r.building);
+    if (r.categoryId) cs.set(r.categoryId, r.category);
     const k = r.buildingId + "|" + r.categoryId; matrix[k] = (matrix[k] || 0) + 1;
     if (r.vendor && !["自分で対応", "未定"].includes(r.vendor)) vendors.set(r.vendor, (vendors.get(r.vendor) || 0) + 1);
   });
@@ -394,12 +436,13 @@ function viewSummary(main) {
 }
 function exportCsv(list) {
   const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+  const qs = (v) => q(/^[=+@]|^-(?!\d)/.test(String(v == null ? "" : v)) ? "'" + v : v); // 文字の先頭が = + @ - だと、Excelが数式と解釈するため先頭に ' を付ける
   const head = ["区分", "日付", "建物", "分類", "何が起きたか", "どう対応したか", "対応した業者", "報告した人", "担当リーダー", "写真", "金額", "原因の分類", "メモ", "状態"];
-  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [r.src === "past" ? "過去" : "新規", fmtDate(r.t), r.building, r.category, r.what, r.how, r.vendor, r.reporter, r.sender, r.photos.length, a.amount, a.cause, a.memo, r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理"].map(q).join(","); });
+  const rows = list.sort((a, b) => b.t - a.t).map((r) => { const a = adm(r); return [qs(r.src === "past" ? "過去" : "新規"), qs(fmtDate(r.t)), qs(r.building), qs(r.category), qs(r.what), qs(r.how), qs(r.vendor), qs(r.reporter), qs(r.sender), q(r.photos.length), q(a.amount), qs(a.cause), qs(a.memo), qs(r.src === "past" ? "過去" : a.status === "done" ? "整理済み" : "未整理")].join(","); });
   const blob = new Blob(["﻿" + [head.map(q).join(","), ...rows].join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `山郷サポート_症例一覧_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `山郷サポート_症例一覧_${(() => { const d = new Date(); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); })()}.csv`;
   a.click();
   toast("書き出しました");
 }
