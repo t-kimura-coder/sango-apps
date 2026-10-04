@@ -1134,3 +1134,7 @@ img.imgBroken { visibility: hidden; }
 #prepProgress.complete { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; white-space: nowrap; }
 .tabDone { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 8px; background: var(--color-ok-text); color: #fff; vertical-align: -2px; }
 .itemTab.active .tabDone { background: #fff; color: var(--color-primary); }
+
+/* 「該当なし」「撮影不要」は2行で書き分ける */
+.checkCam.skip { line-height: 1.2; font-size: 11px; }
+.naCheckBtn { line-height: 1.2; font-size: 11px; min-height: 42px; border-radius: 12px; }

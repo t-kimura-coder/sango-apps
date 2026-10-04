@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 63;
+const APP_VERSION = 64;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-04", type: "fix", text: "事前準備にチェックを入れただけで、まだ撮れない写真が「撮り忘れ」に出ていたのを直しました。チェックの右のボタンも「該当なし」「撮影不要」と書き分けました" },
   { date: "2026-10-04", type: "feature", text: "作業手順の「事前準備」に進み具合（2/6）を出し、全部そろうと「✓ 準備OK」、作業手順タブにも ✓ が付くようにしました（工程の完了には含めません）" },
   { date: "2026-10-04", type: "fix", text: "項目名の右の「該当なし」も、押すと付けていたチェックが外れるようにしました（外れる件数を確認してから切り替わります）" },
   { date: "2026-10-03", type: "fix", text: "チェックを付けた後に「なし」にすると、チェックが付いたまま灰色になっていたのを直しました（なしにするとチェックは外れます）" },
@@ -3213,7 +3214,7 @@ async function renderItem() {
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
       // 該当なしにしている時は、チェックが押せない理由が分かるよう、チェックのすぐ下に出す
-      else if (rec.na) html += `<div class="naNote">この現場では「なし」にしています（チェック・写真は数えません）。戻す時は項目名の右の「該当なし」を押してください。</div>`;
+      else if (rec.na) html += `<div class="naNote">この現場では「該当なし」にしています（チェック・写真は数えません）。戻す時は項目名の右の「該当なし」を押してください。</div>`;
       html += `<div id="memoSection" class="memoSection"></div>`;
       // 毎回は読まない情報は、見出しだけ出して開け閉めする（閉じたかどうかは次も覚えておく）
       if (tx.purpose.length || tx.goal.length) {
@@ -3328,7 +3329,7 @@ function checkRowHtml(sec, c, rec, it) {
   if (naC) {
     cam = "";
   } else if (c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && photoSkipped(rec, key)) {
-    cam = `<button class="checkCam skip" data-skip="1" aria-label="撮影不要を解除">不要</button>`;
+    cam = `<button class="checkCam skip" data-skip="1" aria-label="撮影不要を解除">撮影<br>不要</button>`;
   } else if (c.photo === "要") {
     const ph = siteRecordPhotos[`${it.id}|${key}`];
     cam = ph
@@ -3345,7 +3346,7 @@ function checkRowHtml(sec, c, rec, it) {
     `<button class="checkMain"${disabled ? " disabled" : ""}><span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
     `<span class="checkText">${esc(c.text)}${naC ? `<span class="checkMeta"><span class="naCLabel">この現場では該当なし</span></span>` : meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>` +
     // その現場に無いチェックを外すボタン（項目ごと無い時は、項目名の右の「該当なし」）
-    (currentSiteId && !rec.na && sec === "checks" ? `<button class="naCheckBtn${naC ? " on" : ""}" data-nacheck="1" aria-label="${naC ? "該当なしを戻す" : "このチェックは該当なし"}">${naC ? "戻す" : "なし"}</button>` : "") +
+    (currentSiteId && !rec.na && sec === "checks" ? `<button class="naCheckBtn${naC ? " on" : ""}" data-nacheck="1" aria-label="${naC ? "該当なしを戻す" : "このチェックは該当なし"}">${naC ? "戻す" : "該当<br>なし"}</button>` : "") +
     cam +
     `</div>`
   );
@@ -4170,6 +4171,11 @@ function renderBrand() {
 // ホームの役割：担当現場を全部見渡して、今どこまで進んでいて、次に何をすればいいかが3秒で分かること。
 // 6工程の一覧は工程タブ、写真は写真タブ、報告は報告タブ。ホームは「現在地」と「やること」だけを出す
 
+// チェックポイントを1つでも付けたか（事前準備は除く）
+function checksStarted(rec) {
+  return !!rec && Object.keys(rec.marks || {}).some((k) => k.startsWith("checks|"));
+}
+
 // 1つの現場の様子（6工程の進み具合・今の工程・撮り忘れ・報告日・未読の返信）
 async function siteSummary(site) {
   const recs = Object.fromEntries((await dbGetAll("checks", "siteId", site.id)).map((r) => [r.itemId, r]));
@@ -4187,12 +4193,12 @@ async function siteSummary(site) {
   });
   const total = groups.filter((x) => !x.pre).reduce((t, x) => ({ c: t.c + x.checks, d: t.d + x.checksDone }), { c: 0, d: 0 });
   const preCats = new Set(GROUPS.slice(0, start).flatMap((g) => g.cats));
-  // 撮り忘れ：チェックを始めた項目の「写真要」で、品質写真がまだ無いもの
+  // 撮り忘れ：チェックポイントを始めた項目の「写真要」で、品質写真がまだ無いもの（事前準備のチェックは着手前なので数えない）
   const missing = [];
   if (manualMeta)
     allManualItems().forEach((it) => {
       const rec = recs[it.id];
-      if (preCats.has(it.cat) || !rec || rec.na || !Object.keys(rec.marks || {}).length) return;
+      if (preCats.has(it.cat) || !rec || rec.na || !checksStarted(rec)) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const k = checkKey("checks", c);
         if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k) && !isNaCheck(rec, k)) missing.push(it);
@@ -4942,7 +4948,7 @@ async function renderRequired(keepScroll) {
             const key = checkKey("checks", c);
             const rec = siteCheckRecs[it.id];
             const ph = siteRecordPhotos[`${it.id}|${key}`];
-            const started = !!(rec && Object.keys(rec.marks || {}).length);
+            const started = checksStarted(rec);
             const status = gi < start ? "pre" : (rec && rec.na) || isNaCheck(rec, key) ? "na" : ph ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
             rows.push({ g, it, c, key, ph, status, started });
           })
