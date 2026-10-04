@@ -435,3 +435,51 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .tlNa summary { cursor: pointer; font-weight: 700; }
 .tlNa ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .tlNa small { margin-left: 6px; color: var(--color-text-muted); }
+
+/* 週の報告（監督 × 現場 × 週） */
+.weekLink { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin: 16px 0 4px; color: var(--color-heading); text-decoration: none; }
+.weekLink > svg:first-child { color: var(--color-primary); flex: none; }
+.weekLink span { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.weekLink small { color: var(--color-text-sub); font-size: 13px; }
+.weekSum { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 14px; }
+.wsCell { flex: 1 1 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 12px 10px; border-radius: 14px; background: var(--color-surface); border: 1px solid var(--color-border); }
+.wsCell:first-child { flex: 2 1 200px; align-items: flex-start; }
+.wsLabel { font-weight: 800; color: var(--color-heading); }
+.wsSub { font-size: 12px; color: var(--color-text-sub); }
+.wsCell b { font-size: 26px; line-height: 1.1; color: var(--color-heading); }
+.wsCell span { font-size: 12px; color: var(--color-text-sub); }
+.wsCell.ok b { color: var(--color-ok-text); }
+.wsCell.miss.on { border-color: var(--color-danger, #c0392b); }
+.wsCell.miss.on b { color: var(--color-danger, #c0392b); }
+.weekCard { padding: 0; overflow-x: auto; }
+.weekTable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.weekTable th, .weekTable td { padding: 8px 6px; border-bottom: 1px solid var(--color-border); text-align: center; white-space: nowrap; }
+.weekTable thead th { font-size: 12px; font-weight: 700; color: var(--color-text-sub); background: var(--color-surface-sub); position: sticky; top: 0; }
+.weekTable thead th small { display: block; font-size: 11px; color: var(--color-primary); }
+.weekTable .focus { background: rgba(14, 90, 69, 0.06); }
+.weekTable thead th.focus { background: var(--color-primary-soft, #e6f0eb); color: var(--color-heading); }
+.weekTable .wtPerson { text-align: left; vertical-align: top; width: 1%; }
+.weekTable tbody tr.first > * { border-top: 2px solid var(--color-border); }
+.wtName { display: flex; align-items: center; gap: 8px; border: none; background: none; padding: 2px; font-weight: 800; color: var(--color-heading); cursor: pointer; text-align: left; }
+.weekTable .wtSite { text-align: left; white-space: normal; min-width: 140px; }
+.wtSite button { border: none; background: none; padding: 2px 0; font-weight: 700; color: var(--color-heading); text-align: left; cursor: pointer; }
+.wtSite button:hover, .wtName:hover span { text-decoration: underline; }
+.wk { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; min-height: 26px; padding: 0 8px; border-radius: 13px; font-size: 12px; font-weight: 800; }
+.wk:empty { min-width: 0; }
+.wk.done { background: var(--color-ok-soft); color: var(--color-ok-text); }
+.wk.done.other { background: none; border: 1.5px solid var(--color-ok-text); }
+.wk.ext { background: var(--color-ok-soft); color: var(--color-ok-text); opacity: 0.85; }
+.wk.skip, .wk.paused, .wk.fin { background: var(--color-surface-sub); color: var(--color-text-sub); }
+.wk.open { border: 1.5px dashed var(--color-text-muted); color: var(--color-text-sub); }
+.wk.due { background: #fdf0d5; color: #8a5a00; }
+.wk.miss { background: #fbe3e0; color: #b3261e; }
+.weekLegend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 12px 4px; font-size: 12px; color: var(--color-text-sub); }
+.weekLegend .wk { min-width: 0; min-height: 22px; margin-left: 6px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .wk.due { background: #4a3b1a; color: #f3d28b; }
+  :root:not([data-theme="light"]) .wk.miss { background: #4d2622; color: #f2b3ab; }
+  :root:not([data-theme="light"]) .weekTable .focus { background: rgba(255, 255, 255, 0.04); }
+}
+:root[data-theme="dark"] .wk.due { background: #4a3b1a; color: #f3d28b; }
+:root[data-theme="dark"] .wk.miss { background: #4d2622; color: #f2b3ab; }
+:root[data-theme="dark"] .weekTable .focus { background: rgba(255, 255, 255, 0.04); }

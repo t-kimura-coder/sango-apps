@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -143,6 +143,7 @@ function buildData(reports, replies, statuses = []) {
   data.people = new Map();
   data.notes = new Map();
   data.replies = new Map();
+  data.statuses = statuses.filter((x) => x && x.status && x.at);
   const valid = reports.filter((r) => r && r.kind === "genba-photo-report" && r.period).sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
   koujiBySiteId = new Map();
   [...valid, ...statuses].forEach((r) => {
@@ -289,6 +290,137 @@ function personStats(p) {
   const state = open ? "need" : late ? "late" : "ok"; // 表示はいちばん急ぐもの。絞り込みは need / late を別々に見る
   return { last, lastAt, lastDays, weekPhotos, open, late, state };
 }
+/* ---------- 週の報告（監督 × 現場 × 週の一覧表） ----------
+   現場ナビと同じ決まり：工事は月〜土を1週。その週の報告は金曜〜翌週の月曜、遅くとも火曜。
+   その週の金曜に休工していた週・完工した後の週は報告しなくてよい。WEEK_RULE_START より前の週は遅れに数えない */
+const WEEK_RULE_START = "2026-09-28";
+const WEEK_COLS = 6;
+function dayKey(v) {
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d)) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function addDays(key, n) {
+  const d = new Date(key + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return dayKey(d);
+}
+function weekMon(key) {
+  const d = new Date(key + "T00:00:00");
+  return addDays(key, -((d.getDay() + 6) % 7));
+}
+// 報告がどの週の分か。新しい報告は期間が「月〜土」なのでその月曜、古い報告は送った日（金〜翌木）で決める
+function reportWeekOf(r) {
+  const st = r.period && r.period.start;
+  if (st && st >= WEEK_RULE_START && weekMon(st) === st) return st;
+  return weekMon(addDays(dayKey(r.sent_at), -4));
+}
+// その人のその現場の休工の期間：最新の報告の pauses に、その後に届いた休工・再開の知らせを足す
+function pausesOf(site, pk) {
+  const last = site.reports.filter((r) => personKeyOf(r) === pk).reduce((a, r) => (!a || r.sent_at > a.sent_at ? r : a), null);
+  const list = ((last && last.pauses) || []).map((p) => ({ from: p.from, to: p.to || null }));
+  (data.statuses || [])
+    .filter((x) => siteKeyOf(x) === site.key && personKeyOf(x) === pk && (!last || x.at > last.sent_at))
+    .sort((a, b) => (a.at < b.at ? -1 : 1))
+    .forEach((x) => {
+      const open = list.find((p) => !p.to);
+      if (x.status === "paused" && !open) list.push({ from: x.from || dayKey(x.at), to: null });
+      else if (x.status === "resumed" && open) open.to = dayKey(x.at);
+    });
+  return list;
+}
+function weekCell(site, pk, mon, ctx) {
+  const today = ctx.today;
+  const fri = addDays(mon, 4);
+  const mine = site.reports.filter((r) => personKeyOf(r) === pk);
+  const rep = mine.filter((r) => reportWeekOf(r) === mon).sort((a, b) => (a.sent_at < b.sent_at ? 1 : -1))[0];
+  if (rep) return { st: "done", label: "済", title: `${fmtDateTime(rep.sent_at)} に報告・写真 ${(rep.photos || []).length}枚`, rep };
+  const other = [
+    ...mine.flatMap((r) => r.other_weeks || []),
+    ...(site.otherWeeks || []).filter((w) => w.personKey === pk),
+  ].filter((w) => w.week === mon).sort((a, b) => ((a.at || "") < (b.at || "") ? 1 : -1))[0];
+  if (other)
+    return other.kind === "skip"
+      ? { st: "skip", label: "報告なし", title: other.memo ? `報告なし：${other.memo}` : "今週は報告なし（現場ナビで記録）" }
+      : { st: "ext", label: "アプリ外", title: other.memo ? `アプリ外で報告：${other.memo}` : "アプリ外で報告済み" };
+  const byOther = site.persons.size > 1 && site.reports.find((r) => personKeyOf(r) !== pk && reportWeekOf(r) === mon);
+  if (byOther) return { st: "done other", label: "済（他）", title: `${byOther.sender || "ほかの担当"} が報告` };
+  if (mon < ctx.firstWeek(site, pk)) return { st: "none", label: "", title: "まだ現場ナビで報告していない頃" };
+  if (site.completedAt && dayKey(site.completedAt) < fri) return { st: "fin", label: "完工", title: `${fmtMD(site.completedAt)} に完工` };
+  if (pausesOf(site, pk).some((p) => p.from <= (fri <= today ? fri : today) && (!p.to || (fri <= today ? fri : today) <= p.to)))
+    return { st: "paused", label: "休工", title: "休工中（報告はお休み）" };
+  if (today < fri) return { st: "none", label: "", title: `報告は ${fmtMD(fri)}〜${fmtMD(addDays(mon, 7))}` };
+  if (today <= addDays(mon, 7)) return { st: "open", label: "受付中", title: `報告は ${fmtMD(addDays(mon, 7))}まで（遅くとも ${fmtMD(addDays(mon, 8))}）` };
+  if (today === addDays(mon, 8)) return { st: "due", label: "今日まで", title: "今日が期限です" };
+  if (mon < WEEK_RULE_START) return { st: "none", label: "－", title: "週の決まりを始める前の週" };
+  return { st: "miss", label: "未報告", title: `期限（${fmtMD(addDays(mon, 8))}）を過ぎています` };
+}
+
+function renderWeeks() {
+  const main = $("main");
+  let html = `<section class="pageHead"><h1>週の報告</h1><p class="sub">担当者ごと・現場ごとに、週の報告が済んでいるかを並べています。報告は金曜〜翌週の月曜（遅くとも火曜）。休工中の週と完工した後の週は報告しなくてよい週です。</p></section>`;
+  if (noData()) {
+    main.innerHTML = html + noDataView();
+    bindCommon(main);
+    return;
+  }
+  const today = dayKey(new Date());
+  const thisMon = weekMon(today);
+  const weeks = Array.from({ length: WEEK_COLS }, (_, i) => addDays(thisMon, -7 * (WEEK_COLS - 1 - i)));
+  // 今いちばん見るべき週：月・火曜は先週（報告の締め切り前）、それ以外は今週
+  const focus = today <= addDays(thisMon, 1) ? addDays(thisMon, -7) : thisMon;
+  const firstWeekCache = new Map();
+  const ctx = {
+    today,
+    firstWeek(site, pk) {
+      const k = site.key + "|" + pk;
+      if (!firstWeekCache.has(k)) {
+        const ws = site.reports.filter((r) => personKeyOf(r) === pk).map(reportWeekOf).sort();
+        firstWeekCache.set(k, ws[0] || thisMon);
+      }
+      return firstWeekCache.get(k);
+    },
+  };
+  const order = (s) => (s.completedAt ? 2 : s.pausedAt ? 1 : 0);
+  const people = [...data.people.values()].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const rows = [];
+  people.forEach((p) => {
+    const sites = [...p.sites]
+      .map((k) => data.sites.get(k))
+      .filter((s) => s && (!s.completedAt || dayKey(s.completedAt) >= weeks[0])) // 表の期間より前に完工した現場は出さない
+      .filter((s) => matchesQuery(p.name, s.name))
+      .sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name, "ja"));
+    sites.forEach((s, i) => rows.push({ p, s, first: i === 0, span: sites.length, cells: weeks.map((w) => weekCell(s, p.key, w, ctx)) }));
+  });
+  const fi = weeks.indexOf(focus);
+  const cnt = (st) => rows.filter((r) => r.cells[fi].st.split(" ")[0] === st).length;
+  const missAll = rows.reduce((n, r) => n + r.cells.filter((c) => c.st === "miss").length, 0);
+  html +=
+    `<div class="weekSum">` +
+    `<div class="wsCell"><span class="wsLabel">${fmtMD(focus)}〜${fmtMD(addDays(focus, 5))} の週</span><span class="wsSub">${focus === thisMon ? "今週" : "先週（締め切り前）"}</span></div>` +
+    `<div class="wsCell ok"><b>${cnt("done") + cnt("ext") + cnt("skip")}</b><span>済</span></div>` +
+    `<div class="wsCell wait"><b>${cnt("open") + cnt("due")}</b><span>受付中</span></div>` +
+    `<div class="wsCell rest"><b>${cnt("paused")}</b><span>休工</span></div>` +
+    `<div class="wsCell miss${missAll ? " on" : ""}"><b>${missAll}</b><span>未報告（${WEEK_COLS}週）</span></div></div>`;
+  html += rows.length
+    ? `<div class="card weekCard"><table class="weekTable"><thead><tr><th class="wtPerson">担当者</th><th class="wtSite">現場</th>${weeks
+        .map((w) => `<th class="${w === focus ? "focus" : ""}">${fmtMD(w).replace(/\(.\)/, "")}〜${w === thisMon ? "<small>今週</small>" : w === focus ? "<small>先週</small>" : ""}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr class="${r.first ? "first" : ""}">` +
+            (r.first ? `<th class="wtPerson" rowspan="${r.span}"><button class="wtName" data-person="${esc(r.p.key)}">${avatar(r.p.name, 32)}<span>${esc(r.p.name)}</span></button></th>` : "") +
+            `<td class="wtSite"><button data-site="${esc(r.s.key)}">${esc(r.s.name)}${r.s.completedAt ? ` <span class="tag">完工</span>` : r.s.pausedAt ? ` <span class="tag">休工中</span>` : ""}</button></td>` +
+            r.cells.map((c, i) => `<td class="${weeks[i] === focus ? "focus" : ""}"><span class="wk ${c.st}" title="${esc(c.title)}">${c.label}</span></td>`).join("") +
+            `</tr>`
+        )
+        .join("")}</tbody></table></div>` +
+      `<div class="weekLegend"><span class="wk done">済</span>現場ナビから報告<span class="wk ext">アプリ外</span>メール等で報告<span class="wk skip">報告なし</span>その週は報告なし<span class="wk open">受付中</span>締め切り前<span class="wk due">今日まで</span>火曜（最終日）<span class="wk miss">未報告</span>期限切れ<span class="wk paused">休工</span><span class="wk fin">完工</span></div>`
+    : `<div class="emptyText pad card">該当する現場はありません。</div>`;
+  main.innerHTML = html;
+  bindCommon(main);
+}
+
 const PERSON_STATE = { need: { label: "対応が必要", cls: "danger" }, late: { label: "報告の遅れ", cls: "warn" }, ok: { label: "順調", cls: "ok" } };
 
 function updateNavBadge() {
@@ -676,6 +808,7 @@ function renderHome() {
   const hit = (x, k) => k === "all" || (k === "need" ? x.st.open > 0 : k === "late" ? x.st.late : x.st.state === "ok");
   const cnt = Object.fromEntries(["all", "need", "late", "ok"].map((k) => [k, people.filter((x) => hit(x, k)).length]));
   const chips = [["all", "すべて"], ["need", "未回答あり"], ["late", "報告の遅れあり"], ["ok", "順調"]];
+  html += `<a class="weekLink card" href="#/weeks">${icon("calendar", 26)}<span><b>週の報告</b><small>担当者ごと・現場ごとに、週の報告が済んでいるかを一覧で見る</small></span>${icon("chevron", 18)}</a>`;
   html +=
     `<div class="secHead"><div><h2>担当者の状況</h2><div class="sub">各担当者の報告状況と、対応が必要な内容を確認できます。</div></div>` +
     `<div class="chips">${chips.map(([k, l]) => `<button class="chip${homeFilter === k ? " on" : ""}" data-hf="${k}">${l}<span class="chipNum ${k}">${cnt[k]}</span></button>`).join("")}</div></div>`;
@@ -1091,6 +1224,7 @@ function route() {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === (name === "site" || name === "person" ? "sites" : name)));
   if (name === "notes") renderNotes(params);
   else if (name === "sites") renderSites();
+  else if (name === "weeks") renderWeeks();
   else if (name === "site") renderSite(decodeURIComponent(arg || ""));
   else if (name === "person") renderPerson(decodeURIComponent(arg || ""));
   else if (name === "settings") renderSettings();
