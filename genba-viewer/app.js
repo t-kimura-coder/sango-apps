@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1265,10 +1265,76 @@ function restText(text) {
   return lines.length > 1 ? lines.slice(1).join(" ") : "";
 }
 function matchesQuery(...fields) {
-  const q = ($("globalSearch").value || "").trim().toLowerCase();
+  const q = ""; // 上の検索は候補の一覧で出す（ページの一覧は絞り込まない）
   if (!q) return true;
   return fields.some((f) => String(f || "").toLowerCase().includes(q));
 }
+/* ---------- 上の検索：打つとすぐ下に候補（現場・担当者・疑問・気づき）を出し、選ぶとそのページへ ---------- */
+function searchHits(q) {
+  const has = (...f) => f.some((x) => String(x || "").toLowerCase().includes(q));
+  const sites = [...data.sites.values()].filter((s) => has(s.name, s.koujiNo, ...s.persons.values())).slice(0, 6);
+  const people = [...data.people.values()].filter((p) => has(p.name)).slice(0, 5);
+  const notes = [...data.notes.values()].filter((n) => has(n.text, n.item, n.siteName)).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 6);
+  return { sites, people, notes };
+}
+function renderSearchPanel() {
+  const panel = $("searchPanel");
+  const q = ($("globalSearch").value || "").trim().toLowerCase();
+  if (!q) return (panel.hidden = true);
+  let html = "";
+  if (noData()) html = `<div class="spEmpty">報告フォルダを読み込むと検索できます。</div>`;
+  else {
+    const { sites, people, notes } = searchHits(q);
+    const sec = (title, rows) => (rows.length ? `<div class="spHead">${title}</div>${rows.join("")}` : "");
+    html =
+      sec("現場", sites.map((s) => `<button class="spRow" data-go="#/site/${encodeURIComponent(s.key)}">${icon("building", 18)}<span><b>${esc(s.name)}</b><small>${s.koujiNo ? "No." + esc(s.koujiNo) + "・" : ""}${esc([...s.persons.values()].join("・"))}</small></span></button>`)) +
+      sec("担当者", people.map((p) => `<button class="spRow" data-go="#/person/${encodeURIComponent(p.key)}">${avatar(p.name, 26)}<span><b>${esc(p.name)}</b><small>現場 ${p.sites.size}件</small></span></button>`)) +
+      sec("疑問・気づき", notes.map((n) => `<button class="spRow" data-note-go="${esc(n.id)}">${typeBadge(n.type)}<span><b>${esc(headline(n.text))}</b><small>${esc(n.siteName)}・${esc(n.personName)}</small></span></button>`));
+    if (!html) html = `<div class="spEmpty">「${esc(q)}」に当てはまるものはありません。</div>`;
+  }
+  panel.innerHTML = html;
+  panel.hidden = false;
+  panel.querySelectorAll(".spRow").forEach((b, i) => {
+    if (i === 0) b.classList.add("sel");
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // 押した時に入力欄のフォーカスが外れて閉じないように
+    b.addEventListener("click", () => pickSearch(b));
+  });
+}
+function pickSearch(b) {
+  $("globalSearch").value = "";
+  $("searchPanel").hidden = true;
+  $("globalSearch").blur();
+  if (b.dataset.go) location.hash = b.dataset.go;
+  else if (b.dataset.noteGo) openNote(b.dataset.noteGo);
+}
+function bindSearch() {
+  const input = $("globalSearch");
+  input.addEventListener("input", () => {
+    clearTimeout(bindSearch.t);
+    bindSearch.t = setTimeout(renderSearchPanel, 120);
+  });
+  input.addEventListener("focus", renderSearchPanel);
+  input.addEventListener("blur", () => setTimeout(() => ($("searchPanel").hidden = true), 150));
+  input.addEventListener("keydown", (e) => {
+    const rows = [...$("searchPanel").querySelectorAll(".spRow")];
+    const cur = rows.findIndex((r) => r.classList.contains("sel"));
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!rows.length) return;
+      const next = (cur + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+      rows.forEach((r, i) => r.classList.toggle("sel", i === next));
+      rows[next].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (rows[cur]) pickSearch(rows[cur]);
+    } else if (e.key === "Escape") {
+      input.value = "";
+      $("searchPanel").hidden = true;
+      input.blur();
+    }
+  });
+}
+
 function emptyBox(title, text, withButtons = false) {
   return (
     `<div class="emptyBox"><div class="emptyTitle">${esc(title)}</div><div class="emptyText">${text}</div>` +
@@ -1811,10 +1877,7 @@ async function init() {
   $("lightbox").addEventListener("click", () => ($("lightbox").hidden = true));
   $("folderInput").addEventListener("change", onFolderInput);
   $("reloadBtn").addEventListener("click", () => (demoMode ? loadDemo() : dirHandle ? reopenFolder() : pickFolder()));
-  $("globalSearch").addEventListener("input", () => {
-    clearTimeout(init.t);
-    init.t = setTimeout(route, 200);
-  });
+  bindSearch();
   window.addEventListener("hashchange", route);
   try {
     dirHandle = canPickFolder ? (await kvGet("dir")) || null : null;

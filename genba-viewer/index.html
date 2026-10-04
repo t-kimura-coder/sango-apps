@@ -12,7 +12,7 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -24,7 +24,8 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
   <div class="headerSpacer"></div>
   <label class="headerSearch">
     <span data-icon="search"></span>
-    <input id="globalSearch" type="search" placeholder="現場名・担当者名で検索" autocomplete="off">
+    <input id="globalSearch" type="search" placeholder="現場名・担当者名・疑問で検索" autocomplete="off">
+    <div id="searchPanel" class="searchPanel" hidden></div>
   </label>
   <button id="reloadBtn" class="iconBtn" title="報告フォルダを読み直す" aria-label="読み直す"></button>
 </header>
@@ -64,6 +65,6 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
 <input id="folderInput" type="file" webkitdirectory multiple hidden>
 
 <script src="demo.js?v=2"></script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>
