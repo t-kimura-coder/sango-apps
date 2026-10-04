@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -137,6 +137,7 @@ async function loadApiRecords(manual) {
     if (S.api !== api0) return false; // 読み込み中に、つなぐのをやめた・つなぎ直した
     const recs = [];
     (j.records || []).forEach((r) => { try { if (r && r.id) recs.push(norm(r, r.sender)); } catch (e) { console.warn("読めない症例", e); } });
+    (j.past || []).forEach((r) => { try { if (r && r.id) recs.push(norm({ ...r, source: "past" }, "")); } catch (e) { console.warn("読めない過去履歴", e); } }); // 窓口に取り込んだ過去履歴
     const g = new Map();
     recs.forEach((r) => r.photos.forEach((name) => g.set(name, async () => { const x = await apiCall({ action: "getPhoto", name }, 60000); return b64ToBlob(x.data, x.mime); })));
     S.apiRecs = recs;
