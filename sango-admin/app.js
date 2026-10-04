@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -40,7 +40,7 @@ const fillIcons = (root) => root.querySelectorAll("[data-icon]").forEach((e) => 
 /* ---------- 状態 ---------- */
 const S = { records: [], admin: { kind: "sango-support-admin", schema: 1, items: {} }, photoGetters: new Map(), dirHandle: null, source: null, demo: false, writable: false };
 const F = { src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null, showHidden: false };
-let SUM = { period: "365" };
+let SUM = { period: "365", src: "all" };
 
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), 3000); }
 function showLoading(msg) { $("loadingText").textContent = msg; $("loading").hidden = false; }
@@ -425,7 +425,8 @@ async function viewDetail(main, id) {
 /* ---------- まとめ ---------- */
 function viewSummary(main) {
   const days = SUM.period === "all" ? 0 : Number(SUM.period), now = Date.now();
-  const list = S.records.filter((r) => !isHidden(r) && (!days || now - r.t <= days * 86400000));
+  const bySrc = (r) => SUM.src === "all" || r.src === SUM.src;
+  const list = S.records.filter((r) => !isHidden(r) && bySrc(r) && (!days || now - r.t <= days * 86400000));
   const bs = new Map(), cs = new Map(), matrix = {}, vendors = new Map();
   list.forEach((r) => {
     if (r.buildingId) bs.set(r.buildingId, r.building);
@@ -440,10 +441,11 @@ function viewSummary(main) {
   const vList = [...vendors].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const months = [];
   for (let i = 11; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push({ y: d.getFullYear(), m: d.getMonth(), n: 0 }); }
-  S.records.filter((r) => !isHidden(r)).forEach((r) => { const d = new Date(r.t); const m = months.find((x) => x.y === d.getFullYear() && x.m === d.getMonth()); if (m) m.n++; });
+  S.records.filter((r) => !isHidden(r) && bySrc(r)).forEach((r) => { const d = new Date(r.t); const m = months.find((x) => x.y === d.getFullYear() && x.m === d.getMonth()); if (m) m.n++; });
   const mx = Math.max(1, ...months.map((m) => m.n)), bmax = (arr) => Math.max(1, ...arr.map((x) => x[1]));
   const bars = (arr) => arr.map(([n, c]) => `<div class="barRow"><span>${esc(n)}</span><div class="bar"><i style="width:${(c / bmax(arr)) * 100}%"></i></div><b>${c}件</b></div>`).join("") || `<div class="note">データがありません</div>`;
   main.innerHTML = `<div class="listTop"><h2>まとめ</h2><span class="note">登録された症例を、建物・分類・業者・月ごとに集計しています。</span><span class="grow"></span>
+      <div class="seg" id="sumSeg">${[["all", "すべて"], ["new", "新規のみ"], ["past", "過去のみ"]].map(([v, l]) => `<button data-v="${v}" class="${SUM.src === v ? "on" : ""}">${l}</button>`).join("")}</div>
       <select class="sortSel" id="sumPeriod">${[["365", "過去1年"], ["90", "過去3か月"], ["30", "過去30日"], ["all", "すべての期間"]].map(([v, l]) => `<option value="${v}" ${SUM.period === v ? "selected" : ""}>${l}</option>`).join("")}</select>
       <button class="btn primary" id="csvBtn">${icon("down")}Excel（CSV）に書き出す</button></div>
     <div class="kpis"><div class="kpi"><small>総症例数</small><div class="v">${list.length}<i>件</i></div></div><div class="kpi"><small>未整理</small><div class="v">${list.filter(isTodo).length}<i>件</i></div></div>
@@ -452,6 +454,7 @@ function viewSummary(main) {
       <table class="heat"><thead><tr><th></th>${cl.map(([id, n]) => `<th>${catImg(id)}${esc(n)}</th>`).join("")}</tr></thead><tbody>${bl.map(([bid, bn]) => `<tr><td class="name">${bldImg(bid)}${esc(bn)}</td>${cl.map(([cid]) => { const n = matrix[bid + "|" + cid] || 0; return `<td class="h${lvl(n)}">${n}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>
     <div class="charts"><div class="panel"><h3>分類ごとの件数</h3>${bars(catCount)}</div><div class="panel"><h3>業者ごとの件数</h3>${bars(vList)}</div>
       <div class="panel"><h3>月ごとの件数（直近12か月）</h3><div class="vbars">${months.map((m) => `<div class="vb"><b>${m.n || ""}</b><i style="height:${(m.n / mx) * 100}%"></i>${m.m + 1}月</div>`).join("")}</div></div></div>`;
+  $("sumSeg").querySelectorAll("button").forEach((b) => (b.onclick = () => { SUM.src = b.dataset.v; if (SUM.src === "past") SUM.period = "all"; viewSummary(main); fillIcons(main); })); // 過去は古い日付なので、期間は「すべて」に切り替える
   $("sumPeriod").onchange = (e) => { SUM.period = e.target.value; viewSummary(main); fillIcons(main); };
   $("csvBtn").onclick = () => exportCsv(list);
 }
