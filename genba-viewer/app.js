@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -396,6 +396,119 @@ function weekCell(site, pk, mon, ctx) {
   if (today === addDays(mon, 8)) return { st: "due", label: "今日まで", title: "今日が期限です" };
   if (mon < WEEK_RULE_START) return { st: "none", label: "－", title: "週の決まりを始める前の週" };
   return { st: "miss", label: "未報告", title: `期限（${fmtMD(addDays(mon, 8))}）を過ぎています` };
+}
+
+/* ---------- 現場カード（ホームの主役：現場ごとの進み具合・今週の報告・現場の声） ---------- */
+function siteInScope(s) {
+  return [...s.persons.keys()].some((pk) => personInScope(data.people.get(pk)));
+}
+// 今の段階：チェックが付いている段階のうち、いちばん後ろ
+function siteStage(prog) {
+  if (!prog) return -1;
+  let idx = -1;
+  prog.forEach((g, i) => {
+    if (!g.before_start && g.checks_done > 0) idx = i;
+  });
+  return idx >= 0 ? idx : prog.findIndex((g) => !g.before_start);
+}
+// 今週（月・火曜は先週）の報告の状態。二人担当なら、いちばん進んでいる人の状態
+const WEEK_RANK = { done: 0, ext: 1, skip: 2, fin: 3, paused: 4, miss: 5, due: 6, open: 7, none: 8 };
+function makeWeekCtx() {
+  const today = dayKey(new Date());
+  const thisMon = weekMon(today);
+  const cache = new Map();
+  return {
+    today,
+    thisMon,
+    focus: today <= addDays(thisMon, 1) ? addDays(thisMon, -7) : thisMon,
+    firstWeek(site, pk) {
+      const k = site.key + "|" + pk;
+      if (!cache.has(k)) cache.set(k, site.reports.filter((r) => personKeyOf(r) === pk).map(reportWeekOf).sort()[0] || thisMon);
+      return cache.get(k);
+    },
+  };
+}
+function siteWeekState(s, ctx) {
+  const cells = [...s.persons.keys()].map((pk) => weekCell(s, pk, ctx.focus, ctx));
+  const rank = (c) => WEEK_RANK[c.st.split(" ")[0]] + (c.st === "done other" ? 0.5 : 0); // 本人の「済」を「済（他）」より先に
+  return cells.sort((a, b) => rank(a) - rank(b))[0] || { st: "none", label: "" };
+}
+function siteCard(s, ctx) {
+  const prog = siteProgress(s);
+  const stage = siteStage(prog);
+  const last = s.reports[0];
+  const curProc = last && (last.processes || []).length ? shortProc(last.processes[last.processes.length - 1].name) : "";
+  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
+  const open = notes.filter((n) => noteStatus(n) === "open");
+  const latest = notes.filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  const wk = siteWeekState(s, ctx);
+  const segs = (prog || []).map((g, i) => {
+    const st = g.before_start ? "pre" : g.checks_total && g.checks_done >= g.checks_total ? "done" : i === stage ? "cur" : g.checks_done ? "doing" : "";
+    return `<span class="scSeg ${st}" title="${esc(g.group)} ${g.before_start ? "導入前" : `${g.checks_done}/${g.checks_total}`}"><i></i><small>${esc(g.group)}</small></span>`;
+  });
+  return (
+    `<div class="siteCard${s.completedAt ? " fin" : s.pausedAt ? " paused" : ""}${open.length ? " hasOpen" : ""}" data-site="${esc(s.key)}" role="button" tabindex="0">` +
+    `<div class="scHead"><div class="scName"><b>${esc(s.name)}</b>${s.completedAt ? `<span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? `<span class="tag">休工中</span>` : ""}</div>` +
+    `<span class="wk ${wk.st}" title="${esc(wk.title || "")}">${wk.label || "－"}</span></div>` +
+    `<div class="scPeople">${[...s.persons.values()].map((n) => `<span>${avatar(n, 22)}${esc(n)}</span>`).join("")}${s.koujiNo ? `<span class="mutedText">No.${esc(s.koujiNo)}</span>` : ""}</div>` +
+    (prog ? `<div class="scStages">${segs.join("")}</div>` : "") +
+    `<div class="scNow">${stage >= 0 && prog ? `今：<b>${esc(prog[stage].group)}</b>${curProc ? `（${esc(curProc)}）` : ""}` : "進み具合はまだ届いていません"}<span class="mutedText">${last ? `最終報告 ${fmtMD(last.sent_at)}` : ""}</span></div>` +
+    `<div class="scVoice">${
+      latest
+        ? `${typeBadge(latest.type)}${statusBadge(latest)}<span class="scVoiceText">${esc(headline(latest.text))}</span><span class="mutedText">${relTime(latest.at)}</span>`
+        : `<span class="mutedText">対応待ちの声はありません</span>`
+    }${open.length > 1 ? `<span class="sBadge open">未回答 ${open.length}</span>` : ""}</div></div>`
+  );
+}
+let siteFilter = "all";
+function siteSectionHtml() {
+  const ctx = makeWeekCtx();
+  const sites = [...data.sites.values()].filter(siteInScope).filter((s) => matchesQuery(s.name, ...s.persons.values()));
+  const info = sites.map((s) => {
+    const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
+    const wk = siteWeekState(s, ctx).st.split(" ")[0];
+    const rest = !!(s.completedAt || s.pausedAt);
+    const late = !rest && (wk === "miss" || wk === "due");
+    return { s, open, wk, rest, late, rank: open ? 0 : late ? 1 : rest ? (s.completedAt ? 4 : 3) : 2 };
+  });
+  const hit = (x, k) => k === "all" || (k === "open" ? x.open > 0 : k === "late" ? x.late || x.wk === "open" : x.rest);
+  const chips = [["all", "すべて"], ["open", "未回答あり"], ["late", "今週の報告まだ"], ["rest", "休工・完工"]];
+  const shown = info.filter((x) => hit(x, siteFilter)).sort((a, b) => a.rank - b.rank || b.open - a.open || a.s.name.localeCompare(b.s.name, "ja"));
+  return (
+    `<div class="secHead"><div><h2>現場の状況</h2><div class="sub">現場ごとの進み具合と、${ctx.focus === ctx.thisMon ? "今週" : "先週"}の報告、現場からの声。現場を選ぶと、工程順に声を見られます。</div></div>` +
+    `<div class="chips">${chips.map(([k, l]) => `<button class="chip${siteFilter === k ? " on" : ""}" data-sf="${k}">${l}<span class="chipNum ${k === "open" ? "need" : k === "late" ? "late" : k === "rest" ? "ok" : "all"}">${info.filter((x) => hit(x, k)).length}</span></button>`).join("")}</div></div>` +
+    (shown.length ? `<div class="siteGrid">${shown.map((x) => siteCard(x.s, ctx)).join("")}</div>` : `<div class="emptyText pad">該当する現場はありません。</div>`) +
+    `<a class="moreLink personLink" href="#/sites">担当者ごとに見る（報告の遅れ・未回答）${icon("chevron", 16)}</a>`
+  );
+}
+
+/* 現場の声を工程順に（段階ごと。今の段階は開いておく） */
+function siteVoicesHtml(s, prog) {
+  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
+  if (!notes.length) return "";
+  const stage = siteStage(prog);
+  const groups = ["基礎", "上棟", "外装", "内装", "設備", "引渡し"];
+  const byGroup = new Map(groups.map((g) => [g, []]));
+  const other = [];
+  notes.forEach((n) => (byGroup.get(PROC_GROUP[n.process]) || other).push(n));
+  const multi = s.persons.size > 1;
+  const row = (n) =>
+    `<button class="voiceRow ${noteStatus(n)}" data-note="${esc(n.id)}">${typeBadge(n.type, n.origType)}${statusBadge(n)}` +
+    `<span class="vText"><b>${esc(headline(n.text))}</b><small>${esc(shortProc(n.process))} › ${esc(n.item || "")}</small></span>` +
+    `<span class="vWho">${multi ? `${avatar(n.personName, 22)}${esc(n.personName)}` : ""}</span><span class="mutedText">${fmtMD(n.at)}</span>${icon("chevron", 16)}</button>`;
+  const sec = (name, list, open) => {
+    if (!list.length) return "";
+    const nOpen = list.filter((n) => noteStatus(n) === "open").length;
+    return (
+      `<details class="voiceGroup"${open ? " open" : ""}><summary><img src="art/${GROUP_ART[name] || "g1"}.webp" alt=""><b>${esc(name)}</b><span class="mutedText">${list.length}件</span>` +
+      `${nOpen ? `<span class="sBadge open">未回答 ${nOpen}</span>` : ""}${open && prog && groups[stage] === name ? `<span class="tag">今の段階</span>` : ""}${icon("chevron", 16)}</summary>` +
+      `<div class="voiceList">${list.sort((a, b) => (a.at < b.at ? -1 : 1)).map(row).join("")}</div></details>`
+    );
+  };
+  return (
+    `<div class="secHead"><div><h2>現場の声（工程順）</h2><div class="sub">この現場で出た疑問・気づき・職人さんの要望を、段階ごとに古い順で並べています。${multi ? "誰の声かは名前で分かります。" : ""}</div></div></div>` +
+    `<div class="card voiceCard">${groups.map((g, i) => sec(g, byGroup.get(g), i === stage || byGroup.get(g).some((n) => noteStatus(n) === "open"))).join("")}${sec("その他", other, true)}</div>`
+  );
 }
 
 function renderWeeks() {
@@ -855,24 +968,12 @@ function renderHome() {
       : `<div class="emptyText pad">対応待ちのメモはありません。</div>`) +
     `</div></div>`;
 
-  const people = scopedPeople().map((p) => ({ p, st: personStats(p) }));
-  const hit = (x, k) => k === "all" || (k === "need" ? x.st.open > 0 : k === "late" ? x.st.late : x.st.state === "ok");
-  const cnt = Object.fromEntries(["all", "need", "late", "ok"].map((k) => [k, people.filter((x) => hit(x, k)).length]));
-  const chips = [["all", "すべて"], ["need", "未回答あり"], ["late", "報告の遅れあり"], ["ok", "順調"]];
   html += `<a class="weekLink card" href="#/weeks">${icon("calendar", 26)}<span><b>週の報告</b><small>担当者ごと・現場ごとに、週の報告が済んでいるかを一覧で見る</small></span>${icon("chevron", 18)}</a>`;
-  html +=
-    `<div class="secHead"><div><h2>担当者の状況</h2><div class="sub">各担当者の報告状況と、対応が必要な内容を確認できます。</div></div>` +
-    `<div class="chips">${chips.map(([k, l]) => `<button class="chip${homeFilter === k ? " on" : ""}" data-hf="${k}">${l}<span class="chipNum ${k}">${cnt[k]}</span></button>`).join("")}</div></div>`;
-  const order = { need: 0, late: 1, ok: 2 };
-  const shown = people
-    .filter((x) => hit(x, homeFilter))
-    .filter((x) => matchesQuery(x.p.name, ...[...x.p.sites].map((k) => data.sites.get(k).name)))
-    .sort((a, b) => order[a.st.state] - order[b.st.state] || (b.st.open - a.st.open));
-  html += shown.length ? `<div class="personGrid">${shown.map(personCard).join("")}</div>` : `<div class="emptyText pad">該当する担当者はいません。</div>`;
+  html += siteSectionHtml();
   main.innerHTML = html;
-  main.querySelectorAll("[data-hf]").forEach((b) =>
+  main.querySelectorAll("[data-sf]").forEach((b) =>
     b.addEventListener("click", () => {
-      homeFilter = b.dataset.hf;
+      siteFilter = b.dataset.sf;
       renderHome();
     })
   );
@@ -1042,7 +1143,7 @@ function closeDrawer() {
 /* ---------- 監督・現場 ---------- */
 function renderSites() {
   const main = $("main");
-  let html = `<section class="pageHead"><h1>監督・現場</h1><p class="sub">担当者ごとの現場と、最後の報告を確認できます。現場を選ぶと、週ごとの報告と工程の進み具合が見られます。</p></section>`;
+  let html = `<section class="pageHead"><h1>担当者</h1><p class="sub">担当者ごとの報告の状況（遅れ・未回答）と、担当している現場を確認できます。育成や報告の声かけに使います。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -1050,6 +1151,10 @@ function renderSites() {
   }
   const people = scopedPeople().sort((a, b) => a.name.localeCompare(b.name, "ja"));
   html += scopeBarHtml();
+  const pst = people.map((p) => ({ p, st: personStats(p) }));
+  const order = { need: 0, late: 1, ok: 2 };
+  html += pst.length ? `<div class="personGrid">${pst.filter((x) => matchesQuery(x.p.name, ...[...x.p.sites].map((k) => data.sites.get(k).name))).sort((a, b) => order[a.st.state] - order[b.st.state] || b.st.open - a.st.open).map(personCard).join("")}</div>` : "";
+  html += `<div class="secHead"><div><h2>担当者ごとの現場</h2></div></div>`;
   html += people
     .filter((p) => matchesQuery(p.name, ...[...p.sites].map((k) => data.sites.get(k).name)))
     .map((p) => {
@@ -1132,7 +1237,7 @@ function renderSite(key) {
   const curGroup = prog ? (prog.find((g) => !g.before_start && g.checks_total && g.checks_done < g.checks_total && g.checks_done > 0) || {}).group : "";
   let html =
     `<section class="hero small"><img src="art/site-bg.webp" class="siteBg" alt="">` +
-    `<div class="crumbs"><a href="#/sites">監督・現場</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
+    `<div class="crumbs"><a href="#/home">現場</a>›<a href="#/sites">担当者</a>›<a href="${p && p.sites.size > 1 ? "#/person/" + encodeURIComponent(s.personKey) : "#/sites"}">${esc(s.personName)}</a>›<b>${esc(s.name)}</b></div>` +
     `<h1 class="heroTitle">${esc(s.name)}の報告${s.completedAt ? ` <span class="doneBadge">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? ` <span class="doneBadge paused">休工中（${fmtMD(s.pausedAt)}〜）</span>` : ""}</h1>` +
     `<p class="heroSub">${curGroup ? `現在、${esc(curGroup)}の工程を進めています。` : ""}現場の状況や報告を確認し、<br>必要なサポートやフォローを行いましょう。</p></section>`;
   html +=
@@ -1182,6 +1287,7 @@ function renderSite(key) {
         .join("")}</tbody></table></div>`;
   }
 
+  html += siteVoicesHtml(s, prog);
   html += `<div class="secHead"><div><h2>週ごとの報告</h2><div class="sub">現場からの報告を新しい順に表示しています。</div></div></div><div class="timeline">`;
   html += s.reports
     .map((r, i) => {
