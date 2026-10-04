@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1374,7 +1374,7 @@ function renderNotes(params) {
   const main = $("main");
   if (params.get("st")) noteFilter.status = params.get("st");
   let html =
-    `<section class="pageHead withArt"><img src="art/site-bg.webp" class="pageBg" alt=""><img src="art/character.webp" class="pageArt" alt=""><h1>疑問・気づき一覧</h1><p class="sub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。早めの対応で、現場をスムーズに進めましょう。</p></section>`;
+    `<section class="hero small artHero"><img src="art/notes-head.webp" class="headArt" alt=""><h1 class="heroTitle">疑問・気づき一覧</h1><p class="heroSub">現場からの疑問・気づき・職人さんの要望を、新しい順に確認できます。<br>早めの対応で、現場をスムーズに進めましょう。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -1719,7 +1719,7 @@ function renderSettings() {
   const main = $("main");
   const s = data.source;
   main.innerHTML =
-    `<section class="pageHead"><h1>設定</h1></section>` +
+    `<section class="hero small artHero"><img src="art/settings-head.webp" class="headArt" alt=""><h1 class="heroTitle">設定</h1><p class="heroSub">名前・報告フォルダ・自分の班・表示の色を設定します。</p></section>` +
     `<div class="card setCard"><h2>あなたの名前</h2><p class="sub">返信に名前が入ります。</p><input id="myName" class="input" placeholder="山郷 太郎" value="${esc(getLS("name"))}"></div>` +
     `<div class="card setCard"><h2>報告フォルダ</h2>` +
     `<p class="sub">現場ナビから Box に届いた報告（JSONと写真）が入っているフォルダを、Box Drive の中から選びます。中のフォルダもまとめて読みます。` +
