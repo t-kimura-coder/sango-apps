@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 72;
+const APP_VERSION = 73;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -3759,7 +3759,6 @@ function renderMemoSection(it) {
             ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).some((r) => !r.mine) ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).some((r) => !r.mine) ? "返信あり" : "回答待ち"}</button>`
             : "") +
           (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
-          (n.type !== "notice" || (n.replies || []).length ? `<button class="noteMore" data-more="${esc(n.id)}">${icon(ICONS.reply, 14)}書き足す</button>` : "") +
           `</div>${n.type === "contact" ? contactBodyHtml(n) : `<div class="noteText">${esc(n.text)}</div>`}` +
           (n.replies || [])
             .map(
@@ -3768,6 +3767,8 @@ function renderMemoSection(it) {
                 `<span>${esc(fmtDateTime(r.at))}</span>${r.readAt ? "" : '<span class="newMark">新着</span>'}</div><div class="noteText">${esc(r.text)}</div></div>`
             )
             .join("") +
+          // 書き足す：見出しに入れると狭くて折り返すので、メモの下に置く
+          (n.type !== "notice" || (n.replies || []).length ? `<div class="noteFoot"><button class="noteMore" data-more="${esc(n.id)}">${icon(ICONS.reply, 14)}書き足す</button></div>` : "") +
           `</div>`
       )
       .join("")}</div>`;
