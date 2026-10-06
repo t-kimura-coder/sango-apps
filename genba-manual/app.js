@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 74;
+const APP_VERSION = 75;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-07", type: "feature", text: "報告に「お客様への報告メールの材料」を書けるようになりました。工程のページで「完了・一部完了・作業中」と一言、送信の画面で「写真以外で今週やったこと」「来週の予定・お客様への連絡」を入れられます（どれも任意）。今までのメモは「上司へのメモ」になりました" },
   { date: "2026-10-05", type: "fix", text: "設定の「上司とのやりとり」の説明を直しました（合言葉は木村からもらってください）" },
   { date: "2026-10-05", type: "fix", text: "上司とのやりとりまわりを直しました（届いた返信が消えることがある、書きかけのメモが消える、合言葉なしの人の書き足しが上司に届かない、など）" },
   { date: "2026-10-05", type: "feature", text: "上司とのやりとりが、すぐ届くようになりました（設定の「上司とのやりとり」で合言葉を入れた人）。疑問・やりとりは週の報告を待たずに上司に届き、上司からの返信と宿題は開いた時に自動で受け取ります。疑問には「書き足す」で返事を続けられます（文字だけ。写真はこれまで通り報告で）" },
@@ -2264,6 +2265,7 @@ async function renderReport() {
     const p = processOf(pid);
     const inProc = cands.filter((ph) => ph.processId === pid);
     const sel = inProc.filter((ph) => ph.sendPick).length;
+    const pn = procNoteOf(site, pid);
     const card = document.createElement("div");
     card.className = "processCard reportProcCard";
     // 左の絵：いちばん新しい写真、なければ大分類のイラスト
@@ -2273,7 +2275,9 @@ async function renderReport() {
       `<button class="reportProcOpen"><span class="procThumb${latest ? " photo" : ""}">${thumb}</span>` +
       `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
       `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
-      `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span></span>` +
+      `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span>` +
+      (pn.status || pn.text ? `<span class="procNoteLine">${pn.status ? `<span class="psTag ${pn.status}">${procStatusLabel(pn.status)}</span>` : ""}${esc(pn.text || "")}</span>` : "") +
+      `</span>` +
       `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
       `<button class="iconBtn removeProcessBtn" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button>`;
     card.querySelector(".reportProcOpen").addEventListener("click", () => openReportProc(pid));
@@ -2363,6 +2367,48 @@ async function removeProcess(pid, count) {
   renderReport();
 }
 
+/* ---------- 報告：工程ごとの今週の様子（お客様への報告メールの材料） ----------
+   site.procNotes = { [工程id]: { status: "done"|"partial"|"doing"|"", text } }。報告済みにすると報告の記録へ移して空にする */
+const PROC_STATUS = [
+  ["done", "完了"],
+  ["partial", "一部完了"],
+  ["doing", "作業中"],
+];
+const procStatusLabel = (s) => (PROC_STATUS.find((x) => x[0] === s) || [])[1] || "";
+function procNoteOf(site, pid) {
+  return (site && site.procNotes && site.procNotes[pid]) || { status: "", text: "" };
+}
+let procNoteTimer = null;
+function saveProcNote(site, pid, patch, now = false) {
+  site.procNotes = site.procNotes || {};
+  site.procNotes[pid] = { ...procNoteOf(site, pid), ...patch };
+  saveSiteSoon(site, now);
+}
+// 打っている間は少し待ってからまとめて保存。入力欄を離れた時・ボタンを押した時はすぐ保存（戻る直後の再読込で消えないように）
+function saveSiteSoon(site, now) {
+  clearTimeout(procNoteTimer);
+  if (now) dbPut("sites", site);
+  else procNoteTimer = setTimeout(() => dbPut("sites", site), 400);
+}
+function renderProcStatusCard(site, pid) {
+  const box = $("reportProcStatus");
+  const note = procNoteOf(site, pid);
+  box.innerHTML =
+    `<div class="psHead">今週のこの工程<span class="psSub">お客様への報告メールの材料（任意）</span></div>` +
+    `<div class="segRow">${PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("")}</div>` +
+    `<input class="sheetInput psText" maxlength="120" placeholder="例：防草シートと砕石は完了、デッキは軸組みまで" value="${esc(note.text || "")}">`;
+  box.querySelectorAll(".segBtn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
+      saveProcNote(site, pid, { status: st }, true);
+      box.querySelectorAll(".segBtn").forEach((x) => x.classList.toggle("active", x.dataset.st === st));
+    })
+  );
+  const txt = box.querySelector(".psText");
+  txt.addEventListener("input", () => saveProcNote(site, pid, { text: txt.value }));
+  txt.addEventListener("change", () => saveProcNote(site, pid, { text: txt.value }, true));
+}
+
 /* ---------- 報告：工程のページ ---------- */
 
 // 工程マニュアルの「この工程の報告写真」や、報告タブの工程から開く
@@ -2398,6 +2444,7 @@ async function renderReportProc() {
     `<span class="procHeroArt">${groupArt(g, 44)}</span>` +
     `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
     `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span></span>`;
+  renderProcStatusCard(site, reportProcId);
   $("reportProcGuide").innerHTML =
     `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
     `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
@@ -2661,6 +2708,8 @@ async function sendToBox() {
       name: p.name,
       taken_count: cands.filter((ph) => ph.processId === p.id).length,
       selected_count: entries.filter((e) => e.photo.processId === p.id).length,
+      status: procStatusLabel(procNoteOf(site, p.id).status), // 完了／一部完了／作業中（空＝未入力）
+      note: (procNoteOf(site, p.id).text || "").trim(),
     }));
   const photoBytes = entries.reduce((s, e) => s + e.file.size, 0);
   const checkSummary = await buildCheckSummary(site.id, start, end);
@@ -2698,13 +2747,41 @@ async function sendToBox() {
       warn.textContent = "メールの容量上限を超えるおそれがあります。枚数を減らすか、2回に分けて送ってください。";
       body.appendChild(warn);
     }
-    const label = document.createElement("label");
-    label.className = "fieldLabel";
-    label.textContent = "メモ（任意）：今週の様子・来週の予定・気づいたことなど";
-    const memo = document.createElement("textarea");
-    memo.className = "sheetTextarea";
-    body.appendChild(label);
-    body.appendChild(memo);
+    // お客様向け（報告メールの材料）と上司向けを分けて書く。書きかけは現場に残す（金〜月に分けて書けるように）
+    const draft = site.reportDraft || {};
+    const field = (labelText, key, placeholder, rows) => {
+      const l = document.createElement("label");
+      l.className = "fieldLabel";
+      l.textContent = labelText;
+      const t = document.createElement("textarea");
+      t.className = "sheetTextarea";
+      t.rows = rows;
+      t.placeholder = placeholder;
+      t.value = draft[key] || "";
+      const save = (now) => {
+        site.reportDraft = { ...(site.reportDraft || {}), [key]: t.value };
+        saveSiteSoon(site, now);
+      };
+      t.addEventListener("input", () => save(false));
+      t.addEventListener("change", () => save(true));
+      body.appendChild(l);
+      body.appendChild(t);
+      return t;
+    };
+    const custHead = document.createElement("div");
+    custHead.className = "sendSecHead";
+    const noted = processes.filter((p) => p.status || p.note);
+    custHead.innerHTML =
+      `お客様への報告メールの材料<span class="psSub">任意</span>` +
+      `<div class="mutedText">${noted.length ? `工程の様子：${esc(noted.map((p) => `${shortProcessName(p)}${p.status ? "（" + p.status + "）" : ""}`).join("・"))}` : "工程ごとの「完了・作業中」と一言は、各工程のページで書けます。"}</div>`;
+    body.appendChild(custHead);
+    const doneOther = field("写真以外で今週やったこと", "doneOther", "例：ガスボンベ・灯油タンクの設置が完了。レンジフードの高さを調整", 2);
+    const nextPlan = field("来週の予定・お客様への連絡", "next", "例：10/8 塗り壁の材料が納品。来週は設備の試運転", 2);
+    const bossHead = document.createElement("div");
+    bossHead.className = "sendSecHead";
+    bossHead.innerHTML = `上司へ<span class="psSub">任意・お客様には使いません</span>`;
+    body.appendChild(bossHead);
+    const memo = field("上司へのメモ：気づいたこと・相談など", "memo", "", 2);
     const note = document.createElement("div");
     note.className = "mutedText";
     note.textContent = "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。";
@@ -2715,7 +2792,7 @@ async function sendToBox() {
         const payload = {
           kind: "genba-photo-report",
           report_id: site.draftReportId,
-          schema: 6, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start
+          schema: 7, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start、7: processes[].status/note・customer（お客様への報告メールの材料。memo は上司向け）
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -2733,6 +2810,7 @@ async function sendToBox() {
           period: { start, end },
           processes,
           memo: memo.value.trim(),
+          customer: { done_other: doneOther.value.trim(), next: nextPlan.value.trim() },
           photos: entries.map((e) => ({
             id: e.photo.id,
             file: e.file.name,
@@ -2847,6 +2925,8 @@ async function undoReport(r) {
   await dbDeleteMany("reports", [r.id]);
   if (r.sentReportId) site.draftReportId = r.sentReportId;
   if (r.week) site.redoWeek = r.week; // 送り直す時に元の週の報告として扱う
+  if (r.procNotes) site.procNotes = r.procNotes;
+  if (r.reportDraft || r.memo) site.reportDraft = { ...(r.reportDraft || {}), memo: r.memo || (r.reportDraft || {}).memo || "" };
   await dbPut("sites", site);
   toast(`報告を取り消しました（写真${photos.length}枚を「送る写真」に戻しました）`);
   goReport();
@@ -2947,6 +3027,9 @@ async function markReported(memo = "", opts = null) {
   let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].sort().pop();
   if (end > todayKey()) end = todayKey();
   const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon, sentReportId: site.draftReportId || "" };
+  // 工程の様子とお客様向けの材料も記録へ移す（取り消して送り直す時に戻せるように）
+  if (site.procNotes && Object.keys(site.procNotes).length) report.procNotes = site.procNotes;
+  if (site.reportDraft) report.reportDraft = site.reportDraft;
   targets.forEach((p) => {
     p.reportId = report.id;
     p.sendPick = false;
@@ -2957,6 +3040,9 @@ async function markReported(memo = "", opts = null) {
   delete site.draftReportId;
   delete site.redoWeek;
   site.processes = []; // 「今回の工程」は次の週に持ち越さない（未報告の写真がある工程は自動で出る）
+  delete site.procNotes;
+  delete site.reportDraft;
+  clearTimeout(procNoteTimer); // 書きかけの保存が後から走って、消した材料を戻さないように
   await dbPut("sites", site);
   toast(`報告済みにしました（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の週・写真${targets.length}枚）`);
   goReport();

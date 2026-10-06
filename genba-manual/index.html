@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=68">
+<link rel="stylesheet" href="style.css?v=69">
 </head>
 <body>
 
@@ -226,6 +226,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <button class="siteBar curSiteBar"></button>
     <div id="reportProcPeriodBar" class="periodBar"></div>
     <div id="reportProcCard" class="procHeroCard"></div>
+    <div id="reportProcStatus" class="card procStatusCard"></div>
     <div class="btnRow">
       <button id="reportShootBtn" class="btn btnPrimary btnLarge"><span data-icon="camera"></span>撮影する</button>
       <button id="reportImportBtn" class="btn btnSecondary btnLarge"><span data-icon="photo"></span>取り込む</button>
@@ -426,6 +427,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <ol class="helpList">
         <li>月〜土の工事を、<b>金曜〜翌週の月曜</b>（遅くとも火曜）に送ります。月・火曜は、先週の分がまだなら先週の分が出ます。</li>
         <li>「報告」タブで工程を開き、<b>送る写真</b>を選びます（「全部選ぶ」や、指でなぞってまとめて選べます）。</li>
+        <li>工程のページの<b>今週のこの工程</b>で「完了・一部完了・作業中」と一言を入れると、お客様への報告メールの材料になります（任意）。送信の画面では「写真以外で今週やったこと」「来週の予定・お客様への連絡」と、上司へのメモを分けて書けます。書きかけは残るので、金〜月に分けて書いても大丈夫です。</li>
         <li><b>Boxへ送信</b>を押すと宛先がコピーされるので、メールを選び、宛先に貼り付けて送ります。「送れましたか？」でOKを押すと、送った写真が報告済みになります（選ばなかった写真は次の報告に残ります）。</li>
         <li>アプリの外で報告した週や、自分は担当しない週は、「報告済みにする」で<b>アプリ外で報告した</b>・<b>今週は報告なし</b>を選びます。上司にもその場で知らせられます。</li>
       </ol>
@@ -501,6 +503,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" hidden>
 
-<script src="app.js?v=74"></script>
+<script src="app.js?v=75"></script>
 </body>
 </html>
