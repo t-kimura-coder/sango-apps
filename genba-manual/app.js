@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 75;
+const APP_VERSION = 76;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-07", type: "fix", text: "お客様への報告メールの材料まわりを直しました（入力中に宿題が届くと宿題が消えることがある、「アプリ外で報告」「今週は報告なし」にした週の材料が次の週に残る）" },
   { date: "2026-10-07", type: "feature", text: "報告に「お客様への報告メールの材料」を書けるようになりました。工程のページで「完了・一部完了・作業中」と一言、送信の画面で「写真以外で今週やったこと」「来週の予定・お客様への連絡」を入れられます（どれも任意）。今までのメモは「上司へのメモ」になりました" },
   { date: "2026-10-05", type: "fix", text: "設定の「上司とのやりとり」の説明を直しました（合言葉は木村からもらってください）" },
   { date: "2026-10-05", type: "fix", text: "上司とのやりとりまわりを直しました（届いた返信が消えることがある、書きかけのメモが消える、合言葉なしの人の書き足しが上司に届かない、など）" },
@@ -2384,11 +2385,59 @@ function saveProcNote(site, pid, patch, now = false) {
   site.procNotes[pid] = { ...procNoteOf(site, pid), ...patch };
   saveSiteSoon(site, now);
 }
-// 打っている間は少し待ってからまとめて保存。入力欄を離れた時・ボタンを押した時はすぐ保存（戻る直後の再読込で消えないように）
+// 打っている間は少し待ってからまとめて保存。入力欄を離れた時・ボタンを押した時はすぐ保存（戻る直後の再読込で消えないように）。
+// 手元の site は古くなっていることがある（宿題の取り込みなどで現場が書き換わり、一覧が読み直される）ので、
+// 丸ごと保存せず、DB の最新に procNotes・reportDraft だけを書き戻す（宿題などを消さないように）
+let pendingSiteSave = null;
+const draftHolders = new Map(); // 現場id → 最後に書いた site（保存の途中でも、報告済みにする時に最新の書きかけを拾うため）
 function saveSiteSoon(site, now) {
+  draftHolders.set(site.id, site);
   clearTimeout(procNoteTimer);
-  if (now) dbPut("sites", site);
-  else procNoteTimer = setTimeout(() => dbPut("sites", site), 400);
+  if (pendingSiteSave && pendingSiteSave !== site) flushSiteDraft(pendingSiteSave); // 別の現場の書きかけは先に保存
+  pendingSiteSave = site;
+  if (now) flushSiteDraft(site);
+  else procNoteTimer = setTimeout(() => flushSiteDraft(site), 400);
+}
+async function flushSiteDraft(site) {
+  if (pendingSiteSave === site) {
+    clearTimeout(procNoteTimer);
+    pendingSiteSave = null;
+  }
+  const apply = (x) => {
+    if (site.procNotes) x.procNotes = site.procNotes;
+    else delete x.procNotes;
+    if (site.reportDraft) x.reportDraft = site.reportDraft;
+    else delete x.reportDraft;
+  };
+  const fresh = await dbGet("sites", site.id);
+  if (!fresh) return;
+  apply(fresh);
+  await dbPut("sites", fresh);
+  const cached = activeSitesCache.find((x) => x.id === site.id);
+  if (cached && cached !== site) apply(cached);
+}
+// 報告済み・アプリ外で報告・報告なしにした時：その週の材料を報告の記録へ移して、現場からは消す（取り消すと戻す）
+function moveDraftToReport(site, report) {
+  if (pendingSiteSave && pendingSiteSave.id === site.id) {
+    clearTimeout(procNoteTimer); // 書きかけの保存が後から走って、消した材料を戻さないように
+    pendingSiteSave = null;
+  }
+  const held = draftHolders.get(site.id);
+  draftHolders.delete(site.id);
+  if (held && held !== site) {
+    site.procNotes = held.procNotes;
+    site.reportDraft = held.reportDraft;
+    delete held.procNotes; // 途中の保存がこのあと書き戻しても、空として書くように
+    delete held.reportDraft;
+  }
+  if (site.procNotes && Object.keys(site.procNotes).length) report.procNotes = site.procNotes;
+  if (site.reportDraft) report.reportDraft = site.reportDraft;
+  delete site.procNotes;
+  delete site.reportDraft;
+}
+function restoreDraftFromReport(site, r) {
+  if (r.procNotes) site.procNotes = r.procNotes;
+  if (r.reportDraft) site.reportDraft = r.reportDraft;
 }
 function renderProcStatusCard(site, pid) {
   const box = $("reportProcStatus");
@@ -2879,6 +2928,7 @@ function markWeekOther(site, wk, kind, cands) {
     body.appendChild(
       sheetButton("記録する", "btnPrimary btnLarge", async () => {
         const report = { id: newId(), siteId: site.id, start: wk.mon, end: wk.sat, createdAt: new Date().toISOString(), memo: memo.value.trim(), week: wk.mon, kind };
+        moveDraftToReport(site, report);
         await dbPut("reports", report);
         if (chk && chk.checked) {
           photosLeft.forEach((p) => {
@@ -2925,8 +2975,8 @@ async function undoReport(r) {
   await dbDeleteMany("reports", [r.id]);
   if (r.sentReportId) site.draftReportId = r.sentReportId;
   if (r.week) site.redoWeek = r.week; // 送り直す時に元の週の報告として扱う
-  if (r.procNotes) site.procNotes = r.procNotes;
-  if (r.reportDraft || r.memo) site.reportDraft = { ...(r.reportDraft || {}), memo: r.memo || (r.reportDraft || {}).memo || "" };
+  restoreDraftFromReport(site, r);
+  if (r.memo) site.reportDraft = { ...(site.reportDraft || {}), memo: r.memo };
   await dbPut("sites", site);
   toast(`報告を取り消しました（写真${photos.length}枚を「送る写真」に戻しました）`);
   goReport();
@@ -2945,6 +2995,10 @@ async function cancelWeekOther(r) {
     const photos = (await getSitePhotos(site.id)).filter((p) => p.reportId === r.id);
     photos.forEach((p) => (p.reportId = null));
     if (photos.length) await dbPutMany("photos", photos);
+    if (r.procNotes || r.reportDraft) {
+      restoreDraftFromReport(site, r);
+      await dbPut("sites", site);
+    }
   }
   toast("取り消しました");
   renderReport();
@@ -3027,9 +3081,7 @@ async function markReported(memo = "", opts = null) {
   let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].sort().pop();
   if (end > todayKey()) end = todayKey();
   const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon, sentReportId: site.draftReportId || "" };
-  // 工程の様子とお客様向けの材料も記録へ移す（取り消して送り直す時に戻せるように）
-  if (site.procNotes && Object.keys(site.procNotes).length) report.procNotes = site.procNotes;
-  if (site.reportDraft) report.reportDraft = site.reportDraft;
+  moveDraftToReport(site, report);
   targets.forEach((p) => {
     p.reportId = report.id;
     p.sendPick = false;
@@ -3040,9 +3092,6 @@ async function markReported(memo = "", opts = null) {
   delete site.draftReportId;
   delete site.redoWeek;
   site.processes = []; // 「今回の工程」は次の週に持ち越さない（未報告の写真がある工程は自動で出る）
-  delete site.procNotes;
-  delete site.reportDraft;
-  clearTimeout(procNoteTimer); // 書きかけの保存が後から走って、消した材料を戻さないように
   await dbPut("sites", site);
   toast(`報告済みにしました（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の週・写真${targets.length}枚）`);
   goReport();
