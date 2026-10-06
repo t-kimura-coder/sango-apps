@@ -780,3 +780,9 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 
 /* 監督からの書き足し */
 .pastReply.fromSite { border-left: 3px solid var(--color-wood, #b07a3c); background: var(--color-wood-soft); }
+/* お客様への報告メールの材料（現場ナビ v75〜） */
+.wkCust { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--color-wood-soft, #f6eee2); font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.wkCustHead { font-weight: 800; font-size: 12px; color: var(--color-wood-text, #8a5a24); }
+.wkCustRow { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.wkCustRow b { flex: none; }
+.wkCustRow .tag { flex: none; }

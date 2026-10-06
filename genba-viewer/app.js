@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1716,6 +1716,19 @@ function noteRow(n) {
     `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
   );
 }
+// 現場ナビ v75〜（報告 schema 7）：お客様への報告メールの材料（工程ごとの状態と一言・写真以外・来週の予定）
+function custMaterialHtml(r) {
+  const cust = r.customer || {};
+  const procs = (r.processes || []).filter((p) => p.status || p.note);
+  if (!procs.length && !cust.done_other && !cust.next) return "";
+  return (
+    `<div class="wkCust"><div class="wkCustHead">お客様への報告メールの材料</div>` +
+    procs.map((p) => `<div class="wkCustRow"><b>${esc(shortProc(p.name))}</b>${p.status ? `<span class="tag">${esc(p.status)}</span>` : ""}<span>${esc(p.note || "")}</span></div>`).join("") +
+    (cust.done_other ? `<div class="wkCustRow"><b>写真以外</b><span>${esc(cust.done_other)}</span></div>` : "") +
+    (cust.next ? `<div class="wkCustRow"><b>来週・連絡</b><span>${esc(cust.next)}</span></div>` : "") +
+    `</div>`
+  );
+}
 function shortProc(p) {
   const m = String(p || "").match(/（(.+)）/);
   return m ? m[1] : p || "";
@@ -1958,7 +1971,8 @@ function renderSite(key) {
               .map(({ x, c }) => `<li><b>${esc(c.item)}</b>：${esc(x.text)}<small>${x.by ? esc(x.by) + "・" : ""}${fmtMD(x.at)}</small></li>`)
               .join("")}</ul></details>`
           : "") +
-        (r.memo ? `<div class="wkLine memo">${icon("report", 15)}<span>${esc(r.memo)}</span></div>` : "") +
+        (r.memo ? `<div class="wkLine memo">${icon("report", 15)}<span>${r.schema >= 7 ? "<b>上司へ：</b>" : ""}${esc(r.memo)}</span></div>` : "") +
+        custMaterialHtml(r) +
         `</div></div>`
       );
     })
