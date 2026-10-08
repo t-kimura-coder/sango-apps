@@ -235,3 +235,8 @@ textarea { min-height: 84px; }
 .btn.twoLine small { display: block; font-weight: 400; font-size: 11px; opacity: 0.85; }
 .tag.line { background: #dcedf2; color: #2b6577; }
 #lnText { background: #fff; font-size: 14px; line-height: 1.5; }
+
+.tag.req { background: #f6e3c9; color: #8a5a12; }
+.tag.urgent { background: #f4d3cf; color: #a3322a; font-weight: 700; }
+.urgentRow { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 15px; }
+.urgentRow input { width: 20px; height: 20px; }

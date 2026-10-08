@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
@@ -467,11 +467,12 @@ document.addEventListener("click", (e) => {
 /* ---------- 症例リスト（共通） ---------- */
 const changedAfterSent = (r) => !!r.sentAt && (r.updatedAt || 0) > r.sentAt; // 報告したあとに、完了・編集などで変えた
 const needsReport = (r) => !r.draft && (!r.sentAt || changedAfterSent(r));
+const reqTags = (r) => (r.kind === "request" ? `<span class="tag req">依頼</span>${r.urgent ? `<span class="tag urgent">急ぎ</span>` : ""}` : "");
 function stateTag(r) { // 下書き／完了／報告済み／未報告
-  if (r.draft) return `<span class="tag warn">下書き</span>`;
+  if (r.draft) return `<span class="tag warn">下書き</span>` + reqTags(r);
   const line = r.lineAt ? `<span class="tag line">LINE連絡済み</span>` : "";
-  if (r.doneAt) return `<span class="tag done">完了</span>` + (!r.sentAt ? `<span class="tag gray">未報告</span>` : changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") + line;
-  return (r.sentAt ? `<span class="tag">報告済み</span>` + (changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") : `<span class="tag gray">未報告</span>`) + line;
+  if (r.doneAt) return reqTags(r) + `<span class="tag done">完了</span>` + (!r.sentAt ? `<span class="tag gray">未報告</span>` : changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") + line;
+  return reqTags(r) + (r.sentAt ? `<span class="tag">報告済み</span>` + (changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : "") : `<span class="tag gray">未報告</span>`) + line;
 }
 async function fillRecList(box, recs, emptyText) {
   if (!recs.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/empty-records.webp?v=${ART_V}" alt="" data-fb="x"><br>${esc(emptyText)}</div>`; return; }
@@ -507,9 +508,9 @@ async function viewForm(main, r) {
       if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: ((await dbGet("images", p.id)) || {}).blob || p.thumb, saved: true })));
-      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, photos: full, removed: [] };
+      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, kind: rec.kind === "request" ? "request" : "report", urgent: !!rec.urgent, photos: full, removed: [] };
     } else {
-      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", photos: [], removed: [] };
+      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", kind: "report", urgent: false, photos: [], removed: [] };
     }
   }
   $("topTitle").textContent = form.isNew ? "症例を入力" : "症例を編集";
@@ -518,6 +519,7 @@ async function viewForm(main, r) {
     main.innerHTML = `
       <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() ? "" : " ph"}">${b() ? esc(b().name) : "選んでください"}</div></div>${icon("chevron")}</button>
       <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() ? "" : " ph"}">${c() ? esc(c().label) : "選んでください"}</div></div>${icon("chevron")}</button>
+      <div class="formCard"><div class="fieldLabel">報告の種類</div><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>
       <div class="formCard"><div class="fieldLabel">何が起きたか<span class="req">必須</span></div><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
       <div class="formCard"><div class="fieldLabel">どう対応したか<span class="opt">対応中なら空欄でOK</span></div><textarea id="fHow" maxlength="500" placeholder="例）業者へ連絡。トラップを清掃し、排水は改善。">${esc(form.how)}</textarea><div class="counter"><span id="cHow">${form.how.length}</span>/500</div></div>
       <div class="formCard"><div class="fieldLabel">写真<span class="opt">複数枚OK</span></div><div class="photoStrip" id="strip"></div></div>
@@ -527,6 +529,8 @@ async function viewForm(main, r) {
       <div class="formActions"><button class="btn" id="fDraft">下書き保存</button><button class="btn btnPrimary" id="fSave">保存する</button></div>`;
     fillIcons(main);
     drawStrip();
+    document.querySelectorAll("#kindChips .chip").forEach((el) => (el.onclick = () => { form.kind = el.dataset.k; if (form.kind !== "request") form.urgent = false; draw(); }));
+    const fu = $("fUrgent"); if (fu) fu.onchange = () => { form.urgent = fu.checked; };
     $("fWhat").oninput = (e) => { form.what = e.target.value; $("cWhat").textContent = form.what.length; };
     $("fRep").oninput = (e) => { form.reporter = e.target.value; };
     $("fHow").oninput = (e) => { form.how = e.target.value; $("cHow").textContent = form.how.length; };
@@ -581,7 +585,7 @@ async function viewForm(main, r) {
     const f = form;
     const rec = {
       id: f.id, buildingId: f.buildingId, buildingName: b() ? b().name : f.buildingName || "", categoryId: f.categoryId, categoryName: c() ? c().label : f.categoryName || "",
-      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, lineAt: f.lineAt || null, by: getSetting("name"),
+      what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, lineAt: f.lineAt || null, kind: f.kind === "request" ? "request" : "report", urgent: f.kind === "request" && !!f.urgent, by: getSetting("name"),
     };
     try {
       for (const p of f.photos) if (!p.saved) { await dbPut("images", { id: p.id, blob: p.blob }); await dbPut("photos", { id: p.id, recordId: f.id, takenAt: p.takenAt, thumb: p.thumb }); }
@@ -658,12 +662,12 @@ async function viewDetail(main, id) {
   const ps = (await photosOf(id)).sort((a, b) => a.takenAt - b.takenAt);
   main.innerHTML = `
     <div class="formCard">
-      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>${changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : ""}` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
+      <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${reqTags(r)}${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>${changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : ""}` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
       <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     <div class="btnCol">
-      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}管理者に報告する${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>`}
+      ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}${r.kind === "request" ? "依頼を送る（本社に連絡）" : "管理者に報告する"}${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>`}
       ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
       ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "完了を取り消す" : "完了にする（解決した）"}</button>`}
       ${r.draft || !hasApi() ? "" : `<button class="btn" id="dMail" style="min-height:40px;font-weight:400">メールで送る（予備）</button>`}
@@ -720,7 +724,7 @@ async function buildReport(list) {
       bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
     }
-    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
+    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", kind: r.kind === "request" ? "request" : "", urgent: !!r.urgent, done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
   }
   const payload = { kind: "sango-support-records", schema: 1, app_version: APP_VERSION, master_version: master ? master.version : "", sent_at: new Date().toISOString(), sender: getSetting("name"), sender_id: deviceId(), records: outRecs };
   const hms = (() => { const d = new Date(); return pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); })();

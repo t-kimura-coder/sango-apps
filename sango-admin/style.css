@@ -202,3 +202,7 @@ main { padding: 16px 18px 40px; min-width: 0; }
 /* 自動更新の表示 */
 .syncInfo { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .syncInfo.bad { color: var(--warn); font-weight: 700; }
+
+.chip.req { background: #f6e3c9; color: #8a5a12; }
+.chip.urgent { background: #f4d3cf; color: #a3322a; font-weight: 700; }
+.chip.doing { background: #d9e6f2; color: #2b5d8a; }

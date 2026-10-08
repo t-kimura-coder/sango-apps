@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -39,7 +39,7 @@ const fillIcons = (root) => root.querySelectorAll("[data-icon]").forEach((e) => 
 
 /* ---------- 状態 ---------- */
 const S = { fileRecs: [], fileAdmin: null, fileGetters: new Map(), api: null, apiRecs: [], apiAdmin: null, apiGetters: new Map(), syncedAt: 0, syncError: "", records: [], admin: { kind: "sango-support-admin", schema: 1, items: {} }, photoGetters: new Map(), dirHandle: null, source: null, demo: false, writable: false };
-const F = { src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null, showHidden: false };
+const F = { req: false, src: "all", blds: new Set(), cats: new Set(), leader: "", period: "all", todo: false, q: "", sort: "new", sel: null, showHidden: false };
 let SUM = { period: "365", src: "all" };
 
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), 3000); }
@@ -51,7 +51,7 @@ const canEdit = () => getLS("edit") === "1";
 const str = (v) => (v == null ? "" : String(v));
 function norm(r, sender) {
   return {
-    id: str(r.id), src: r.source === "past" ? "past" : "new", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
+    id: str(r.id), src: r.source === "past" ? "past" : "new", req: r.kind === "request", urgent: r.urgent === true || r.urgent === "true", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
     what: str(r.what), how: str(r.how), vendor: str(r.vendor), reporter: str(r.reporter), sender: str(sender).trim(), t: Date.parse(r.created_at) || 0,
     updated: Date.parse(r.updated_at || r.created_at) || 0, done: r.done_at ? Date.parse(r.done_at) || 0 : 0, photos: Array.isArray(r.photos) ? r.photos.map((p) => p && p.file).filter(Boolean) : [], amount0: r.amount == null ? "" : r.amount, cause0: str(r.cause), memo0: str(r.memo),
   };
@@ -325,6 +325,7 @@ function filtered() {
     if (F.leader && r.sender !== F.leader) return false;
     if (days && now - r.t > days * 86400000) return false;
     if (F.todo && !isTodo(r)) return false;
+    if (F.req && !r.req) return false;
     if (q) {
       const a = adm(r);
       if (![r.what, r.how, r.vendor, r.reporter, r.sender, r.building, r.category, a.memo, a.cause].join(" ").toLowerCase().includes(q)) return false;
@@ -394,6 +395,7 @@ function renderFilters() {
     <div class="fGroup"><div class="fTitle">${icon("tool")}分類</div><div class="fGrid">${cl.map(([id, c]) => `<label class="fRow"><input type="checkbox" data-c="${esc(id)}" ${F.cats.has(id) ? "checked" : ""}><span class="fn">${esc(c.name)}</span></label>`).join("")}</div></div>
     <div class="fGroup"><div class="fTitle">${icon("user")}担当リーダー</div><select class="fSelect" id="fLeader"><option value="">すべて</option>${[...leaders].sort().map((l) => `<option value="${esc(l)}" ${F.leader === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
     <div class="fGroup"><div class="fTitle">${icon("cal")}期間</div><select class="fSelect" id="fPeriod">${[["all", "すべての期間"], ["30", "過去30日"], ["90", "過去3か月"], ["365", "過去1年"]].map(([v, l]) => `<option value="${v}" ${F.period === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <label class="fRow"><input type="checkbox" id="fReq" ${F.req ? "checked" : ""}><span class="fn"><b>依頼だけ</b></span></label>
     <label class="fRow"><input type="checkbox" id="fTodo" ${F.todo ? "checked" : ""}><span class="fn"><b>未整理だけ</b></span></label>
     ${S.records.some(isHidden) ? `<label class="fRow"><input type="checkbox" id="fHidden" ${F.showHidden ? "checked" : ""}><span class="fn">非表示の症例も表示（${S.records.filter(isHidden).length}件）</span></label>` : ""}`;
   const side = $("sideExtra");
@@ -401,6 +403,7 @@ function renderFilters() {
   side.querySelectorAll("[data-c]").forEach((el) => (el.onchange = () => { el.checked ? F.cats.add(el.dataset.c) : F.cats.delete(el.dataset.c); renderListBody(); }));
   $("fLeader").onchange = (e) => { F.leader = e.target.value; renderListBody(); };
   $("fPeriod").onchange = (e) => { F.period = e.target.value; renderListBody(); };
+  $("fReq").onchange = (e) => { F.req = e.target.checked; renderListBody(); };
   $("fTodo").onchange = (e) => { F.todo = e.target.checked; renderListBody(); };
   const fh = $("fHidden"); if (fh) fh.onchange = (e) => { F.showHidden = e.target.checked; renderListBody(); };
 }
@@ -424,7 +427,8 @@ function viewList(main) {
   $("pvToggle").onclick = () => { setLS("pv", pvOn ? "0" : "1"); viewList(main); fillIcons(main); };
   renderListBody();
 }
-function stateChip(r) { return isHidden(r) ? `<span class="chip hid">非表示</span>` : r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">整理済み</span>` : `<span class="chip todo">未整理</span>`; }
+const reqChips = (r) => (r.req ? `<span class="chip req">依頼</span>${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}` : "");
+function stateChip(r) { return reqChips(r) + (isHidden(r) ? `<span class="chip hid">非表示</span>` : r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">${r.req ? "完了" : "整理済み"}</span>` : adm(r).status === "doing" ? `<span class="chip doing">対応中</span>` : `<span class="chip todo">${r.req ? "依頼中" : "未整理"}</span>`); }
 function renderListBody() {
   const list = filtered();
   $("listCnt").textContent = `全 ${list.length} 件`;
@@ -484,7 +488,7 @@ async function viewDetail(main, id) {
         <div class="editRow"><div><label>金額（円）</label><input id="eAmt" type="number" min="0" step="1" value="${esc(a.amount)}" ${edit ? "" : "disabled"}>${r.src === "past" ? `<div class="note" style="margin-top:4px">過去の事例：業者見積額の目安です（自社で対応した作業は、メモに作業時間があります）</div>` : ""}</div>
           <div><label>原因の分類</label><select id="eCause" ${edit ? "" : "disabled"}><option value="">（未選択）</option>${CAUSES.map((c) => `<option ${a.cause === c ? "selected" : ""}>${c}</option>`).join("")}${a.cause && !CAUSES.includes(a.cause) ? `<option selected>${esc(a.cause)}</option>` : ""}</select></div>
           <div><label>メモ</label><textarea id="eMemo" maxlength="500" ${edit ? "" : "disabled"}>${esc(a.memo)}</textarea></div></div>
-        <div class="editBtns"><button class="btn primary" id="eDone" ${edit ? "" : "disabled"}>${a.status === "done" ? "整理済み（内容を保存）" : "整理済みにする"}</button>
+        <div class="editBtns"><button class="btn primary" id="eDone" ${edit ? "" : "disabled"}>${a.status === "done" ? (r.req ? "完了（内容を保存）" : "整理済み（内容を保存）") : (r.req ? "完了にする" : "整理済みにする")}</button>${r.req && a.status !== "done" ? `<button class="btn" id="eDoing" ${edit ? "" : "disabled"}>${a.status === "doing" ? "対応中（内容を保存）" : "対応中にする"}</button>` : ""}
           <button class="btn" id="eSave" ${edit ? "" : "disabled"}>保存</button>${a.status === "done" && r.src === "new" ? `<button class="btn" id="eUndo" ${edit ? "" : "disabled"}>未整理に戻す</button>` : ""}
           <button class="btn" id="eHide" ${edit ? "" : "disabled"}>${a.hidden ? "非表示を解除する" : "この症例を非表示にする"}</button>
           <span class="note">${a.at ? `最終更新 ${fmtDate(a.at)} ${fmtTime(a.at)}${a.by ? "　" + esc(a.by) : ""}` : ""}</span></div></div>
@@ -500,6 +504,7 @@ async function viewDetail(main, id) {
   if (edit) {
     $("eSave").onclick = () => done(read());
     $("eDone").onclick = () => done({ ...read(), status: "done" });
+    const dg = $("eDoing"); if (dg) dg.onclick = () => done({ ...read(), status: "doing" });
     const u = $("eUndo"); if (u) u.onclick = () => done({ ...read(), status: "" });
     $("eHide").onclick = async () => {
       const hide = !a.hidden;
