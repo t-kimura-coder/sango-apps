@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2c4a6b">
+<title>山郷サポート 本社</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=1">
+<link rel="apple-touch-icon" href="icon-180.png?v=1">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<header class="appHeader">
+  <a class="brand" href="#/list"><span class="brandName">山郷サポート</span><span class="brandTag">本社（依頼の進捗・請求）</span></a>
+  <nav class="topNav">
+    <a href="#/list" data-nav="list">依頼</a>
+    <a href="#/bill" data-nav="bill">請求</a>
+    <a href="#/settings" data-nav="settings">設定</a>
+  </nav>
+  <span id="syncInfo" class="syncInfo"></span>
+  <button id="reloadBtn" class="iconBtn" title="読み直す" aria-label="読み直す">↻</button>
+</header>
+<main id="main"></main>
+<div id="lightbox" hidden></div>
+<div id="toast" hidden></div>
+<script src="app.js?v=1"></script>
+</body>
+</html>
