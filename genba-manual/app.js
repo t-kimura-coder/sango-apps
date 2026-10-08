@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 76;
+const APP_VERSION = 77;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,11 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-08", type: "feature", text: "工程の段階を開くと、その現場でその段階を最後に見ていた項目が開くようになりました（毎回最初の項目に戻らない）。「工程」タブの上の「続きから」で、前回見ていた項目にすぐ戻れます" },
+  { date: "2026-10-08", type: "feature", text: "品質写真を1つのチェックに何枚でも残せるようになりました（撮り直しで前の写真が消えません）。2枚以上あるとカメラの右下に枚数が出ます。押すと一覧が出て、撮影・写真から追加（まとめて選べます）・1枚ずつの削除ができます" },
+  { date: "2026-10-08", type: "feature", text: "報告の工程のページの「今週のこの工程」で、改行して書けるようにしました" },
+  { date: "2026-10-08", type: "fix", text: "ホームの「やること」に、どの現場の話か（全体の話か）を行の頭に出すようにしました" },
+  { date: "2026-10-08", type: "fix", text: "写真タブで写真を選んだ時、下の操作ボタンに写真の選択マークが透けて見えていたのを直しました" },
   { date: "2026-10-07", type: "fix", text: "お客様への報告メールの材料まわりを直しました（入力中に宿題が届くと宿題が消えることがある、「アプリ外で報告」「今週は報告なし」にした週の材料が次の週に残る）" },
   { date: "2026-10-07", type: "feature", text: "報告に「お客様への報告メールの材料」を書けるようになりました。工程のページで「完了・一部完了・作業中」と一言、送信の画面で「写真以外で今週やったこと」「来週の予定・お客様への連絡」を入れられます（どれも任意）。今までのメモは「上司へのメモ」になりました" },
   { date: "2026-10-05", type: "fix", text: "設定の「上司とのやりとり」の説明を直しました（合言葉は木村からもらってください）" },
@@ -2107,13 +2112,19 @@ async function onCameraPicked() {
 
 async function onRecordLibraryPicked() {
   const input = $("recordLibraryInput");
-  const file = input.files[0];
+  const files = [...input.files];
   input.value = "";
   clearPendingShot();
-  if (!file || !recordTarget) return;
+  const target = recordTarget;
+  if (!files.length || !target) return;
   setProcessing(true, "写真を取り込み中...");
-  const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
-  await saveRecordPhoto(file, taken);
+  let ok = 0;
+  for (const [i, file] of files.entries()) {
+    const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
+    // 最後の1枚だけ普段どおり知らせる（途中はまとめて保存）
+    if (await saveRecordPhoto(file, taken, target, i < files.length - 1)) ok++;
+  }
+  if (files.length > 1) toast(`品質写真を${ok}枚保存しました`);
   setProcessing(false);
 }
 
@@ -2277,7 +2288,7 @@ async function renderReport() {
       `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
       `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
       `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span>` +
-      (pn.status || pn.text ? `<span class="procNoteLine">${pn.status ? `<span class="psTag ${pn.status}">${procStatusLabel(pn.status)}</span>` : ""}${esc(pn.text || "")}</span>` : "") +
+      (pn.status || pn.text ? `<span class="procNoteLine">${pn.status ? `<span class="psTag ${pn.status}">${procStatusLabel(pn.status)}</span>` : ""}${esc((pn.text || "").replace(/\s*\n\s*/g, " ／ "))}</span>` : "") +
       `</span>` +
       `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
       `<button class="iconBtn removeProcessBtn" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button>`;
@@ -2445,7 +2456,7 @@ function renderProcStatusCard(site, pid) {
   box.innerHTML =
     `<div class="psHead">今週のこの工程<span class="psSub">お客様への報告メールの材料（任意）</span></div>` +
     `<div class="segRow">${PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("")}</div>` +
-    `<input class="sheetInput psText" maxlength="120" placeholder="例：防草シートと砕石は完了、デッキは軸組みまで" value="${esc(note.text || "")}">`;
+    `<textarea class="sheetTextarea psText" rows="2" maxlength="400" placeholder="例：防草シートと砕石は完了、デッキは軸組みまで（改行して書けます）">${esc(note.text || "")}</textarea>`;
   box.querySelectorAll(".segBtn").forEach((b) =>
     b.addEventListener("click", () => {
       const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
@@ -3220,6 +3231,15 @@ async function renderManual() {
   const reqBox = $("manualReq");
   reqBox.innerHTML = "";
   const site = currentSite();
+  const lastId = manualMeta ? lastItemOf(currentSiteId, "_last") : null;
+  const lastIt = lastId && manualMeta.items.find((x) => x.id === lastId);
+  if (lastIt) {
+    const c = document.createElement("button");
+    c.className = "manualReqBtn";
+    c.innerHTML = `<span class="mrIcon">${icon(ICONS.list, 20)}</span><span class="mrText"><b>続きから：${esc(lastIt.name)}</b><small>前回見ていた項目（${esc(groupOfProcess(lastIt.cat).name)}）</small></span>${icon(ICONS.chevron, 18)}`;
+    c.addEventListener("click", () => openGroup(groupOfProcess(lastIt.cat).id, lastIt.id));
+    reqBox.appendChild(c);
+  }
   if (site && manualMeta) {
     const cov = await recordCoverage(site.id);
     const sm = await siteSummary(site);
@@ -3238,6 +3258,7 @@ let currentItemIdx = 0;
 let currentMTab = "check";
 let siteCheckRecs = {};    // itemId → チェック記録
 let siteRecordPhotos = {}; // "項目ID|区分|チェック文" → 品質写真（最新の1枚）
+let siteRecordLists = {};  // 同じ鍵 → 品質写真の全部（古い順）。1つのチェックに何枚でも撮れる
 
 
 function allManualItems() {
@@ -3248,12 +3269,17 @@ function allManualItems() {
 async function loadSiteChecks() {
   siteCheckRecs = {};
   siteRecordPhotos = {};
+  siteRecordLists = {};
   if (!currentSiteId) return;
   (await dbGetAll("checks", "siteId", currentSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
   (await getSitePhotos(currentSiteId))
     .filter(isRecordPhoto)
     .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
-    .forEach((p) => (siteRecordPhotos[`${p.itemId}|${p.checkKey}`] = p));
+    .forEach((p) => {
+      const k = `${p.itemId}|${p.checkKey}`;
+      siteRecordPhotos[k] = p;
+      (siteRecordLists[k] = siteRecordLists[k] || []).push(p);
+    });
 }
 
 function checkRecOf(itemId) {
@@ -3312,7 +3338,25 @@ function toastIfCompleted(it, wasDone) {
   if (!wasDone && itemDone(it)) toast(`「${it.name}」のチェックが完了しました`);
 }
 
-// itemId を指定すると、その項目を開いた状態で表示する
+// 段階ごとに、その現場で最後に見ていた項目を覚えておく（段階を開くたびに最初の項目に戻らないように）
+const LAST_ITEM_KEY = "genba-photo-last-item";
+function lastItemOf(siteId, gid) {
+  try {
+    const o = JSON.parse(localStorage.getItem(LAST_ITEM_KEY) || "{}");
+    return (o[siteId || "-"] || {})[gid] || null;
+  } catch (e) {
+    return null;
+  }
+}
+function rememberLastItem(siteId, gid, itemId) {
+  try {
+    const o = JSON.parse(localStorage.getItem(LAST_ITEM_KEY) || "{}");
+    o[siteId || "-"] = { ...(o[siteId || "-"] || {}), [gid]: itemId, _last: itemId };
+    localStorage.setItem(LAST_ITEM_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+
+// itemId を指定すると、その項目を開いた状態で表示する（指定がなければ、その段階で最後に見ていた項目）
 async function openGroup(gid, itemId) {
   currentGroupId = gid;
   const g = groupOf(gid);
@@ -3340,7 +3384,8 @@ async function openGroup(gid, itemId) {
   $("groupView").classList.toggle("hasItems", groupItems.length > 0);
   $("itemTabs").hidden = !groupItems.length;
   $("itemDetail").hidden = !groupItems.length;
-  const found = itemId ? groupItems.findIndex((it) => it.id === itemId) : -1;
+  const want = itemId || lastItemOf(currentSiteId, gid);
+  const found = want ? groupItems.findIndex((it) => it.id === want) : -1;
   currentItemIdx = found >= 0 ? found : 0;
   renderItemStrip();
   showView("groupView");
@@ -3421,6 +3466,7 @@ async function renderItem() {
   const it = groupItems[currentItemIdx];
   if (!it) return;
   pushRecent(it);
+  rememberLastItem(currentSiteId, currentGroupId, it.id);
   renderNavButtons();
   document.querySelectorAll(".itemTab").forEach((t) => t.classList.toggle("active", t.dataset.mtab === currentMTab));
   releaseUrls("manual");
@@ -3569,8 +3615,9 @@ function checkRowHtml(sec, c, rec, it) {
     cam = `<button class="checkCam skip" data-skip="1" aria-label="撮影不要を解除">撮影<br>不要</button>`;
   } else if (c.photo === "要") {
     const ph = siteRecordPhotos[`${it.id}|${key}`];
+    const n = (siteRecordLists[`${it.id}|${key}`] || []).length;
     cam = ph
-      ? `<button class="checkCam has" data-cam="1" aria-label="品質写真を見る"><img src="${blobUrl("manual", ph.thumb)}" alt=""></button>`
+      ? `<button class="checkCam has" data-cam="1" aria-label="品質写真を見る（${n}枚）"><img src="${blobUrl("manual", ph.thumb)}" alt="">${n > 1 ? `<span class="camCount">${n}</span>` : ""}</button>`
       : `<button class="checkCam" data-cam="1" aria-label="品質写真を撮る"${disabled ? " disabled" : ""}>${icon(ICONS.camera, 22)}</button>`;
   }
   const meta = [
@@ -3736,43 +3783,83 @@ function onCheckCamera(it, key) {
     });
     return;
   }
-  openPhotoViewer(ph.blob, [
-    { label: "撮り直す", cls: "btnPrimary", onClick: () => startRecordCamera(it, key) },
-    { label: "写真から選ぶ", cls: "btnGhost", onClick: () => startRecordLibrary(it, key) },
-    {
-      label: "削除",
-      cls: "btnDanger",
-      onClick: async () => {
-        if (!confirm("この品質写真を削除しますか？")) return false;
-        await dbDeleteMany("photos", [ph.id]);
-        delete siteRecordPhotos[`${it.id}|${key}`];
-        refreshCheckRow(it, key);
-        if (currentView === "requiredView") renderRequired(true);
-        toast("品質写真を削除しました");
-      },
-    },
-  ]);
+  openRecordList(it, key);
 }
 
-async function saveRecordPhoto(file, takenAt = new Date()) {
-  const t = recordTarget;
+// 撮影済みの品質写真：枚数と小さな一覧。押すと拡大して削除できる。撮って追加・写真から追加も
+function openRecordList(it, key) {
+  const mapKey = `${it.id}|${key}`;
+  const list = (siteRecordLists[mapKey] || []).slice().reverse(); // 新しい順
+  if (!list.length) return;
+  openSheet(`品質写真（${list.length}枚）`, (body, close) => {
+    const row = document.createElement("div");
+    row.className = "recThumbs";
+    releaseUrls("recList");
+    list.forEach((p) => {
+      const b = document.createElement("button");
+      b.className = "recThumb";
+      b.innerHTML = `<img src="${p.thumb && !p.imageRemoved ? blobUrl("recList", p.thumb) : STORED_IMG}" alt=""><span>${esc(fmtDate(p.dateKey))}</span>`;
+      b.addEventListener("click", () => {
+        close();
+        openPhotoViewer(p.blob, [
+          {
+            label: "この写真を削除",
+            cls: "btnDanger",
+            onClick: async () => {
+              if (!confirm("この品質写真を削除しますか？")) return false;
+              await dbDeleteMany("photos", [p.id]);
+              const rest = (siteRecordLists[mapKey] || []).filter((x) => x.id !== p.id);
+              if (rest.length) {
+                siteRecordLists[mapKey] = rest;
+                siteRecordPhotos[mapKey] = rest[rest.length - 1];
+              } else {
+                delete siteRecordLists[mapKey];
+                delete siteRecordPhotos[mapKey];
+              }
+              refreshCheckRow(it, key);
+              if (currentView === "requiredView") renderRequired(true);
+              toast("品質写真を削除しました");
+            },
+          },
+        ]);
+      });
+      row.appendChild(b);
+    });
+    body.appendChild(row);
+    const hint = document.createElement("div");
+    hint.className = "mutedText";
+    hint.textContent = "写真を押すと拡大します（削除もここから）。";
+    body.appendChild(hint);
+    body.appendChild(
+      sheetButton("撮影して追加", "btnPrimary btnLarge", () => {
+        close();
+        startRecordCamera(it, key);
+      })
+    );
+    body.appendChild(
+      sheetButton("写真から追加（標準カメラで撮った写真）", "btnSecondary", () => {
+        close();
+        startRecordLibrary(it, key);
+      })
+    );
+    body.appendChild(sheetButton("閉じる", "btnSecondary", close));
+  });
+}
+
+async function saveRecordPhoto(file, takenAt = new Date(), target = null, quiet = false) {
+  const t = target || recordTarget;
   recordTarget = null;
   try {
     const rec = await makePhotoRecord(file, t.siteId, shootProcessId, takenAt, { kind: "record", itemId: t.itemId, checkKey: t.checkKey });
     const mapKey = `${t.itemId}|${t.checkKey}`;
-    const old = siteRecordPhotos[mapKey];
-    if (old && !old.reportId) {
-      rec.forReport = !!old.forReport;
-      rec.sendPick = !!old.sendPick;
-    }
+    // 1つのチェックに何枚でも残せる（前の写真は消さない。要らない写真は一覧から削除）
     await dbPut("photos", rec);
-    // 撮り直しは前の1枚と入れ替える（ただし報告済みの写真は過去の報告から欠けないよう残す）
-    if (old && !old.reportId) await dbDeleteMany("photos", [old.id]);
     let autoChecked = false;
     const shown = groupItems[currentItemIdx];
     const wasDone = shown && shown.id === t.itemId ? itemDone(shown) : true;
     if (t.siteId === currentSiteId) {
-      siteRecordPhotos[mapKey] = rec;
+      siteRecordLists[mapKey] = (siteRecordLists[mapKey] || []).concat(rec).sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1));
+      siteRecordPhotos[mapKey] = siteRecordLists[mapKey][siteRecordLists[mapKey].length - 1];
       const crec = checkRecOf(t.itemId);
       if (!crec.marks[t.checkKey]) {
         crec.marks[t.checkKey] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
@@ -3785,12 +3872,17 @@ async function saveRecordPhoto(file, takenAt = new Date()) {
       renderItemStrip(false);
       refreshCheckRow(it, t.checkKey);
     }
-    if (autoChecked && !wasDone && it && it.id === t.itemId && itemDone(it)) toast(`品質写真を保存しました。「${it.name}」のチェックが完了しました`);
-    else toast(autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました");
+    if (quiet) return true;
+    const n = (siteRecordLists[mapKey] || []).length;
+    const cnt = n > 1 ? `（このチェックは${n}枚）` : "";
+    if (autoChecked && !wasDone && it && it.id === t.itemId && itemDone(it)) toast(`品質写真を保存しました${cnt}。「${it.name}」のチェックが完了しました`);
+    else toast((autoChecked ? "品質写真を保存し、チェックを付けました" : "品質写真を保存しました") + cnt);
     if (currentView === "requiredView") renderRequired(true);
+    return true;
   } catch (e) {
     console.error(e);
     alert("写真を保存できませんでした。もう一度撮影してください。");
+    return false;
   }
 }
 
@@ -5129,15 +5221,21 @@ async function renderDash() {
   }
 
   // ---- やること（その時に必要なものだけ） ----
+  // 行の頭に「どの現場の話か」を出す（site: 現場 / 現場名の文字 / "全体"）。1現場だけの人にも出す（全体の話と見分けるため）
   const todo = [];
-  if (unread.length) todo.push({ icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
+  const siteNameOf = (id) => (sites.find((x) => x.id === id) || {}).name || "";
+  if (unread.length) {
+    const ids = [...new Set(unread.map((u) => u.rec.siteId))];
+    todo.push({ site: ids.length === 1 ? siteNameOf(ids[0]) : `${ids.length}現場`, icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
+  }
   // 返事待ちのやりとり（古い順に2件まで）
   const waits = pendingContacts(sums);
   waits.slice(0, 2).forEach(({ site, rec, n }) =>
     todo.push({
+      site: site.name,
       icon: ICONS.reply,
       cls: "wood",
-      html: `返事待ち：${esc(n.text)}<small>${sites.length > 1 ? esc(site.name) + "・" : ""}${esc(n.contact.who)}・${esc(fmtDate(toDateKey(new Date(n.at))))}から</small>`,
+      html: `返事待ち：${esc(n.text)}<small>${esc(n.contact.who)}・${esc(fmtDate(toDateKey(new Date(n.at))))}から</small>`,
       go: async () => {
         if (site.id !== currentSiteId) await setCurrentSite(site.id);
         const it = allManualItems().find((x) => x.id === rec.itemId);
@@ -5149,22 +5247,23 @@ async function renderDash() {
       },
     })
   );
-  if (waits.length > 2) todo.push({ icon: ICONS.reply, cls: "muted", html: `ほかの返事待ち <b>${waits.length - 2}件</b>`, go: () => toast("返事待ちは、それぞれの項目の「気づき・疑問メモ」に出ています") });
+  if (waits.length > 2) todo.push({ site: "全体", icon: ICONS.reply, cls: "muted", html: `ほかの返事待ち <b>${waits.length - 2}件</b>`, go: () => toast("返事待ちは、それぞれの項目の「気づき・疑問メモ」に出ています") });
   // 打合せの宿題（期限の近い順に3件まで）
   const tasks = openTasks(sites);
   tasks.slice(0, 3).forEach(({ s, t }) =>
-    todo.push({ icon: ICONS.checkSquare, cls: "green", html: `打合せの宿題：${esc(t.text)}<small>${sites.length > 1 ? esc(s.name) + "・" : ""}${taskDueHtml(t)}</small>`, go: () => openTaskSheet(s, t) })
+    todo.push({ site: s.name, icon: ICONS.checkSquare, cls: "green", html: `打合せの宿題：${esc(t.text)}<small>${taskDueHtml(t)}</small>`, go: () => openTaskSheet(s, t) })
   );
-  if (tasks.length > 3) todo.push({ icon: ICONS.checkSquare, cls: "muted", html: `ほかの宿題 <b>${tasks.length - 3}件</b>`, go: () => openTaskList(sites) });
+  if (tasks.length > 3) todo.push({ site: "全体", icon: ICONS.checkSquare, cls: "muted", html: `ほかの宿題 <b>${tasks.length - 3}件</b>`, go: () => openTaskList(sites) });
   const due = sums.filter((x) => x.reportDue);
   due.forEach((x) =>
     todo.push({
+      site: x.site.name,
       img: "art/report-icon.webp?v=1",
       cls: "wood",
       html:
         x.week.state === "late"
-          ? `報告の期限は<b class="em">今日</b>です（${x.week.isPrev ? "先週" : "今週"}の分）<small>${sites.length > 1 ? esc(x.site.name) + "・" : ""}${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`
-          : `${x.week.isPrev ? "先週" : "今週"}の報告：<b class="em">未送信</b>（${fmtDate(x.week.due)}まで）<small>${sites.length > 1 ? esc(x.site.name) + "・" : ""}${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`,
+          ? `報告の期限は<b class="em">今日</b>です（${x.week.isPrev ? "先週" : "今週"}の分）<small>${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`
+          : `${x.week.isPrev ? "先週" : "今週"}の報告：<b class="em">未送信</b>（${fmtDate(x.week.due)}まで）<small>${fmtDate(x.week.mon)}〜${fmtDate(x.week.sat)}</small>`,
       go: async () => {
         if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
         goReport();
@@ -5175,9 +5274,10 @@ async function renderDash() {
     .filter((x) => x.overdue)
     .forEach((x) =>
       todo.push({
+        site: x.site.name,
         img: "art/report-icon.webp?v=1",
         cls: "wood",
-        html: `報告が <b class="em">${x.week.missed}週分</b> 遅れています<small>${esc(x.site.name)}</small>`,
+        html: `報告が <b class="em">${x.week.missed}週分</b> 遅れています`,
         go: async () => {
           if (x.site.id !== currentSiteId) await setCurrentSite(x.site.id);
           goReport();
@@ -5186,12 +5286,13 @@ async function renderDash() {
     );
   if (curSum && curSum.missing.length && !isPaused(current))
     todo.push({
+      site: current.name,
       icon: ICONS.camera,
       cls: "blue",
       html: `撮り忘れの品質写真 <b class="em">${curSum.missing.length}件</b>`,
       go: () => openRequired("missing"),
     });
-  if (!unread.length) todo.push({ icon: ICONS.reply, cls: "muted", html: `上司からの返信・宿題を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
+  if (!unread.length) todo.push({ site: "全体", icon: ICONS.reply, cls: "muted", html: `上司からの返信・宿題を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
   const todoBox = $("dashTodo");
   todoBox.innerHTML = "";
   if (todo.length === 1 && todo[0].pick) {
@@ -5203,7 +5304,8 @@ async function renderDash() {
   todo.forEach((x) => {
     const b = document.createElement("button");
     b.className = "dashRow" + (x.pick ? " sub" : "");
-    b.innerHTML = `<span class="dashIcon ${x.cls}">${x.img ? `<img src="${x.img}" alt="">` : icon(x.icon, 22)}</span><span class="dashRowText">${x.html}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    const tag = x.site ? `<span class="todoSite${x.site === "全体" ? " all" : ""}">${x.site === "全体" ? "全体" : icon(ICONS.building, 11) + esc(x.site)}</span>` : "";
+    b.innerHTML = `<span class="dashIcon ${x.cls}">${x.img ? `<img src="${x.img}" alt="">` : icon(x.icon, 22)}</span><span class="dashRowText">${tag}${x.html}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
     // 返信の取り込みはファイル選択を開くので、タップの中で同期的に呼ぶ（iPhone）
     b.addEventListener("click", () => (x.pick ? $("replyInput").click() : x.go()));
     todoBox.appendChild(b);

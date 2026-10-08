@@ -1187,3 +1187,18 @@ img.imgBroken { visibility: hidden; }
 .psTag.doing { background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text-sub); }
 .sendSecHead { margin-top: var(--space-md); font-weight: 800; color: var(--color-heading); }
 .sendSecHead .mutedText { font-weight: 400; margin-top: 2px; }
+/* 下の操作バー（写真の選択など）を写真の上に重ねる。写真の選択マークが透けて見えていたため */
+.bottomActions { z-index: 15; }
+.selectBar { box-shadow: 0 -6px 20px rgba(30, 40, 30, 0.16); }
+/* 品質写真：1つのチェックに2枚以上ある時の枚数 */
+.checkCam { position: relative; }
+.camCount { position: absolute; right: -4px; bottom: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--color-primary); color: var(--color-primary-text); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid var(--color-surface); }
+.recThumbs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 var(--space-sm); }
+.recThumb { flex: none; width: 84px; border: none; background: none; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--color-text-sub); }
+.recThumb img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border); }
+/* 工程の一言（改行あり） */
+.psText { min-height: 64px; }
+/* ホームのやること：どの現場の話か */
+.todoSite { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; margin-bottom: 2px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 18px; background: var(--color-primary-soft); color: var(--color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todoSite.all { background: var(--color-bg); color: var(--color-text-sub); border: 1px solid var(--color-border); }
+.dashRowText .todoSite { display: flex; width: fit-content; }

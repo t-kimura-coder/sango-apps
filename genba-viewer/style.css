@@ -786,3 +786,4 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .wkCustRow { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .wkCustRow b { flex: none; }
 .wkCustRow .tag { flex: none; }
+.wkCustRow span:last-child { white-space: pre-wrap; }

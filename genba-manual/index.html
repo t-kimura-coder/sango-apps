@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=69">
+<link rel="stylesheet" href="style.css?v=70">
 </head>
 <body>
 
@@ -407,7 +407,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="helpStep">現場で使う</div>
       <ol class="helpList">
         <li><b>ホーム</b>には担当現場が全部並び、今どの段階かが分かります。いちばん上が「今の現場」で、押すと今の段階のマニュアルが開きます。ほかの現場を押すと、そちらが今の現場になります。</li>
-        <li><b>やること</b>には、上司からの返信・報告の期限・撮り忘れの品質写真など、その時に必要なものだけが出ます。<b>次に見る項目</b>から、続きと次の項目をすぐ開けます。</li>
+        <li><b>やること</b>には、上司からの返信・報告の期限・撮り忘れの品質写真など、その時に必要なものだけが出ます。行の頭に、どの現場の話か（全体の話か）が出ます。<b>次に見る項目</b>から、続きと次の項目をすぐ開けます。工程の段階を開くと、その段階で最後に見ていた項目が開きます。</li>
         <li>「工程」タブで段階を選び、上に並んだ項目を左右にスクロールして選びます。チェックを付けると、日時と名前が残ります。その現場にない項目は、項目名の右の<b>該当なし</b>で外せます。</li>
         <li><b>気づき・疑問メモ</b>の「メモを書く」から、気づいたこと・疑問・職人さんの要望を残せます。疑問は上司に届き、返信が来るとメモの下に出ます。</li>
         <li>項目名が分からない時は、検索欄に現場で聞いた言葉を入れてください（ひらがな可）。</li>
@@ -416,7 +416,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card helpCard">
       <div class="helpStep">写真を撮る</div>
       <ol class="helpList">
-        <li><b>品質写真</b>（緑）：工程マニュアルの「写真要」のチェック横のカメラから。撮るとチェックも自動で付きます。この現場で撮らなくてよいものは、カメラから「撮影不要」を選びます。</li>
+        <li><b>品質写真</b>（緑）：工程マニュアルの「写真要」のチェック横のカメラから。撮るとチェックも自動で付きます。1つのチェックに何枚でも残せます（2枚以上は枚数が出て、押すと一覧から追加・削除）。この現場で撮らなくてよいものは、カメラから「撮影不要」を選びます。</li>
         <li><b>報告写真</b>（木の色・お客様向け）：工程マニュアルの右上の「報告写真」か、報告タブの工程ページから。ゴミ・工具が写らないように。</li>
         <li>写真が足りているかは、写真タブや工程タブの<b>写真要の一覧</b>で確かめられます（全部の段階が1ページに並びます）。</li>
         <li>写真タブでは、写真を選んで「送る写真に入れる」「工程で仕分け」「保存」「削除」ができます。指で横になぞると、まとめて選べます。</li>
@@ -501,8 +501,8 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="manualInput" accept="application/json,.json" hidden>
 <input type="file" id="restoreInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
-<input type="file" id="recordLibraryInput" accept="image/*" hidden>
+<input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=76"></script>
+<script src="app.js?v=77"></script>
 </body>
 </html>
