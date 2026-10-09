@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -411,6 +411,7 @@ function bindGasCard(main) {
   if (!inp) return;
   inp.addEventListener("change", () => {
     setLS("gasToken", inp.value.trim());
+    clearGate(); // 次に開く時は入口で確かめ直す
     gasStore = { cursor: 0, notes: {}, replies: {} };
     kvSet("gas", gasStore);
     toast(inp.value.trim() ? "合言葉を保存しました" : "合言葉を消しました");
@@ -2179,8 +2180,102 @@ function applyTheme(t) {
   if (meta) meta.setAttribute("content", dark ? "#1c2320" : "#f7f5ef");
 }
 
+/* ---------- 入口（上司用の合言葉でログイン） ----------
+   見守りは上司・設計者用の画面なので、開く時に上司用の合言葉を確かめる（ログインのパスワードと同じ扱い）。
+   一度通れば、この PC に覚えておき、次からは裏で確かめ直すだけ（止められた・役割が変わった時は入口に戻す）。
+   報告と写真は Box にあり、この画面は読むだけなので、本当の守りは Box のフォルダ。ここは「迷わせない・使わせない」入口 */
+const GATE_ROLES = ["上司", "設計者"];
+function gateOk() {
+  try {
+    const g = JSON.parse(getLS("gate") || "null");
+    return g && getLS("gasToken") && g.tail === getLS("gasToken").slice(-6) ? g : null;
+  } catch (e) {
+    return null;
+  }
+}
+function clearGate() {
+  try {
+    localStorage.removeItem(LS + "gate");
+  } catch (e) {}
+}
+async function checkGateToken() {
+  const j = await gasCall({ action: "whoami" });
+  if (GATE_ROLES.indexOf(j.me.role) < 0) {
+    const e = new Error("notboss");
+    e.role = j.me.role;
+    throw e;
+  }
+  setLS("gate", JSON.stringify({ tail: getLS("gasToken").slice(-6), name: j.me.name, role: j.me.role, at: new Date().toISOString() }));
+  // 名前は合言葉の名前に合わせる（自分の書いたものを新着に数えないため）
+  if (normName(getLS("name")) !== normName(j.me.name)) setLS("name", j.me.name);
+  return j.me;
+}
+function gateErrorText(e) {
+  if (e && e.message === "notboss") return `この合言葉は「${e.role}」用です。見守りには上司用の合言葉が必要です（監督の方は現場ナビに入れてください）。`;
+  if (e && e.message === "unauthorized") return "合言葉が違うか、止められています。分からない時は木村に聞いてください。";
+  return "つながりませんでした。ネットにつながっているか確かめて、もう一度押してください。";
+}
+// 通れたら true を返す（入口を出している間は待つ）
+async function passGate() {
+  if (gateOk()) {
+    // 覚えていれば通す。裏で確かめ直し、止められていたら入口に戻す（つながらない時はそのまま）
+    checkGateToken().catch((e) => {
+      if (e && (e.message === "unauthorized" || e.message === "notboss")) {
+        clearGate();
+        alert(gateErrorText(e) + "\n入口に戻ります。");
+        location.reload();
+      }
+    });
+    return true;
+  }
+  // 前から合言葉を入れていた人は、まず黙って確かめる
+  if (getLS("gasToken")) {
+    try {
+      await checkGateToken();
+      return true;
+    } catch (e) {
+      /* 入口を出す */
+    }
+  }
+  return new Promise((resolve) => {
+    const g = document.createElement("div");
+    g.id = "gate";
+    g.className = "gate";
+    g.innerHTML =
+      `<form class="gateCard card" autocomplete="off">` +
+      `<div class="gateBrand"><img src="icon-96.png?v=2" alt=""><div><b>現場ナビ 見守り</b><span>上司用の画面</span></div></div>` +
+      `<p class="gateText">上司用の合言葉を入れてください。<br><small>合言葉は一人ひとつ、木村から受け取ります。人には教えないでください。</small></p>` +
+      `<input id="gateToken" class="input" type="password" placeholder="合言葉" value="${esc(getLS("gasToken"))}">` +
+      `<button class="btn btnPrimary" type="submit">はじめる</button>` +
+      `<div id="gateMsg" class="gateMsg" role="alert"></div>` +
+      `</form>`;
+    document.body.appendChild(g);
+    const inp = g.querySelector("#gateToken");
+    const btn = g.querySelector("button");
+    setTimeout(() => inp.focus(), 50);
+    g.querySelector("form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const v = inp.value.trim();
+      if (!v) return ($("gateMsg").textContent = "合言葉を入れてください。");
+      btn.disabled = true;
+      $("gateMsg").textContent = "確かめています…";
+      setLS("gasToken", v);
+      try {
+        const me = await checkGateToken();
+        g.remove();
+        toast(`ようこそ、${me.name}さん`);
+        resolve(true);
+      } catch (e) {
+        $("gateMsg").textContent = gateErrorText(e);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 async function init() {
   applyTheme(getLS("theme") || "auto");
+  if (!(await passGate())) return;
   await loadGasStore();
   setTimeout(() => syncGas(), 3000);
   setInterval(() => !document.hidden && syncGas(), 2 * 60 * 1000);
