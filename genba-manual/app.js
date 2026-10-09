@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 77;
+const APP_VERSION = 78;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-09", type: "feature", text: "PC（Edge・Chrome）で開いた時、「Boxへ送信」・上司への知らせ・完工の知らせは、Box Drive の「社内報告」フォルダに直接保存するようにしました（PC では共有画面が出ないため。初回だけフォルダを選びます）。iPhone はこれまで通り共有画面から送ります" },
   { date: "2026-10-08", type: "feature", text: "工程の段階を開くと、その現場でその段階を最後に見ていた項目が開くようになりました（毎回最初の項目に戻らない）。「工程」タブの上の「続きから」で、前回見ていた項目にすぐ戻れます" },
   { date: "2026-10-08", type: "feature", text: "品質写真を1つのチェックに何枚でも残せるようになりました（撮り直しで前の写真が消えません）。2枚以上あるとカメラの右下に枚数が出ます。押すと一覧が出て、撮影・写真から追加（まとめて選べます）・1枚ずつの削除ができます" },
   { date: "2026-10-08", type: "feature", text: "報告の工程のページの「今週のこの工程」で、改行して書けるようにしました" },
@@ -1005,6 +1006,77 @@ function statusFile(site, extra) {
   return new File([JSON.stringify(data, null, 2)], name, { type: "application/json" });
 }
 
+/* ---------- Box へ送る ----------
+   iPhone：共有画面でメールを選んで Box のアップロード用アドレスへ（宛先はコピーしておく）。
+   PC（Edge / Chrome）：共有画面が出ないので、Box Drive の「社内報告」フォルダに直接保存する（Box Drive の同期で上司に届く）。
+   保存先のフォルダは初回に選び、IndexedDB に覚えておく */
+const PC_SAVE = "showDirectoryPicker" in window; // PC の Edge / Chrome。iPhone の Safari には無い
+const REPORT_DIR_KEY = "reportDir";
+async function reportDirHandle(pick) {
+  let h = pick ? null : ((await dbGet("meta", REPORT_DIR_KEY)) || {}).handle || null;
+  if (h) {
+    const opt = { mode: "readwrite" };
+    if ((await h.queryPermission(opt)) === "granted" || (await h.requestPermission(opt)) === "granted") return h;
+  }
+  h = await window.showDirectoryPicker({ id: "genba-report", mode: "readwrite" });
+  if (h.name !== "社内報告" && !confirm(`選んだフォルダは「${h.name}」です。\n上司に届けるには、Box Drive の「7.現場ナビ ＞ 報告 ＞ 社内報告」を選んでください。\n\nこのフォルダに保存しますか？`)) return null;
+  await dbPut("meta", { key: REPORT_DIR_KEY, handle: h });
+  return h;
+}
+// 戻り値：{ how: "shared" } ／ { how: "saved", dir: フォルダ名 } ／ null（キャンセル・失敗）
+async function deliverToBox(files, title, email) {
+  if (PC_SAVE) {
+    try {
+      const dir = await reportDirHandle(false);
+      if (!dir) return null;
+      for (const f of files) {
+        const fh = await dir.getFileHandle(f.name, { create: true });
+        const w = await fh.createWritable();
+        await w.write(f);
+        await w.close();
+      }
+      return { how: "saved", dir: dir.name };
+    } catch (e) {
+      if (e && e.name === "AbortError") return null; // フォルダ選びをやめた
+      console.error(e);
+      alert("フォルダに保存できませんでした。もう一度押すか、「保存先のフォルダを選び直す」から選び直してください。");
+      return null;
+    }
+  }
+  if (email && navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
+  if (!(navigator.canShare && navigator.canShare({ files }))) {
+    alert("この端末では共有機能が使えないため送れません。iPhoneのホーム画面から開いてください。");
+    return null;
+  }
+  try {
+    await navigator.share({ files, title }); // タップの中ですぐ呼ぶ（iPhone）
+  } catch (e) {
+    return null; // キャンセル
+  }
+  return { how: "shared" };
+}
+// 送れたかの確認（PC はもう保存できているので、保存先を見せて確かめるだけ）
+function confirmDelivered(res, after) {
+  return res.how === "saved"
+    ? confirm(`「${res.dir}」フォルダに保存しました（Box Drive が同期すると上司に届きます）。\n${after}`)
+    : confirm(`メールを送れましたか？\n${after}`);
+}
+function boxSendNote() {
+  return PC_SAVE
+    ? "PC では、Box Drive の「社内報告」フォルダに直接保存します（初回だけフォルダを選びます）。"
+    : "共有画面でメールを選び、宛先に貼り付けて送ってください（宛先をコピーします）。";
+}
+function pickDirButton() {
+  return sheetButton("保存先のフォルダを選び直す", "btnSecondary", async () => {
+    try {
+      const h = await reportDirHandle(true);
+      if (h) toast(`保存先を「${h.name}」にしました`);
+    } catch (e) {
+      /* やめた */
+    }
+  });
+}
+
 // 知らせを送るシート。共有画面はボタンを押した直後に開く（iPhone）。送れたかを確かめてから onSent を呼ぶ
 function notifyStatus(site, extra, title, onSent) {
   const email = getBoxEmail();
@@ -1012,30 +1084,23 @@ function notifyStatus(site, extra, title, onSent) {
   openSheet(title, (body, close) => {
     const note = document.createElement("div");
     note.className = "mutedText";
-    note.textContent = "上司の画面（見守り）にすぐ反映されるよう、小さな知らせをBoxへ送ります。共有画面でメールを選び、宛先に貼り付けて送ってください（宛先をコピーします）。";
+    note.textContent = "上司の画面（見守り）にすぐ反映されるよう、小さな知らせをBoxへ送ります。" + boxSendNote();
     body.appendChild(note);
     body.appendChild(
-      sheetButton("上司に知らせる（Boxへ送る）", "btnPrimary btnLarge", async () => {
-        if (!email) {
+      sheetButton(PC_SAVE ? "上司に知らせる（社内報告フォルダに保存）" : "上司に知らせる（Boxへ送る）", "btnPrimary btnLarge", async () => {
+        if (!email && !PC_SAVE) {
           alert("設定で、Boxのアップロード用メールアドレスを登録してください。");
           return;
         }
-        if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
-        if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
-          alert("この端末では共有機能が使えないため送れません。");
-          return;
-        }
-        try {
-          await navigator.share({ files: [file], title: file.name });
-        } catch (e) {
-          return;
-        }
-        if (!confirm("メールを送れましたか？")) return;
+        const res = await deliverToBox([file], file.name, email);
+        if (!res) return;
+        if (!confirmDelivered(res, "OK で、知らせたことにします。")) return;
         close();
         toast("上司に知らせました");
         if (onSent) onSent();
       })
     );
+    if (PC_SAVE) body.appendChild(pickDirButton());
     body.appendChild(sheetButton("あとで（知らせない）", "btnSecondary", close));
   });
 }
@@ -1185,25 +1250,18 @@ function openCompleteSheet(site, photos) {
     }
     body.appendChild(
       sheetButton("上司に知らせて完工にする", "btnPrimary btnLarge", async () => {
-        if (!email) {
+        if (!email && !PC_SAVE) {
           alert("設定で、Boxのアップロード用メールアドレスを登録してください。");
           return;
         }
-        if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
-        if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
-          alert("この端末では共有機能が使えないため送れません。iPhoneのホーム画面から開いてください。");
-          return;
-        }
-        try {
-          await navigator.share({ files: [file], title: name }); // タップの中ですぐ呼ぶ（iPhone）
-        } catch (e) {
-          return;
-        }
-        if (!confirm("メールを送れましたか？\n送れていたら「OK」で、完工にします。")) return;
+        const res = await deliverToBox([file], name, email);
+        if (!res) return;
+        if (!confirmDelivered(res, "OK で、完工にします。")) return;
         close();
         await finish();
       })
     );
+    if (PC_SAVE) body.appendChild(pickDirButton());
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
@@ -2844,11 +2902,13 @@ async function sendToBox() {
     const memo = field("上司へのメモ：気づいたこと・相談など", "memo", "", 2);
     const note = document.createElement("div");
     note.className = "mutedText";
-    note.textContent = "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。";
+    note.textContent = PC_SAVE
+      ? "「保存する」を押すと、Box Drive の「社内報告」フォルダに報告と写真を直接保存します（初回だけフォルダを選びます）。Box Drive が同期すると上司に届きます。"
+      : "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。";
     body.appendChild(note);
 
     body.appendChild(
-      sheetButton("送信する", "btnPrimary btnLarge", async () => {
+      sheetButton(PC_SAVE ? "社内報告フォルダに保存する" : "送信する", "btnPrimary btnLarge", async () => {
         const payload = {
           kind: "genba-photo-report",
           report_id: site.draftReportId,
@@ -2889,22 +2949,15 @@ async function sendToBox() {
         const jsonName = safeFileName(`報告_${getSetting(USER_NAME_KEY) || "名前なし"}_${site.name}_${start}_${end}.json`); // Boxで一覧した時に誰の報告か分かるよう名前も入れる
         const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
         const files = [jsonFile, ...entries.map((e) => e.file)];
-        if (navigator.clipboard) navigator.clipboard.writeText(email).catch(() => {});
-        if (!(navigator.canShare && navigator.canShare({ files }))) {
-          alert("この端末では共有機能が使えないため送信できません。iPhoneのホーム画面から開いてください。");
-          return;
-        }
-        try {
-          await navigator.share({ files, title: jsonName });
-        } catch (e) {
-          return; // キャンセル時はシートを開いたまま
-        }
+        const res = await deliverToBox(files, jsonName, email);
+        if (!res) return; // キャンセル時はシートを開いたまま
         close();
         const memoText = memo.value.trim();
-        if (confirm("メールを送れましたか？\n送れていたら「OK」で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon });
-        else toast("報告済みにはしていません。送れたら「報告済みにする」を押してください");
+        if (confirmDelivered(res, "OK で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon });
+        else toast(res.how === "saved" ? "報告済みにはしていません。保存先を確かめて、よければ「報告済みにする」を押してください" : "報告済みにはしていません。送れたら「報告済みにする」を押してください");
       })
     );
+    if (PC_SAVE) body.appendChild(pickDirButton());
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
