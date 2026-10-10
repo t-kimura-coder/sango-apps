@@ -1202,3 +1202,8 @@ img.imgBroken { visibility: hidden; }
 .todoSite { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; margin-bottom: 2px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 18px; background: var(--color-primary-soft); color: var(--color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .todoSite.all { background: var(--color-bg); color: var(--color-text-sub); border: 1px solid var(--color-border); }
 .dashRowText .todoSite { display: flex; width: fit-content; }
+
+/* 報告の工程ページ：項目から開いた時の印、今週のこの工程の書き方 */
+.procHeroItem { display: block; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--color-primary); }
+.procHeroItem .miniLink { margin-left: 8px; border: none; background: none; padding: 0; font-size: 12px; color: var(--color-text-sub); text-decoration: underline; }
+.psHint { font-size: 12px; color: var(--color-text-sub); line-height: 1.5; }

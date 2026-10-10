@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 78;
+const APP_VERSION = 79;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "工程マニュアルの項目ページの「報告写真」から撮った・取り込んだ写真に、その項目を記録するようにしました（お客様への報告メールで、どの場面の写真か分かるように）。報告の工程ページの上に「項目「○○」の写真として残します」と出ます（「外す」で記録しない）。「今週のこの工程」に、一部完了の目安と一言の書き方の例を足しました" },
   { date: "2026-10-09", type: "feature", text: "PC（Edge・Chrome）で開いた時、「Boxへ送信」・上司への知らせ・完工の知らせは、Box Drive の「社内報告」フォルダに直接保存するようにしました（PC では共有画面が出ないため。初回だけフォルダを選びます）。iPhone はこれまで通り共有画面から送ります" },
   { date: "2026-10-08", type: "feature", text: "工程の段階を開くと、その現場でその段階を最後に見ていた項目が開くようになりました（毎回最初の項目に戻らない）。「工程」タブの上の「続きから」で、前回見ていた項目にすぐ戻れます" },
   { date: "2026-10-08", type: "feature", text: "品質写真を1つのチェックに何枚でも残せるようになりました（撮り直しで前の写真が消えません）。2枚以上あるとカメラの右下に枚数が出ます。押すと一覧が出て、撮影・写真から追加（まとめて選べます）・1枚ずつの削除ができます" },
@@ -1782,7 +1783,13 @@ function pickProcessSheet(title, onPick) {
 
 async function retagPhotos(ids, pid, after) {
   const photos = (await Promise.all(ids.map((id) => dbGet("photos", id)))).filter(Boolean);
-  photos.forEach((p) => (p.processId = pid));
+  photos.forEach((p) => {
+    p.processId = pid;
+    if (!isRecordPhoto(p) && p.itemId) {
+      const it = manualMeta && manualMeta.items.find((x) => x.id === p.itemId);
+      if (!it || it.cat !== pid) delete p.itemId;
+    }
+  });
   await dbPutMany("photos", photos);
   await after();
   toast(`${photos.length}枚を「${processOf(pid).name}」に変更しました`);
@@ -2154,7 +2161,8 @@ async function onCameraPicked() {
     return;
   }
   try {
-    const rec = await makePhotoRecord(file, currentSiteId, shootProcessId, new Date());
+    const fromItem = reportItemFor(shootProcessId);
+    const rec = await makePhotoRecord(file, currentSiteId, shootProcessId, new Date(), fromItem ? { itemId: fromItem.id } : {});
     await dbPut("photos", rec);
     lastShotId = rec.id;
     lastSavedProcessId = shootProcessId;
@@ -2271,7 +2279,8 @@ async function onLibraryPicked() {
     try {
       const file = files[i];
       const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
-      const rec = await makePhotoRecord(file, currentSiteId, libraryProcessId, taken);
+      const fromItem = reportItemFor(libraryProcessId);
+      const rec = await makePhotoRecord(file, currentSiteId, libraryProcessId, taken, fromItem ? { itemId: fromItem.id } : {});
       await dbPut("photos", rec);
       ok++;
     } catch (e) {
@@ -2514,7 +2523,8 @@ function renderProcStatusCard(site, pid) {
   box.innerHTML =
     `<div class="psHead">今週のこの工程<span class="psSub">お客様への報告メールの材料（任意）</span></div>` +
     `<div class="segRow">${PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("")}</div>` +
-    `<textarea class="sheetTextarea psText" rows="2" maxlength="400" placeholder="例：防草シートと砕石は完了、デッキは軸組みまで（改行して書けます）">${esc(note.text || "")}</textarea>`;
+    `<div class="psHint">この工程で来週以降に残りの作業があれば「一部完了」。一言は「何を・いつ・どうなった」を1行に1つ。</div>` +
+    `<textarea class="sheetTextarea psText" rows="3" maxlength="400" placeholder="例：&#10;埋め戻し 10/8 完了&#10;土間打設 10/9 完了（仕上がり写真はまだ）&#10;お風呂の基礎は来週">${esc(note.text || "")}</textarea>`;
   box.querySelectorAll(".segBtn").forEach((b) =>
     b.addEventListener("click", () => {
       const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
@@ -2529,8 +2539,15 @@ function renderProcStatusCard(site, pid) {
 
 /* ---------- 報告：工程のページ ---------- */
 
-// 工程マニュアルの「この工程の報告写真」や、報告タブの工程から開く
-async function openReportProc(pid) {
+// 工程マニュアルの「この工程の報告写真」や、報告タブの工程から開く。
+// 項目ページから開いた時は itemId を覚え、ここで撮った・取り込んだ報告写真にその項目を記録する（メールの材料で、写真がどの項目の場面か分かるように）
+let reportItemId = null;
+function reportItemFor(pid) {
+  const it = reportItemId && manualMeta && manualMeta.items.find((x) => x.id === reportItemId);
+  return it && it.cat === pid ? it : null; // 別の工程に切り替えた時は記録しない
+}
+async function openReportProc(pid, itemId = null) {
+  reportItemId = itemId;
   const site = await refreshSites();
   if (!site) {
     toast("先に「今の現場」を登録してください");
@@ -2561,7 +2578,14 @@ async function renderReportProc() {
   $("reportProcCard").innerHTML =
     `<span class="procHeroArt">${groupArt(g, 44)}</span>` +
     `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
-    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span></span>`;
+    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span>` +
+    (reportItemFor(reportProcId) ? `<span class="procHeroItem">項目「${esc(reportItemFor(reportProcId).name)}」の写真として残します<button class="miniLink" type="button" id="reportItemClear">外す</button></span>` : "") +
+    `</span>`;
+  if ($("reportItemClear"))
+    $("reportItemClear").addEventListener("click", () => {
+      reportItemId = null;
+      renderReportProc();
+    });
   renderProcStatusCard(site, reportProcId);
   $("reportProcGuide").innerHTML =
     `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
@@ -2940,6 +2964,7 @@ async function sendToBox() {
             date: e.photo.dateKey,
             taken_at: e.photo.takenAt,
             item_id: e.photo.itemId || "",
+            item: e.photo.itemId && manualMeta ? ((manualMeta.items.find((x) => x.id === e.photo.itemId) || {}).name || "") : "",
             check_id: e.photo.checkKey && e.photo.checkKey.includes("|#") ? e.photo.checkKey.split("|#")[1] : "",
             check: isRecordPhoto(e.photo) && e.photo.checkKey ? checkTextOf(e.photo.itemId, e.photo.checkKey) : "",
           })),
@@ -4793,7 +4818,7 @@ async function deleteMemo(it, id) {
 // 右上のカメラ：今開いている項目の工程（17分類）の報告写真のページへ
 function shootFromGroup() {
   const it = groupItems[currentItemIdx];
-  openReportProc(it ? it.cat : groupOf(currentGroupId).cats[0]);
+  openReportProc(it ? it.cat : groupOf(currentGroupId).cats[0], it ? it.id : null);
 }
 
 /* ---------- 工程の検索 ---------- */
