@@ -317,10 +317,11 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="cardTitle">マニュアル</div>
       <div id="manualInfo" class="mutedText preLine"></div>
       <div class="btnRow settingsBtns">
-        <button id="importManualBtn" class="btn btnSecondary">マニュアルを取り込む</button>
+        <button id="receiveManualBtn" class="btn btnPrimary">合言葉で受け取る</button>
+        <button id="importManualBtn" class="btn btnSecondary">ファイルから取り込む</button>
         <button id="deleteManualBtn" class="btn btnDanger" hidden>削除</button>
       </div>
-      <div class="mutedText">マニュアルは社内資料のため、アプリには含まれていません。Boxの「マニュアル_○○.json」を取り込んでください。</div>
+      <div class="mutedText">マニュアルは社内資料のため、アプリには含まれていません。合言葉を入れていれば「合言葉で受け取る」で取り込めます（約30MB・Wi-Fi で1〜2分）。または、Boxの「マニュアル_○○.json」を「ファイルから取り込む」で選びます。</div>
     </div>
     <div class="card">
       <div class="cardTitle">バックアップ</div>
@@ -533,6 +534,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=90"></script>
+<script src="app.js?v=91"></script>
 </body>
 </html>

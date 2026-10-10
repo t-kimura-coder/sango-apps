@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 90;
+const APP_VERSION = 91;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "マニュアルを「合言葉で受け取る」ボタンで取り込めるようになりました（設定の「マニュアル」。Box でファイルを探して選ばなくて済みます。約30MB なので Wi-Fi で）" },
   { date: "2026-10-10", type: "fix", text: "上司が自分の現場も持つ時（同じ合言葉で見守りも使う時）、自分の気づき・疑問への返信や「確認しました」、自分への宿題が届かなかったのを直しました" },
   { date: "2026-10-10", type: "fix", text: "現場の登録で、工事番号の印を「必須」から「なるべく」に直しました（空でも登録できます。入れると上司の画面や同じ現場の人とつながります）" },
   { date: "2026-10-10", type: "feature", text: "「使い方」と設定に「質問・要望を送る」を付けました。分からないこと・こうしてほしいこと・うまく動かないことを、その場で木村に送れます" },
@@ -3317,8 +3318,9 @@ function manualEmptyCard() {
   card.className = "card emptyState";
   card.innerHTML =
     '<div class="emptyTitle">マニュアルを取り込みましょう</div>' +
-    '<div class="emptyText">Boxにある「マニュアル_○○.json」を選ぶと、このiPhoneの中に保存されます（初回のみ）。写真・報告の機能はマニュアルがなくても使えます。</div>';
-  card.appendChild(sheetButton("マニュアルを取り込む", "btnPrimary", () => $("manualInput").click()));
+    `<div class="emptyText">${gasOn() ? "「合言葉で受け取る」を押すと、このiPhoneの中に保存されます（初回のみ・Wi-Fi で）。" : "設定で合言葉を入れると、ボタン1つで受け取れます。Boxにある「マニュアル_○○.json」を選んで取り込むこともできます。"}写真・報告の機能はマニュアルがなくても使えます。</div>`;
+  if (gasOn()) card.appendChild(sheetButton("合言葉で受け取る", "btnPrimary", receiveManualViaGas));
+  card.appendChild(sheetButton("ファイルから取り込む", gasOn() ? "btnSecondary" : "btnPrimary", () => $("manualInput").click()));
   return card;
 }
 
@@ -4518,10 +4520,10 @@ const GAS_OUTBOX_KEY = "genba-photo-gas-outbox";
 function gasOn() {
   return !!getSetting(GAS_TOKEN_KEY);
 }
-async function gasCall(body) {
+async function gasCall(body, timeoutMs = 25000) {
   // 電波が弱くて返ってこない時に止まったままにならないよう、25秒で打ち切る
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 25000);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let j;
   try {
     const res = await fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...body, token: getSetting(GAS_TOKEN_KEY) }), signal: ctl.signal });
@@ -5324,9 +5326,36 @@ async function onManualPicked() {
   const file = input.files[0];
   input.value = "";
   if (!file) return;
+  await importManualPack(() => file.text(), "Boxの「マニュアル_○○.json」を選んでいるか確認してください。");
+}
+
+// 合言葉でマニュアルを受け取る（GAS が会社の Google ドライブから分けて渡す。約30MB なので Wi-Fi で）
+async function receiveManualViaGas() {
+  if (!gasOn()) return toast("先に「上司とのやりとり」に合言葉を入れてください");
+  if (!confirm("マニュアル（約30MB）を受け取ります。Wi-Fi のある所で行ってください。1〜2分かかります。")) return;
+  await importManualPack(async () => {
+    setProcessing(true, "マニュアルを受け取っています...");
+    const info = await gasCall({ action: "manualInfo" }, 60000);
+    const parts = [];
+    for (let i = 0; i < info.chunks; i++) {
+      setProcessing(true, `マニュアルを受け取っています... ${i + 1} / ${info.chunks}`);
+      for (let t = 0; ; t++) {
+        try {
+          parts.push((await gasCall({ action: "manualChunk", i, updated: info.updated }, 90000)).data);
+          break;
+        } catch (e) {
+          if (t >= 2 || e.message === "unauthorized" || e.message === "manual changed") throw e;
+        }
+      }
+    }
+    return parts.join("");
+  }, "電波の良い所（Wi-Fi）で、もう一度押してください。続く時は、iPhone の空き容量も確かめてください。");
+}
+
+async function importManualPack(getText, failHint) {
   setProcessing(true, "マニュアルを読み込み中...");
   try {
-    const pack = JSON.parse(await file.text());
+    const pack = JSON.parse(await getText());
     if (!pack || pack.kind !== "genba-manual-pack" || !Array.isArray(pack.items) || !pack.pages) {
       throw new Error("not a manual pack");
     }
@@ -5362,7 +5391,7 @@ async function onManualPicked() {
     else goManual();
   } catch (e) {
     console.error(e);
-    alert("マニュアルを取り込めませんでした。Boxの「マニュアル_○○.json」を選んでいるか確認してください。");
+    alert(e.message === "unauthorized" ? "合言葉が違うか、止められています。木村に確認してください。" : "マニュアルを取り込めませんでした。" + failHint);
   } finally {
     setProcessing(false);
   }
@@ -5443,7 +5472,8 @@ async function renderSettings() {
 取り込み日：${fmtDate(toDateKey(new Date(manualMeta.importedAt)))}`
     : "まだ取り込まれていません";
   $("deleteManualBtn").hidden = !manualMeta;
-  $("importManualBtn").textContent = manualMeta ? "新しい版を取り込む" : "マニュアルを取り込む";
+  $("importManualBtn").textContent = "ファイルから取り込む";
+  $("receiveManualBtn").textContent = manualMeta ? "合言葉で新しい版を受け取る" : "合言葉で受け取る";
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
   const sites = await getSites();
@@ -6125,16 +6155,6 @@ const TOUR_STEPS = [
   },
   {
     view: "settingsView",
-    target: () => $("manualCard"),
-    text: () =>
-      manualMeta
-        ? "マニュアルは取り込み済みです。新しい版が出たら、ここから取り込み直します。"
-        : "次に、Boxにある「マニュアル_○○.json」をここから取り込みます（初回だけ）。あとで取り込む場合は「次へ」。",
-    next: true,
-    scroll: true,
-  },
-  {
-    view: "settingsView",
     target: () => $("boxEmailInput"),
     text: () =>
       getBoxEmail()
@@ -6160,6 +6180,18 @@ const TOUR_STEPS = [
       const v = $("gasTokenInput").value.trim();
       if (v) setSetting(GAS_TOKEN_KEY, v);
     },
+  },
+  {
+    view: "settingsView",
+    target: () => $("manualCard"),
+    text: () =>
+      manualMeta
+        ? "マニュアルは取り込み済みです。新しい版が出たら、ここから取り込み直します。"
+        : gasOn()
+          ? "最後にマニュアルです。「合言葉で受け取る」を押すと取り込めます（初回だけ・Wi-Fi で1〜2分）。あとで取り込む場合は「次へ」。"
+          : "最後にマニュアルです。合言葉を入れると「合言葉で受け取る」で取り込めます。Boxの「マニュアル_○○.json」を「ファイルから取り込む」で選ぶこともできます。あとで取り込む場合は「次へ」。",
+    next: true,
+    scroll: true,
   },
   {
     view: "*",
@@ -6592,6 +6624,7 @@ function init() {
   document.querySelectorAll(".itemTab").forEach((t) => t.addEventListener("click", () => switchMTab(t.dataset.mtab)));
   $("manualInput").addEventListener("change", onManualPicked);
   $("importManualBtn").addEventListener("click", () => $("manualInput").click());
+  $("receiveManualBtn").addEventListener("click", receiveManualViaGas);
   $("deleteManualBtn").addEventListener("click", deleteManual);
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
