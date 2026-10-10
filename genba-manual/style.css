@@ -1212,3 +1212,5 @@ img.imgBroken { visibility: hidden; }
 .otherBy, .remotePhoto { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; padding: 0 6px; border-radius: 6px; line-height: 18px; }
 .otherBy { background: var(--color-primary-soft); color: var(--color-primary); }
 .remotePhoto { background: var(--color-bg); color: var(--color-text-sub); border: 1px solid var(--color-border); }
+.req.soft { color: var(--color-text-sub); }
+.req.soft::before { background: var(--color-text-sub); }

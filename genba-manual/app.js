@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 88;
+const APP_VERSION = 89;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "現場の登録で、工事番号の印を「必須」から「なるべく」に直しました（空でも登録できます。入れると上司の画面や同じ現場の人とつながります）" },
   { date: "2026-10-10", type: "feature", text: "「使い方」と設定に「質問・要望を送る」を付けました。分からないこと・こうしてほしいこと・うまく動かないことを、その場で木村に送れます" },
   { date: "2026-10-10", type: "fix", text: "初めて開いた時の案内に「合言葉」を足しました。「使い方」と送信画面の説明も直しました（お客様メールの下書きは、送る前に必ず人が確認します）" },
   { date: "2026-10-10", type: "fix", text: "「使い方」を今の機能に合わせて書き直しました（合言葉でできること、チェックの同期、上司への届き方、データについて）。工事番号が空の時の説明も直しました" },
@@ -1299,10 +1300,10 @@ function editSiteSheet(site) {
     openSheet(site ? "現場の情報を変更" : "現場を登録", (body, close) => {
       const me = mySurname();
       let members = site && site.members ? [...site.members] : me ? [me] : []; // まだ担当者を入れていない現場は、自分を選んだ状態から
-      const field = (label, value, placeholder, mode) => {
+      const field = (label, value, placeholder, mode, tag = "必須") => {
         const l = document.createElement("label");
         l.className = "fieldLabel strong";
-        l.innerHTML = `${esc(label)}<span class="req">必須</span>`;
+        l.innerHTML = `${esc(label)}<span class="req${tag === "必須" ? "" : " soft"}">${tag}</span>`;
         const i = document.createElement("input");
         i.className = "sheetInput";
         i.value = value || "";
@@ -1384,7 +1385,7 @@ function editSiteSheet(site) {
       });
       drawCover();
       drawKinds();
-      const noIn = field("工事番号", site && site.koujiNo, "例：2026-0143", "text");
+      const noIn = field("工事番号", site && site.koujiNo, "例：2026-0143", "text", "なるべく");
       const noHint = document.createElement("div");
       noHint.className = "mutedText";
       noHint.textContent = "経理で使っている番号";

@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=72">
+<link rel="stylesheet" href="style.css?v=73">
 </head>
 <body>
 
@@ -297,7 +297,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     </div>
     <div class="card">
       <div class="cardTitle">上司からの返信・宿題</div>
-      <div class="mutedText">「現場ナビ 見守り」で上司が書いた返信と、班の打合せで決まった宿題は、Box の「返信」フォルダに届きます。「返信_〜.json」「宿題_〜.json」を選んで取り込むと、返信は気づき・疑問メモの下に、宿題はホームの「やること」に出ます（まとめて選んでOK。ほかの人あてのものは飛ばします）。</div>
+      <div class="mutedText"><b>合言葉を入れている人は、返信・宿題は自動で届くので、ここは使いません。</b>合言葉が無い時は、「現場ナビ 見守り」で上司が書いた返信と、班の打合せで決まった宿題が Box の「返信」フォルダに届きます。「返信_〜.json」「宿題_〜.json」を選んで取り込むと、返信は気づき・疑問メモの下に、宿題はホームの「やること」に出ます（まとめて選んでOK。ほかの人あてのものは飛ばします）。</div>
       <button id="settingsReplyBtn" class="btn btnOutline" type="button">返信・宿題を取り込む</button>
     </div>
     <div class="card">
@@ -533,6 +533,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=88"></script>
+<script src="app.js?v=89"></script>
 </body>
 </html>
