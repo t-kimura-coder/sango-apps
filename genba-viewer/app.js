@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -379,8 +379,8 @@ async function fetchStates() {
         } catch (e) {
           return;
         }
-        if (!next.has(x.key)) next.set(x.key, []);
         if (st.deleted) return; // 消した・番号を変えた現場の古い記録
+        if (!next.has(x.key)) next.set(x.key, []);
         next.get(x.key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [] });
       });
     }
@@ -558,6 +558,7 @@ function teamList() {
   }
 }
 function teamOn() {
+  if (MOBILE) return false; // スマホは GAS が班で絞っているので、この端末の絞り込みは使わない
   return teamList().length > 0 && getLS("scope", "team") !== "all";
 }
 function personInScope(p) {

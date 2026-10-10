@@ -10,7 +10,9 @@
 function viewMode() {
   const v = getLS("viewMode");
   if (v === "mobile" || v === "pc") return v;
-  return canPickFolder ? "pc" : "mobile";
+  if (canPickFolder) return "pc";
+  const touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  return touch || window.innerWidth < 760 ? "mobile" : "pc";
 }
 let MOBILE = false;
 
@@ -62,6 +64,13 @@ function mobileRoute(name, arg, params) {
   return true;
 }
 
+function mPersons(s) {
+  const out = [];
+  [...s.persons.values()].forEach((n) => {
+    if (!out.some((x) => normName(x) === normName(n))) out.push(n);
+  });
+  return out;
+}
 function latestOf(list, key) {
   return list.reduce((a, x) => (!a || (x[key] || "") > (a[key] || "") ? x : a), null);
 }
@@ -88,11 +97,11 @@ function renderMHome() {
   }
   const notes = [...data.notes.values()];
   const rows = [...data.sites.values()]
-    .filter((s) => siteInScope(s) && (statesOf(s).length || notes.some((n) => n.siteKey === s.key)))
+    .filter((s) => statesOf(s).length || notes.some((n) => n.siteKey === s.key))
     .map((s) => {
       const prog = siteProgress(s);
       const sts = statesOf(s);
-      const open = notes.filter((n) => n.siteKey === s.key && noteStatus(n) === "open" && noteInScope(n)).length;
+      const open = notes.filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
       const lastAt = (latestOf(sts, "at") || {}).at || "";
       return { s, prog, open, lastAt, rep: mReportsOf(s)[0] };
     })
@@ -109,7 +118,7 @@ function renderMHome() {
       return (
         `<button class="mCard" data-site="${esc(s.key)}">` +
         `<div class="mCardTop"><b>${esc(s.name)}</b>${open ? `<span class="sBadge open">未回答 ${open}</span>` : ""}</div>` +
-        `<div class="mCardSub">${esc([...s.persons.values()].join("・"))}${s.koujiNo ? `　No.${esc(s.koujiNo)}` : ""}</div>` +
+        `<div class="mCardSub">${esc(mPersons(s).join("・"))}${s.koujiNo ? `　No.${esc(s.koujiNo)}` : ""}</div>` +
         (prog
           ? `<div class="mProg"><span class="mStage">${esc(st >= 0 ? prog[st].group : "－")}</span><span class="mBar"><i style="width:${sum.pct}%"></i></span><span class="mPct">${sum.pct}%</span></div>`
           : `<div class="mCardSub">チェックの記録はまだありません</div>`) +
@@ -131,7 +140,7 @@ function renderMSite(key) {
   const sum = mSum(prog);
   let html =
     `<a class="backLink mBack" href="#/home">${icon("back", 18)}現場の一覧</a>` +
-    `<section class="mHead"><h1>${esc(s.name)}</h1><p>${s.koujiNo ? `工事番号 No.${esc(s.koujiNo)}　` : ""}${esc([...s.persons.values()].join("・"))}</p></section>`;
+    `<section class="mHead"><h1>${esc(s.name)}</h1><p>${s.koujiNo ? `工事番号 No.${esc(s.koujiNo)}　` : ""}${esc(mPersons(s).join("・"))}</p></section>`;
   // 段階ごとの進み具合
   html +=
     `<div class="card mBox"><h2>工程の進み具合<span class="mSub">チェック ${sum.cd}/${sum.ct}（${sum.pct}%）</span></h2>` +

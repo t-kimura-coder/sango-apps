@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 84;
+const APP_VERSION = 85;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "報告済みにした時に、報告の要約をすぐ上司に送るようにしました（今までは次に開いた時）" },
   { date: "2026-10-10", type: "feature", text: "チェックの同期で、最近の報告の要約（期間・工程の様子・来週の予定・写真の枚数。写真そのものは送りません）も送るようにしました。上司がスマホの見守りで現場の状況を見られます" },
   { date: "2026-10-10", type: "fix", text: "チェックの同期の細かい点を直しました（同期の取り込み中に付けたチェックが消えることがある、工事番号を変えた時に古い番号の記録が残る）" },
   { date: "2026-10-10", type: "fix", text: "チェックの同期まわりを直しました（消した現場・消したメモが同期で戻ってくる、写真の無い端末から同期すると上司の画面の品質写真の数が減る）" },
@@ -3047,6 +3048,7 @@ function markWeekOther(site, wk, kind, cands) {
         await dbPut("sites", site);
         close();
         toast(kind === "external" ? "アプリ外で報告済みにしました" : "今週は報告なしにしました");
+        scheduleStatePush();
         renderReport();
         notifyStatus(site, { status: "week", week: wk.mon, week_kind: kind, memo: report.memo }, kind === "external" ? "アプリ外で報告したことを上司に知らせる" : "今週は報告なしと上司に知らせる");
       })
@@ -3197,6 +3199,7 @@ async function markReported(memo = "", opts = null) {
   site.processes = []; // 「今回の工程」は次の週に持ち越さない（未報告の写真がある工程は自動で出る）
   await dbPut("sites", site);
   toast(`報告済みにしました（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の週・写真${targets.length}枚）`);
+  scheduleStatePush(); // 報告の要約を、上司のスマホの見守りに届ける
   goReport();
 }
 
