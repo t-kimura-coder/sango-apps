@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 89;
+const APP_VERSION = 90;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "上司が自分の現場も持つ時（同じ合言葉で見守りも使う時）、自分の気づき・疑問への返信や「確認しました」、自分への宿題が届かなかったのを直しました" },
   { date: "2026-10-10", type: "fix", text: "現場の登録で、工事番号の印を「必須」から「なるべく」に直しました（空でも登録できます。入れると上司の画面や同じ現場の人とつながります）" },
   { date: "2026-10-10", type: "feature", text: "「使い方」と設定に「質問・要望を送る」を付けました。分からないこと・こうしてほしいこと・うまく動かないことを、その場で木村に送れます" },
   { date: "2026-10-10", type: "fix", text: "初めて開いた時の案内に「合言葉」を足しました。「使い方」と送信画面の説明も直しました（お客様メールの下書きは、送る前に必ず人が確認します）" },
@@ -4618,6 +4619,11 @@ async function syncGas(manual = false) {
   const me = normPersonName(getSetting(USER_NAME_KEY));
   let replies = 0;
   let tasks = 0;
+  // v90：自分の名前で届いた上司の返信・宿題を取り込むようにしたので、1回だけ最初から読み直す（同じ id は二重に入らない）
+  if (getSetting("genba-photo-gas-reread90") !== "1") {
+    setSetting(GAS_CURSOR_KEY, "0");
+    setSetting("genba-photo-gas-reread90", "1");
+  }
   try {
     await flushGas();
     for (let round = 0; round < 10; round++) {
@@ -4628,7 +4634,8 @@ async function syncGas(manual = false) {
         continue;
       }
       const msgs = j.messages || [];
-      const fromOthers = msgs.filter((m) => normPersonName(m.from) !== me);
+      // 自分が書いたものは飛ばす。ただし上司として書いた返信・宿題は取り込む（上司が自分の現場も持ち、同じ合言葉で両方使う時）
+      const fromOthers = msgs.filter((m) => normPersonName(m.from) !== me || m.kind === "task" || (m.kind === "reply" && m.payload && m.payload.from_role === "上司"));
       // 返信：元の疑問（この端末にあるメモ）に付ける
       const reps = fromOthers.filter((m) => m.kind === "reply");
       if (reps.length) {
