@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -798,7 +798,7 @@ function renderMeet(arg) {
   const main = $("main");
   let html =
     `<section class="hero small meetHero"><img src="art/meeting.webp" class="headArt" alt="">` +
-    `<h1 class="heroTitle">班の打合せモード</h1><p class="heroSub">週次の班の打合せで、各現場の進み具合・報告・疑問をみんなで確認しましょう。<br>← → キーでも現場をめくれます。</p></section>`;
+    `<h1 class="heroTitle">班の打合せ</h1><p class="heroSub">週次の班の打合せで、各現場の進み具合・報告・疑問をみんなで確認しましょう。<br>← → キーでも現場をめくれます。</p></section>`;
   if (noData()) {
     main.innerHTML = html + noDataView();
     bindCommon(main);
@@ -846,9 +846,9 @@ function renderMeet(arg) {
     `<div class="meetCols"><div class="card meetReport"><div class="meetCardHead">${icon("calendar", 24)}<h3>${weekReps.length ? (ctx.focus === ctx.thisMon ? "今週の報告" : "先週の報告") : "最新の報告"}</h3>` +
     `<span class="mutedText">${shownReps[0] ? `${fmtMD(shownReps[0].period.start)} 〜 ${fmtMD(shownReps[0].period.end)}` : ""}</span></div>` +
     (shownReps.length
-      ? `<div class="meetPhotos">${photos
+      ? `<div class="meetPhotos" ${galleryAttr(photos)}>${photos
           .slice(0, 4)
-          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
+          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" data-idx="${k}" alt=""></span>`)
           .join("")}</div>` +
         `<div class="meetStats"><div>${icon("check", 22, 2.6)}<span>チェック<b>${checked}</b>件</span></div><div>${icon("photo", 22)}<span>品質写真<b>${photos.filter((x) => x.kind === "record").length}</b>枚</span></div>` +
         `<div class="meetMemoBox">${icon("report", 20)}<span>${esc(shownReps.map((r) => r.memo).filter(Boolean).join(" ／ ") || "メモはありません")}</span></div></div>` +
@@ -1174,7 +1174,42 @@ function fillPhotos(root) {
     else img.closest(".thumb")?.classList.add("missing");
   });
 }
+// 報告の写真を全部めくって見る。縮小画像は4枚まで（4枚目は「+○枚」）なので、残りはここで見る
+const galleries = new Map(); // 番号 → [{ file, cap }]
+let galSeq = 0;
+function galleryAttr(photos) {
+  const key = "g" + ++galSeq;
+  galleries.set(key, photos.map((x) => ({ file: x.file, cap: [x.process, x.date ? fmtMD(x.date) : "", x.kind === "record" ? "品質写真" : ""].filter(Boolean).join("・") })));
+  return `data-gal="${key}"`;
+}
+let galState = null; // { list, i }
+async function showGalleryAt(i) {
+  if (!galState) return;
+  const n = galState.list.length;
+  galState.i = (i + n) % n;
+  const x = galState.list[galState.i];
+  $("lightboxImg").src = (await photoUrl(x.file)) || "";
+  $("lightboxCap").textContent = `${galState.i + 1} / ${n}${x.cap ? "　" + x.cap : ""}`;
+}
+function openGallery(key, i) {
+  const list = galleries.get(key);
+  if (!list || !list.length) return;
+  galState = { list, i: 0 };
+  $("lightbox").classList.toggle("gallery", list.length > 1);
+  $("lightbox").hidden = false;
+  showGalleryAt(i);
+}
+// 縮小画像を押した時：一覧の中ならギャラリー、それ以外は1枚だけ拡大
+function openThumb(img) {
+  const box = img.closest("[data-gal]");
+  if (box) return openGallery(box.dataset.gal, Number(img.dataset.idx || 0));
+  openLightbox(img.src);
+}
+
 function openLightbox(src) {
+  galState = null;
+  $("lightbox").classList.remove("gallery");
+  $("lightboxCap").textContent = "";
   $("lightboxImg").src = src;
   $("lightbox").hidden = false;
 }
@@ -1585,7 +1620,7 @@ function bindCommon(root) {
   );
   root.querySelectorAll("[data-site]").forEach((b) => b.addEventListener("click", () => (location.hash = "#/site/" + encodeURIComponent(b.dataset.site))));
   root.querySelectorAll("[data-person]").forEach((b) => b.addEventListener("click", () => (location.hash = "#/person/" + encodeURIComponent(b.dataset.person))));
-  root.querySelectorAll("img[data-full]").forEach((img) => img.addEventListener("click", () => openLightbox(img.src)));
+  root.querySelectorAll("img[data-full]").forEach((img) => img.addEventListener("click", () => openThumb(img)));
   fillPhotos(root);
 }
 
@@ -1769,9 +1804,9 @@ function openNote(id) {
         `</div>`
       : "") +
     (photos.length
-      ? `<div class="origPhotosLabel">同じ項目の品質写真</div><div class="origPhotos">${photos
+      ? `<div class="origPhotosLabel">同じ項目の品質写真</div><div class="origPhotos" ${galleryAttr(photos)}>${photos
           .slice(0, 8)
-          .map((p) => `<span class="thumb"><img data-photo="${esc(p.file)}" data-full="1" alt="" title="${esc(p.check || "")}"></span>`)
+          .map((p, k) => `<span class="thumb"><img data-photo="${esc(p.file)}" data-full="1" data-idx="${k}" alt="" title="${esc(p.check || "")}"></span>`)
           .join("")}</div>`
       : "") +
     (st === "resolved" ? `<div class="resolvedNote">${icon("check", 18)}${esc(n.resolvedBy || n.personName)} さんが ${fmtDateTime(n.resolvedAt)} に解決済みにしました</div>` : "") +
@@ -1960,8 +1995,8 @@ function renderSite(key) {
         `<div class="wkItem"><span class="wkDot"></span><div class="wkCard"><div class="wkHead"><b>${fmtMD(r.period.start)} 〜 ${fmtMD(r.period.end)}</b>` +
         (s.persons.size > 1 ? `<span class="tag">${esc(r.sender || "")}</span>` : "") +
         `<span class="mutedText">${agoLabel(r.sent_at)}</span></div>` +
-        `<div class="wkBody"><div class="thumbs">${thumbs
-          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" alt=""></span>`)
+        `<div class="wkBody"><div class="thumbs" ${galleryAttr(photos)}>${thumbs
+          .map((x, k) => `<span class="thumb${k === 3 && photos.length > 4 ? " more" : ""}" ${k === 3 && photos.length > 4 ? `data-more="+${photos.length - 3}枚"` : ""}><img data-photo="${esc(x.file)}" data-full="1" data-idx="${k}" alt=""></span>`)
           .join("")}</div>` +
         `<div class="wkStats"><div>${icon("list", 16)}チェック <b>${checked}</b>件</div><div>${icon("photo", 16)}品質写真 <b>${rec.length}</b>枚</div>` +
         `<div title="${esc(completed.map((c) => c.item).join("・"))}">${icon("check", 16)}完了した工程 <b>${completed.length}</b>件</div>` +
@@ -2288,6 +2323,10 @@ async function init() {
   $("drawerClose").addEventListener("click", closeDrawer);
   document.querySelector(".drawerBackdrop").addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => {
+    if (galState && !$("lightbox").hidden && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      return showGalleryAt(galState.i + (e.key === "ArrowLeft" ? -1 : 1));
+    }
     // 打合せモード：← → で現場をめくる（入力中は除く）
     if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey && $("lightbox").hidden && location.hash.startsWith("#/meet") && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "") && $("drawer").hidden) {
       const b = document.querySelector(e.key === "ArrowLeft" ? ".meetPrev" : ".meetNext");
@@ -2299,6 +2338,20 @@ async function init() {
     }
   });
   $("lightbox").addEventListener("click", () => ($("lightbox").hidden = true));
+  $("lightboxPrev").addEventListener("click", (e) => {
+    e.stopPropagation();
+    showGalleryAt(galState.i - 1);
+  });
+  $("lightboxNext").addEventListener("click", (e) => {
+    e.stopPropagation();
+    showGalleryAt(galState.i + 1);
+  });
+  $("lightboxImg").addEventListener("click", (e) => {
+    if (galState && galState.list.length > 1) {
+      e.stopPropagation(); // 写真を押すと次へ（外側を押すと閉じる）
+      showGalleryAt(galState.i + 1);
+    }
+  });
   $("folderInput").addEventListener("change", onFolderInput);
   $("reloadBtn").addEventListener("click", () => (demoMode ? loadDemo() : dirHandle ? reopenFolder() : pickFolder()));
   bindSearch();

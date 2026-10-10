@@ -800,3 +800,13 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .gateCard .input { width: 100%; }
 .gateCard .btn { min-height: 46px; }
 .gateMsg { min-height: 1.4em; font-size: 13px; color: var(--color-danger, #b3362f); line-height: 1.6; }
+
+/* 写真をめくる（報告の写真を全部見る） */
+.lbNav { display: none; position: absolute; top: 50%; transform: translateY(-50%); width: 56px; height: 72px; border: none; border-radius: 12px; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 44px; line-height: 1; cursor: pointer; }
+.lbNav:hover { background: rgba(255, 255, 255, 0.28); }
+.lbNav.prev { left: 16px; }
+.lbNav.next { right: 16px; }
+.lightbox.gallery .lbNav { display: block; }
+.lightbox.gallery img { cursor: pointer; max-width: 84vw; max-height: 86vh; }
+.lbCap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; color: #fff; font-size: 14px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.thumb.more { cursor: pointer; }
