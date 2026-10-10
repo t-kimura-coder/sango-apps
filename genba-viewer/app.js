@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -454,6 +454,11 @@ function noteStatus(n) {
   const reps = data.replies.get(n.id) || [];
   if (reps.length && reps[reps.length - 1].from_role === "監督") return "open"; // 監督が書き足した＝また答えを待っている（種類に関わらず）
   if (n.type === "contact") return n.contact && n.contact.pending ? "waiting" : "resolved"; // その場で解決して残したもの
+  if (n.type === "notice") {
+    // 気づきは返信不要。「確認した」だけなら確認済み、文章で返したら返信済み
+    if (!reps.length) return "share";
+    return reps.some((r) => !r.ack && r.from_role !== "監督") ? "replied" : "acked";
+  }
   if (reps.length) return "replied";
   return n.type === "question" || n.type === "request" ? "open" : "";
 }
@@ -476,7 +481,7 @@ function toggleAsQuestion(n) {
   route();
   openNote(n.id);
 }
-const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み", waiting: "返事待ち" };
+const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "解決済み", waiting: "返事待ち", share: "返信不要", acked: "確認済み" };
 
 /* ---------- 自分の班（班の打合せ用に、班のメンバーの報告・疑問だけを出す） ----------
    見せ方だけの絞り込み（Box の権限は変わらない）。この PC に覚える。監督は名前で覚える（端末を替えても同じ人になるように） */
@@ -1399,7 +1404,7 @@ function stamp(d = new Date()) {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-async function sendReply(n, text) {
+async function sendReply(n, text, ack = false) {
   const me = getLS("name");
   if (!me) {
     alert("先に設定で、あなたの名前を登録してください（返信に名前が入ります）。");
@@ -1425,6 +1430,7 @@ async function sendReply(n, text) {
     text,
     at: new Date().toISOString(),
   };
+  if (ack) rp.ack = true; // 「確認した」（返信不要の気づきに、見たことだけを伝える）
   rp.from_role = "上司";
   const fileName = safeName(`返信_${n.siteName}_${n.personName}_${stamp()}_${rp.id.slice(0, 6)}.json`);
   const body = JSON.stringify(rp, null, 2);
@@ -1432,7 +1438,7 @@ async function sendReply(n, text) {
   const viaGas = (!demoMode || n.viaGas) && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.gasFrom || n.personName, payload: rp }));
   if (viaGas && n.viaGas) {
     addReplyToData(rp);
-    toast("返信を送りました（監督の現場ナビにすぐ届きます）");
+    toast(ack ? "確認したことを伝えました（監督の現場ナビにすぐ届きます）" : "返信を送りました（監督の現場ナビにすぐ届きます）");
     return true;
   }
   if (demoMode) {
@@ -1709,7 +1715,7 @@ function renderNotes(params) {
     return;
   }
   const types = [["all", "すべて"], ["question", "疑問"], ["notice", "気づき"], ["request", "職人さんの要望"], ["contact", "やりとり"]];
-  const sts = [["all", "すべて"], ["open", "未回答"], ["replied", "返信済み"], ["resolved", "解決済み"], ["waiting", "返事待ち"]];
+  const sts = [["all", "すべて"], ["open", "未回答"], ["replied", "返信済み"], ["resolved", "解決済み"], ["waiting", "返事待ち"], ["share", "気づき（未確認）"], ["acked", "確認済み"]];
   html +=
     `<div class="card filterCard"><div class="filterRow"><span class="fLabel">種類</span>${types
       .map(([k, l]) => `<button class="chip${noteFilter.type === k ? " on" : ""} t-${k}" data-ft="${k}">${k !== "all" ? icon(NOTE_TYPES[k].icon, 16) : ""}${l}</button>`)
@@ -1754,7 +1760,7 @@ function noteRow(n) {
     (rest ? `<div class="noteBody">${esc(rest)}</div>` : "") +
     `</div><div class="noteMeta"><div>${icon("user", 16)}${esc(n.personName)}</div><div>${icon("building", 16)}${esc(n.siteName)}</div>` +
     `<div>${icon("list", 16)}${esc(shortProc(n.process))} › ${esc(n.item || "")}</div><div>${icon("clock", 16)}${fmtDateTime(n.at)}</div></div>` +
-    `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
+    `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "share" ? "見る・確認する" : st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
   );
 }
 // 現場ナビ v75〜（報告 schema 7）：お客様への報告メールの材料（工程ごとの状態と一言・写真以外・来週の予定）
@@ -1791,6 +1797,10 @@ function openNote(id) {
       if (p.kind === "record" && n.itemId && p.item_id === n.itemId && !photos.some((x) => x.file === p.file)) photos.push(p);
     })
   );
+  const isNotice = n.type === "notice";
+  const acked = replies.some((r) => r.ack);
+  const dt = document.querySelector(".drawerTitle");
+  if (dt) dt.textContent = isNotice ? "気づきを見る" : n.type === "contact" ? "やりとりを見る" : "返信を書く";
   const body = $("drawerBody");
   body.innerHTML =
     `<div class="card origCard"><div class="origHead">${icon("chat", 22)}<span>元の投稿内容</span>${typeBadge(n.type, n.origType)}${statusBadge(n)}</div>` +
@@ -1818,14 +1828,23 @@ function openNote(id) {
     `</div>` +
     (replies.length
       ? `<div class="card"><div class="origHead">${icon("reply", 20)}<span>これまでのやりとり</span></div>${replies
-          .map((r) => `<div class="pastReply${r.from_role === "監督" ? " fromSite" : ""}"><div class="prMeta"><b>${esc(r.from)}</b>${r.from_role === "監督" ? "（監督）" : ""}　${fmtDateTime(r.at)}</div><div class="prText">${esc(r.text)}</div></div>`)
+          .map((r) =>
+            r.ack
+              ? `<div class="pastReply ack"><div class="prMeta"><b>${esc(r.from)}</b>　${fmtDateTime(r.at)}</div><div class="prText">${icon("check", 16, 2.6)}確認しました</div></div>`
+              : `<div class="pastReply${r.from_role === "監督" ? " fromSite" : ""}"><div class="prMeta"><b>${esc(r.from)}</b>${r.from_role === "監督" ? "（監督）" : ""}　${fmtDateTime(r.at)}</div><div class="prText">${esc(r.text)}</div></div>`
+          )
           .join("")}</div>`
       : "") +
-    `<div class="card"><div class="origHead">${icon("save", 20)}<span>返信内容</span></div>` +
-    `<textarea id="replyText" class="replyText" maxlength="1000" placeholder="${esc(n.personName || "監督")}さんへの返信を入力してください。&#10;現場の状況に寄り添った、わかりやすい内容を心がけましょう。"></textarea>` +
+    (isNotice
+      ? `<div class="shareNote">${icon("bulb", 18)}<span>気づきは<b>返信不要</b>です。見たら「確認した」を押すと、監督の現場ナビに「確認しました」と届きます。必要な時だけ、下に返信を書いてください。</span></div>`
+      : "") +
+    `<div class="card"><div class="origHead">${icon("save", 20)}<span>${isNotice ? "返信（必要な時だけ）" : "返信内容"}</span></div>` +
+    `<textarea id="replyText" class="replyText${isNotice ? " small" : ""}" maxlength="1000" placeholder="${isNotice ? "返信しなくても大丈夫です。伝えたいことがある時だけ書いてください。" : `${esc(n.personName || "監督")}さんへの返信を入力してください。&#10;現場の状況に寄り添った、わかりやすい内容を心がけましょう。`}"></textarea>` +
     `<div class="replyCount"><span id="replyCount">0</span> / 1000</div></div>`;
   $("drawerFoot").innerHTML = n.noId
     ? `<div class="noReply">このメモは古い版の現場ナビから届いたため、返信しても監督のアプリに届きません。直接伝えてください。</div>`
+    : isNotice
+    ? `${acked ? `<div class="ackDone">${icon("check", 18, 2.6)}確認済み</div>` : `<button id="ackBtn" class="btn btnPrimary">${icon("check", 18, 2.6)}確認した</button>`}<button id="sendBtn" class="btn btnOutline">${icon("send", 18)}返信を送る</button>`
     : `<button id="draftBtn" class="btn btnOutline">${icon("save", 18)}下書き保存</button><button id="sendBtn" class="btn btnPrimary">${icon("send", 18)}送る</button>`;
   const ta = $("replyText");
   if (n.noId) ta.disabled = true;
@@ -1853,10 +1872,19 @@ function openNote(id) {
     route();
     openNote(id);
   });
+  if ($("ackBtn"))
+    $("ackBtn").addEventListener("click", async () => {
+      $("ackBtn").disabled = true;
+      const ok = await sendReply(n, "確認しました", true);
+      if (!ok) return ($("ackBtn").disabled = false);
+      updateNavBadge();
+      route();
+      openNote(id);
+    });
   if ($("asQBtn")) $("asQBtn").addEventListener("click", () => toggleAsQuestion(n));
   bindCommon(body);
   $("drawer").hidden = false;
-  setTimeout(() => ta.focus(), 50);
+  if (!isNotice) setTimeout(() => ta.focus(), 50);
 }
 function closeDrawer() {
   $("drawer").hidden = true;

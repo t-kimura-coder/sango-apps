@@ -810,3 +810,12 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .lightbox.gallery img { cursor: pointer; max-width: 84vw; max-height: 86vh; }
 .lbCap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; color: #fff; font-size: 14px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .thumb.more { cursor: pointer; }
+
+/* 気づき：返信不要・確認した */
+.sBadge.share { background: var(--color-surface-sub, #f1efe8); color: var(--color-text-sub); border: 1px solid var(--color-border); }
+.sBadge.acked { background: var(--color-ok-soft); color: var(--color-ok-text); }
+.shareNote { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--color-primary-soft, #e6f0eb); color: var(--color-text); font-size: 14px; line-height: 1.6; }
+.shareNote svg { flex: none; margin-top: 2px; color: var(--color-primary); }
+.replyText.small { min-height: 90px; }
+.pastReply.ack .prText { display: flex; align-items: center; gap: 6px; color: var(--color-ok-text); font-weight: 700; }
+.ackDone { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 54px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; }
