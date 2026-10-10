@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 83;
+const APP_VERSION = 84;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "チェックの同期で、最近の報告の要約（期間・工程の様子・来週の予定・写真の枚数。写真そのものは送りません）も送るようにしました。上司がスマホの見守りで現場の状況を見られます" },
   { date: "2026-10-10", type: "fix", text: "チェックの同期の細かい点を直しました（同期の取り込み中に付けたチェックが消えることがある、工事番号を変えた時に古い番号の記録が残る）" },
   { date: "2026-10-10", type: "fix", text: "チェックの同期まわりを直しました（消した現場・消したメモが同期で戻ってくる、写真の無い端末から同期すると上司の画面の品質写真の数が減る）" },
   { date: "2026-10-10", type: "feature", text: "チェックの同期で、段階ごとの進み具合も送るようにしました。上司の見守りで、週の報告を待たずに今の進み具合が見られます" },
@@ -4790,7 +4791,8 @@ function textSig(t) {
 async function buildSiteState(site) {
   const recs = await dbGetAll("checks", "siteId", site.id);
   const photoKeys = {};
-  (await getSitePhotos(site.id)).filter(isRecordPhoto).forEach((p) => {
+  const sitePhotos = await getSitePhotos(site.id);
+  sitePhotos.filter(isRecordPhoto).forEach((p) => {
     if (p.itemId && p.checkKey) (photoKeys[p.itemId] = photoKeys[p.itemId] || {})[p.checkKey] = 1;
   });
   recs.forEach((r) => (r.remotePhotos || []).forEach((k) => ((photoKeys[r.itemId] = photoKeys[r.itemId] || {})[k] = 1)));
@@ -4824,7 +4826,23 @@ async function buildSiteState(site) {
       return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
     });
   }
-  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items, progress }) };
+  // 最近の報告の要約（写真なし。スマホの見守りで「いつ・どの工程・どんな様子」を見るため）
+  const reps = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => ((a.createdAt || "") < (b.createdAt || "") ? 1 : -1)).slice(0, 3);
+  const reports = reps.map((r) => {
+    const counts = {};
+    sitePhotos.filter((ph) => ph.reportId === r.id).forEach((ph) => {
+      const n = processOf(ph.processId).name;
+      counts[n] = (counts[n] || 0) + 1;
+    });
+    const procs = Object.entries(r.procNotes || {})
+      .map(([pid, v]) => ({ no: processOf(pid).no, name: processOf(pid).name, status: procStatusLabel(v.status), note: (v.text || "").trim() }))
+      .filter((x) => x.status || x.note)
+      .sort((a, b) => a.no - b.no);
+    const d = r.reportDraft || {};
+    return { start: r.start, end: r.end, week: r.week || "", at: r.createdAt || "", kind: r.kind || "sent", memo: r.memo || "", processes: procs, customer: { done_other: (d.doneOther || "").trim(), next: (d.next || "").trim() }, photos: counts };
+  });
+  if (reports.length && reports[0].at > updated) updated = reports[0].at; // 報告したら送り直す
+  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items, progress, reports }) };
 }
 // 自分の記録を送る（中身が前回と同じ現場は送らない）
 async function pushStates(force = false) {

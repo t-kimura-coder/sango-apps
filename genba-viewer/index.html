@@ -12,7 +12,7 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="stylesheet" href="style.css?v=29">
+<link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
 
@@ -42,6 +42,12 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
   </nav>
   <main id="main" class="main"></main>
 </div>
+<!-- スマホ用の下のタブ（スマホ表示の時だけ出す） -->
+<nav class="bottomNav">
+  <a href="#/home" data-mnav="home"><span data-icon="home"></span>現場</a>
+  <a href="#/notes" data-mnav="notes"><span data-icon="chat"></span>疑問・気づき<span class="navBadge mBadge" hidden></span></a>
+  <a href="#/settings" data-mnav="settings"><span data-icon="gear"></span>設定</a>
+</nav>
 
 <!-- 返信を書く（右から開くパネル） -->
 <div id="drawer" class="drawer" hidden>
@@ -65,6 +71,7 @@ try { var t = localStorage.getItem("genba-viewer-theme"); if (t === "light" || t
 <input id="folderInput" type="file" webkitdirectory multiple hidden>
 
 <script src="demo.js?v=2"></script>
-<script src="app.js?v=38"></script>
+<script src="mobile.js?v=1"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>

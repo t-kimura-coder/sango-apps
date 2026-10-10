@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -368,10 +368,10 @@ async function fetchStates() {
   if (!gasOn() || stateFetching || demoMode || noData()) return false;
   stateFetching = true;
   try {
-    const keys = [...new Set([...data.sites.values()].map(siteStateKey).filter(Boolean))];
+    const keys = MOBILE ? ["(all)"] : [...new Set([...data.sites.values()].map(siteStateKey).filter(Boolean))];
     const next = new Map();
     for (let i = 0; i < keys.length; i += 60) {
-      const j = await gasCall({ action: "getStates", keys: keys.slice(i, i + 60) });
+      const j = await gasCall(MOBILE ? { action: "getStates", all: true, mine: true } : { action: "getStates", keys: keys.slice(i, i + 60) });
       (j.states || []).forEach((x) => {
         let st = {};
         try {
@@ -380,11 +380,13 @@ async function fetchStates() {
           return;
         }
         if (!next.has(x.key)) next.set(x.key, []);
-        next.get(x.key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {} });
+        if (st.deleted) return; // 消した・番号を変えた現場の古い記録
+        next.get(x.key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [] });
       });
     }
     const changed = JSON.stringify([...next]) !== JSON.stringify([...stateCache]);
     stateCache = next;
+    if (MOBILE) mobileMergeSites();
     try {
       await kvSet("states", [...next]);
     } catch (e) {}
@@ -1210,6 +1212,10 @@ function updateNavBadge() {
   const n = openQuestions().length;
   $("navBadge").hidden = !n;
   $("navBadge").textContent = n;
+  document.querySelectorAll(".mBadge").forEach((b) => {
+    b.hidden = !n;
+    b.textContent = n;
+  });
 }
 
 /* ---------- 写真 ---------- */
@@ -2272,6 +2278,7 @@ function renderSettings() {
       .map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${(getLS("theme") || "auto") === k ? "on" : ""}">${l}</button>`)
       .join("")}</div><p class="sub">「端末と同じ」は、Windows の「個人用設定 → 色」に合わせて切り替わります。</p></div>` +
     extractCardHtml() +
+    viewModeCardHtml() +
     `<div class="card setCard"><h2>アプリとして使う</h2><p class="sub">Edge / Chrome のアドレスバー右端の「アプリをインストール」から入れると、スタートメニューやタスクバーから開けます。</p></div>` +
     `<div class="mutedText">${esc(APP_NAME)} ver.${APP_VERSION}</div>`;
   main.querySelectorAll("[data-theme-set]").forEach((b) =>
@@ -2300,6 +2307,7 @@ function renderSettings() {
   });
   $("extractBtn").addEventListener("click", extractBackupPhotos);
   bindGasCard(main);
+  bindViewModeCard(main);
   $("myName").addEventListener("change", (e) => {
     setLS("name", e.target.value.trim());
     toast("名前を保存しました");
@@ -2315,6 +2323,10 @@ function route() {
   const [name, arg] = path.split("/");
   const params = new URLSearchParams(qs || "");
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === (name === "site" || name === "person" ? "sites" : name)));
+  if (MOBILE && mobileRoute(name, arg, params)) {
+    if (!$("drawer").hidden && drawerNoteId && !data.notes.has(drawerNoteId)) closeDrawer();
+    return;
+  }
   if (name === "notes") renderNotes(params);
   else if (name === "sites") renderSites();
   else if (name === "weeks") renderWeeks();
@@ -2476,6 +2488,7 @@ async function init() {
   $("reloadBtn").addEventListener("click", () => (demoMode ? loadDemo() : dirHandle ? reopenFolder() : pickFolder()));
   bindSearch();
   window.addEventListener("hashchange", route);
+  if (viewMode() === "mobile") return initMobile();
   try {
     dirHandle = canPickFolder ? (await kvGet("dir")) || null : null;
   } catch (e) {
