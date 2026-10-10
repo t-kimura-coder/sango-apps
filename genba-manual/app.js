@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 82;
+const APP_VERSION = 83;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "チェックの同期の細かい点を直しました（同期の取り込み中に付けたチェックが消えることがある、工事番号を変えた時に古い番号の記録が残る）" },
   { date: "2026-10-10", type: "fix", text: "チェックの同期まわりを直しました（消した現場・消したメモが同期で戻ってくる、写真の無い端末から同期すると上司の画面の品質写真の数が減る）" },
   { date: "2026-10-10", type: "feature", text: "チェックの同期で、段階ごとの進み具合も送るようにしました。上司の見守りで、週の報告を待たずに今の進み具合が見られます" },
   { date: "2026-10-10", type: "feature", text: "チェックの記録を同期できるようになりました（合言葉を入れた人）。同じ人の PC とスマホの進み具合がそろい、同じ現場（同じ工事番号）の他の人が付けたチェックには「○○さんが確認済み」と出ます（自分のチェックにはなりません）。写真は同期しません。開いた時に自動で、設定の「今すぐ同期」でも動きます" },
@@ -1274,9 +1275,14 @@ async function editSiteInfo(site) {
   const res = await editSiteSheet(site);
   if (!res) return;
   const { coverFile, ...info } = res;
+  const oldKey = stateKeyOf(site);
   Object.assign(site, info);
   await dbPut("sites", site);
   await saveCover(site.id, coverFile);
+  if (gasOn() && oldKey !== stateKeyOf(site)) {
+    gasCall({ action: "putStates", states: [{ key: oldKey, kouji_no: oldKey.startsWith("k:") ? oldKey.slice(2) : "", site_id: site.id, site: site.name, updated_at: new Date().toISOString(), state: JSON.stringify({ v: 1, deleted: true, moved: stateKeyOf(site), site: { id: site.id, name: site.name }, items: {} }) }] }).catch(() => {});
+    scheduleStatePush(); // 新しい番号で送り直す
+  }
   await refreshSites();
   toast("現場の情報を変更しました");
   rerenderCurrentView();
@@ -4847,6 +4853,7 @@ async function pushStates(force = false) {
 async function mergeMine(site, state) {
   const me = getSetting(USER_NAME_KEY);
   const local = Object.fromEntries((await dbGetAll("checks", "siteId", site.id)).map((r) => [r.itemId, r]));
+  const readAt = Object.fromEntries(Object.values(local).map((r) => [r.itemId, r.updatedAt || ""])); // 読んだ時点の更新日時（下で書き換える前に控える）
   const changed = [];
   Object.entries(state.items || {}).forEach(([itemId, it]) => {
     const r = local[itemId];
@@ -4878,7 +4885,13 @@ async function mergeMine(site, state) {
     rec.updatedAt = remoteU; // 取り込んだ時刻にしない（送り返しの行ったり来たりを防ぐ）
     changed.push(rec);
   });
-  if (changed.length) await dbPutMany("checks", changed);
+  if (changed.length) {
+    // 読んだ後にこの端末でチェックを付けた項目は、取り込みで上書きしない
+    const now = Object.fromEntries((await dbGetAll("checks", "siteId", site.id)).map((r) => [r.itemId, r.updatedAt || ""]));
+    const safe = changed.filter((r) => (now[r.itemId] || "") === (readAt[r.itemId] || ""));
+    if (safe.length) await dbPutMany("checks", safe);
+    return safe.length;
+  }
   return changed.length;
 }
 async function syncStates(manual = false) {
