@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 87;
+const APP_VERSION = 88;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "「使い方」と設定に「質問・要望を送る」を付けました。分からないこと・こうしてほしいこと・うまく動かないことを、その場で木村に送れます" },
   { date: "2026-10-10", type: "fix", text: "初めて開いた時の案内に「合言葉」を足しました。「使い方」と送信画面の説明も直しました（お客様メールの下書きは、送る前に必ず人が確認します）" },
   { date: "2026-10-10", type: "fix", text: "「使い方」を今の機能に合わせて書き直しました（合言葉でできること、チェックの同期、上司への届き方、データについて）。工事番号が空の時の説明も直しました" },
   { date: "2026-10-10", type: "fix", text: "報告済みにした時に、報告の要約をすぐ上司に送るようにしました（今までは次に開いた時）" },
@@ -4669,6 +4670,46 @@ async function syncGas(manual = false) {
     gasSyncing = false;
   }
 }
+/* ---------- 質問・改善要望（使い方・設定の「質問・要望を送る」）----------
+   合言葉のある人は GAS へ（feedback シートに残り、木村にメールで届く）。無い人はメールの作成画面を開く */
+const FEEDBACK_MAIL = "t-kimura@kk35.jp";
+function openFeedback() {
+  openSheet("質問・要望を送る", (body, close) => {
+    const sel = document.createElement("select");
+    sel.className = "sheetInput";
+    ["質問", "要望", "不具合", "その他"].forEach((k) => sel.add(new Option(k, k)));
+    const ta = document.createElement("textarea");
+    ta.className = "sheetTextarea";
+    ta.placeholder = "分からないこと、こうしてほしいこと、うまく動かないことを書いてください（どの画面で・何をしたら、も書いてもらえると助かります）";
+    const info = document.createElement("div");
+    info.className = "mutedText";
+    info.textContent = gasOn() ? "木村に届きます。返事は電話か、アプリの「やること」で返します。" : "合言葉が入っていないので、メールの作成画面が開きます。そのまま送ってください。";
+    body.append(sel, ta, info);
+    body.appendChild(
+      sheetButton("送る", "btnPrimary btnLarge", async (e) => {
+        const text = ta.value.trim();
+        if (!text) return ta.focus();
+        const me = getSetting(USER_NAME_KEY) || "（名前未登録）";
+        if (!gasOn()) {
+          const subj = `[現場ナビ] ${sel.value}：${me}`;
+          location.href = `mailto:${FEEDBACK_MAIL}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(`${text}\n\n---\n現場ナビ ver.${APP_VERSION}`)}`;
+          return close();
+        }
+        e.target.disabled = true;
+        try {
+          await gasCall({ action: "feedback", kind: sel.value, text, app: "navi", app_version: String(APP_VERSION) });
+          close();
+          toast("送りました。ありがとうございます");
+        } catch (err) {
+          e.target.disabled = false;
+          toast(err.message === "unauthorized" ? "合言葉が違うか、止められています" : "送れませんでした（電波を確かめて、もう一度）");
+        }
+      })
+    );
+    body.appendChild(sheetButton("やめる", "btnGhost", close));
+    setTimeout(() => ta.focus(), 300);
+  });
+}
 // 疑問への書き足し（上司とのやりとりを続ける）
 function addNoteFollowup(it, id) {
   const rec = checkRecOf(it.id);
@@ -6558,6 +6599,8 @@ function init() {
   $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
   $("tourAgainBtn").addEventListener("click", startTour);
   $("helpTourBtn").addEventListener("click", startTour);
+  $("helpFeedbackBtn").addEventListener("click", openFeedback);
+  $("settingsFeedbackBtn").addEventListener("click", openFeedback);
   $("tourSkip").addEventListener("click", endTour);
   $("tourNext").addEventListener("click", () => {
     const step = TOUR_STEPS[tourIdx];

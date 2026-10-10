@@ -229,8 +229,41 @@ function helpCardHtml(mobile) {
       "<b>現場が出ない</b>：スマホは、監督が合言葉を入れていて、現場に工事番号が入っている現場だけが出ます。監督に確かめてください。",
     ]),
   ];
-  return `<div class="card setCard helpCardV"><h2>使い方</h2>${(mobile ? [...mobileOnly, ...common] : [...pcOnly, ...common]).join("")}<p class="sub">分からないことは木村まで。</p></div>`;
+  return `<div class="card setCard helpCardV"><h2>使い方</h2>${(mobile ? [...mobileOnly, ...common] : [...pcOnly, ...common]).join("")}<div class="btnRow"><button type="button" class="btn btnOutline" data-feedback>質問・要望を送る</button></div><p class="sub">分からないこと・こうしてほしいことは、ここから木村に送れます。</p></div>`;
 }
+
+// 質問・改善要望（設定の「使い方」の下）。合言葉で GAS へ（木村にメールで届く）
+function openFeedback() {
+  const ov = document.createElement("div");
+  ov.className = "gate fbOverlay";
+  ov.innerHTML =
+    `<div class="card gateCard"><h2>質問・要望を送る</h2>` +
+    `<select id="fbKind" class="input">${["質問", "要望", "不具合", "その他"].map((k) => `<option>${k}</option>`).join("")}</select>` +
+    `<textarea id="fbText" class="input" rows="6" placeholder="分からないこと、こうしてほしいこと、うまく動かないことを書いてください（どの画面で・何をしたら、も書いてもらえると助かります）"></textarea>` +
+    `<p class="sub">木村に届きます。</p>` +
+    `<div class="btnRow"><button class="btn btnPrimary" id="fbSend">送る</button><button class="btn btnOutline" id="fbCancel">やめる</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.querySelector("#fbCancel").addEventListener("click", close);
+  ov.addEventListener("click", (e) => e.target === ov && close());
+  ov.querySelector("#fbText").focus();
+  ov.querySelector("#fbSend").addEventListener("click", async (e) => {
+    const text = ov.querySelector("#fbText").value.trim();
+    if (!text) return ov.querySelector("#fbText").focus();
+    e.target.disabled = true;
+    try {
+      await gasCall({ action: "feedback", kind: ov.querySelector("#fbKind").value, text, app: "viewer", app_version: String(APP_VERSION) });
+      close();
+      toast("送りました。ありがとうございます");
+    } catch (err) {
+      e.target.disabled = false;
+      toast(err.message === "unauthorized" ? "合言葉が違うか、止められています" : "送れませんでした。もう一度押してください");
+    }
+  });
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest && e.target.closest("[data-feedback]")) openFeedback();
+});
 
 function viewModeCardHtml() {
   const v = getLS("viewMode") || "auto";

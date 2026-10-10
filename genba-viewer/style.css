@@ -877,3 +877,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .helpSec summary::before { content: "▸ "; color: var(--color-primary); }
 .helpSec[open] summary::before { content: "▾ "; }
 .helpSec ul { margin: 8px 0 2px; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.7; }
+
+/* ---------- 質問・要望 ---------- */
+.fbOverlay { background: rgba(0, 0, 0, 0.45); z-index: 120; }
+.fbOverlay textarea { min-height: 140px; resize: vertical; font: inherit; }

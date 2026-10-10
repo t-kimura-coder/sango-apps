@@ -349,6 +349,11 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="btnRow settingsBtns"><button id="tourAgainBtn" class="btn btnSecondary">案内をもう一度見る</button></div>
     </div>
     <div class="card">
+      <div class="cardTitle">質問・要望</div>
+      <div class="mutedText">分からないこと、こうしてほしいこと、うまく動かないことを、木村に送れます。</div>
+      <div class="btnRow settingsBtns"><button id="settingsFeedbackBtn" class="btn btnSecondary">質問・要望を送る</button></div>
+    </div>
+    <div class="card">
       <div class="cardTitle">保存容量</div>
       <div id="storageInfo" class="mutedText">計算中...</div>
       <div class="btnRow settingsBtns"><button id="checkPhotosBtn" class="btn btnSecondary" type="button">写真の点検</button></div>
@@ -392,7 +397,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <h1 class="topbarTitle">使い方</h1>
   </header>
   <div class="viewBody">
-    <button id="helpTourBtn" class="btn btnOutline">画面で案内を見る</button>
+    <div class="btnRow"><button id="helpTourBtn" class="btn btnOutline">画面で案内を見る</button><button id="helpFeedbackBtn" class="btn btnOutline">質問・要望を送る</button></div>
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
@@ -528,6 +533,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=87"></script>
+<script src="app.js?v=88"></script>
 </body>
 </html>
