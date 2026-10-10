@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1148,12 +1148,17 @@ function updateNavBadge() {
 }
 
 /* ---------- 写真 ---------- */
+// 写真はファイル名で探す。iPhone からメールで Box に届いたファイルは、名前の濁点・半濁点が「た＋゛」のように
+// 分かれた形（NFD）になることがあり、JSON に書いた名前（NFC）と一致しないので、そろえてから比べる
+function photoKey(name) {
+  return String(name || "").normalize("NFC");
+}
 const urlCache = new Map();
 function photoUrl(name) {
   if (urlCache.has(name)) return urlCache.get(name);
   const p = (async () => {
     if (demoMode) return DEMO.photoUrl(name);
-    const f = data.photoFiles.get(name);
+    const f = data.photoFiles.get(photoKey(name));
     if (!f) return "";
     const file = f.getFile ? await f.getFile() : f;
     return URL.createObjectURL(file);
@@ -1293,7 +1298,7 @@ async function loadFromHandle() {
     let jsonCount = 0;
     for await (const f of walk(dirHandle)) {
       const lower = f.name.toLowerCase();
-      if (/\.(jpe?g|png|webp|heic)$/.test(lower)) data.photoFiles.set(f.name, f.handle);
+      if (/\.(jpe?g|png|webp|heic)$/.test(lower)) data.photoFiles.set(photoKey(f.name), f.handle);
       else if (lower.endsWith(".json")) {
         jsonCount++;
         try {
@@ -1334,7 +1339,7 @@ async function onFolderInput(e) {
   await clearUrlCache();
   for (const f of files) {
     const lower = f.name.toLowerCase();
-    if (/\.(jpe?g|png|webp|heic)$/.test(lower)) data.photoFiles.set(f.name, f);
+    if (/\.(jpe?g|png|webp|heic)$/.test(lower)) data.photoFiles.set(photoKey(f.name), f);
     else if (lower.endsWith(".json")) {
       try {
         const j = JSON.parse(await f.text());
