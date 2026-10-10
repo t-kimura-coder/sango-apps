@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -2309,6 +2309,7 @@ function renderSettings() {
 
 /* ---------- 画面の切り替え（#/home など。ブラウザの戻るで前の画面に戻れる） ---------- */
 function route() {
+  galleries.clear(); // 描き直すたびに、写真をめくる一覧の控えを作り直す（たまり続けないように）
   const hash = location.hash || "#/home";
   const [path, qs] = hash.slice(2).split("?");
   const [name, arg] = path.split("/");

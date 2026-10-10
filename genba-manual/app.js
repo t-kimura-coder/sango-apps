@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 81;
+const APP_VERSION = 82;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "チェックの同期まわりを直しました（消した現場・消したメモが同期で戻ってくる、写真の無い端末から同期すると上司の画面の品質写真の数が減る）" },
   { date: "2026-10-10", type: "feature", text: "チェックの同期で、段階ごとの進み具合も送るようにしました。上司の見守りで、週の報告を待たずに今の進み具合が見られます" },
   { date: "2026-10-10", type: "feature", text: "チェックの記録を同期できるようになりました（合言葉を入れた人）。同じ人の PC とスマホの進み具合がそろい、同じ現場（同じ工事番号）の他の人が付けたチェックには「○○さんが確認済み」と出ます（自分のチェックにはなりません）。写真は同期しません。開いた時に自動で、設定の「今すぐ同期」でも動きます" },
   { date: "2026-10-10", type: "feature", text: "工程マニュアルの項目ページの「報告写真」から撮った・取り込んだ写真に、その項目を記録するようにしました（お客様への報告メールで、どの場面の写真か分かるように）。報告の工程ページの上に「項目「○○」の写真として残します」と出ます（「外す」で記録しない）。「今週のこの工程」に、一部完了の目安と一言の書き方の例を足しました" },
@@ -1599,6 +1600,10 @@ async function renderSiteManage() {
       await dbDeleteMany("reports", reports.map((r) => r.id));
       await dbDeleteMany("checks", checks.map((r) => r.key));
       await dbDeleteMany("sites", [site.id]);
+      rememberDeletedSite(site.id);
+      // 置き場所の自分の記録にも「消した」と残す（別の端末で作り直さないように。別の端末の現場そのものは消さない）
+      if (gasOn())
+        gasCall({ action: "putStates", states: [{ key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: new Date().toISOString(), state: JSON.stringify({ v: 1, deleted: true, site: { id: site.id, name: site.name, koujiNo: site.koujiNo || "" }, items: {} }) }] }).catch(() => {});
       toast("現場を削除しました");
       await refreshSites();
       renderSiteManage();
@@ -4751,6 +4756,21 @@ try {
 } catch (e) {}
 let stateSyncing = false;
 let statePushTimer = null;
+const DELETED_SITES_KEY = "genba-photo-deleted-sites"; // この端末で消した現場の id（同期で作り直さないように）
+function deletedSiteIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DELETED_SITES_KEY) || "[]"));
+  } catch (e) {
+    return new Set();
+  }
+}
+function rememberDeletedSite(id) {
+  const ids = deletedSiteIds();
+  ids.add(id);
+  try {
+    localStorage.setItem(DELETED_SITES_KEY, JSON.stringify([...ids].slice(-200)));
+  } catch (e) {}
+}
 
 function stateKeyOf(site) {
   const k = normKoujiNo(site && site.koujiNo);
@@ -4767,6 +4787,7 @@ async function buildSiteState(site) {
   (await getSitePhotos(site.id)).filter(isRecordPhoto).forEach((p) => {
     if (p.itemId && p.checkKey) (photoKeys[p.itemId] = photoKeys[p.itemId] || {})[p.checkKey] = 1;
   });
+  recs.forEach((r) => (r.remotePhotos || []).forEach((k) => ((photoKeys[r.itemId] = photoKeys[r.itemId] || {})[k] = 1)));
   const items = {};
   let updated = "";
   const itemById = manualMeta ? Object.fromEntries(manualMeta.items.map((x) => [x.id, x])) : {};
@@ -4779,6 +4800,7 @@ async function buildSiteState(site) {
     if (r.naChecks && Object.keys(r.naChecks).length) it.nc = r.naChecks;
     if (r.noPhoto && Object.keys(r.noPhoto).length) it.np = r.noPhoto;
     if (r.notes && r.notes.length) it.notes = r.notes;
+    if (r.deletedNotes && r.deletedNotes.length) it.dn = r.deletedNotes;
     if (photoKeys[r.itemId]) it.ph = Object.keys(photoKeys[r.itemId]);
     if (itemById[r.itemId]) it.g = groupOfProcess(itemById[r.itemId].cat).name; // 見守りで段階ごとに数えるため
     items[r.itemId] = it;
@@ -4790,7 +4812,7 @@ async function buildSiteState(site) {
   if (manualMeta) {
     const recMap = Object.fromEntries(recs.map((r) => [r.itemId, r]));
     const phMap = {};
-    (await getSitePhotos(site.id)).filter(isRecordPhoto).forEach((p) => (phMap[`${p.itemId}|${p.checkKey}`] = p));
+    Object.entries(photoKeys).forEach(([itemId, ks]) => Object.keys(ks).forEach((k) => (phMap[`${itemId}|${k}`] = true)));
     progress = GROUPS.map((g, i) => {
       const pr = groupProgress(g, recMap, phMap);
       return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
@@ -4844,12 +4866,14 @@ async function mergeMine(site, state) {
     if (it.naAt) rec.naAt = it.naAt;
     rec.naChecks = it.nc || {};
     rec.noPhoto = it.np || {};
-    // メモは id でまとめる（どちらかにしか無いものは足す）
-    const notes = (rec.notes || []).slice();
+    // メモは id でまとめる（どちらかにしか無いものは足す）。どちらかで消したメモは外す
+    const gone = new Set([...(rec.deletedNotes || []), ...(it.dn || [])]);
+    const notes = (rec.notes || []).filter((n) => !gone.has(n.id));
     (it.notes || []).forEach((n) => {
-      if (n && n.id && !notes.some((x) => x.id === n.id)) notes.push(n);
+      if (n && n.id && !gone.has(n.id) && !notes.some((x) => x.id === n.id)) notes.push(n);
     });
-    if (notes.length) rec.notes = notes.sort((a, b) => (a.at < b.at ? -1 : 1));
+    rec.notes = notes.sort((a, b) => (a.at < b.at ? -1 : 1));
+    if (gone.size) rec.deletedNotes = [...gone];
     rec.remotePhotos = it.ph || [];
     rec.updatedAt = remoteU; // 取り込んだ時刻にしない（送り返しの行ったり来たりを防ぐ）
     changed.push(rec);
@@ -4876,9 +4900,10 @@ async function syncStates(manual = false) {
         continue;
       }
       if (x.mine) {
+        if (st.deleted) continue; // 消した現場の記録は取り込まない
         let site = keyToSite[x.key];
         // 別の端末にしか無い現場は、この端末にも作る（同じ現場の id のまま）
-        if (!site && st.site && st.site.id && !sites.some((s) => s.id === st.site.id)) {
+        if (!site && st.site && st.site.id && !st.deleted && !deletedSiteIds().has(st.site.id) && !sites.some((s) => s.id === st.site.id)) {
           const all = await getSites();
           if (all.some((s) => s.id === st.site.id)) continue; // 完工などで外した現場は戻さない
           site = { id: st.site.id, name: st.site.name, koujiNo: st.site.koujiNo, members: st.site.members || [], kind: st.site.kind || "", startGroup: st.site.startGroup || 0, createdAt: st.site.createdAt || new Date().toISOString(), archived: false, processes: [], lastReportEnd: null, pauses: st.site.pauses || [] };
@@ -5036,6 +5061,7 @@ async function deleteMemo(it, id) {
   const gone = (rec.notes || []).find((n) => n.id === id);
   if (gone) sendNoteToGas(it, gone, { deleted: true });
   rec.notes = (rec.notes || []).filter((n) => n.id !== id);
+  rec.deletedNotes = [...new Set([...(rec.deletedNotes || []), id])]; // 別の端末から同期で戻ってこないように
   await saveCheckRec(rec);
   renderMemoSection(it);
 }
