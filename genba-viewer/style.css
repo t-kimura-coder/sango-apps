@@ -819,3 +819,7 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .replyText.small { min-height: 90px; }
 .pastReply.ack .prText { display: flex; align-items: center; gap: 6px; color: var(--color-ok-text); font-weight: 700; }
 .ackDone { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 54px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; }
+
+/* 進み具合がチェック記録（週の報告より新しい）の時の印 */
+.asOf { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--color-text-sub); }
+.asOf svg { color: var(--color-primary); }

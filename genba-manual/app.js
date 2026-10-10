@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 80;
+const APP_VERSION = 81;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "チェックの同期で、段階ごとの進み具合も送るようにしました。上司の見守りで、週の報告を待たずに今の進み具合が見られます" },
   { date: "2026-10-10", type: "feature", text: "チェックの記録を同期できるようになりました（合言葉を入れた人）。同じ人の PC とスマホの進み具合がそろい、同じ現場（同じ工事番号）の他の人が付けたチェックには「○○さんが確認済み」と出ます（自分のチェックにはなりません）。写真は同期しません。開いた時に自動で、設定の「今すぐ同期」でも動きます" },
   { date: "2026-10-10", type: "feature", text: "工程マニュアルの項目ページの「報告写真」から撮った・取り込んだ写真に、その項目を記録するようにしました（お客様への報告メールで、どの場面の写真か分かるように）。報告の工程ページの上に「項目「○○」の写真として残します」と出ます（「外す」で記録しない）。「今週のこの工程」に、一部完了の目安と一言の書き方の例を足しました" },
   { date: "2026-10-09", type: "feature", text: "PC（Edge・Chrome）で開いた時、「Boxへ送信」・上司への知らせ・完工の知らせは、Box Drive の「社内報告」フォルダに直接保存するようにしました（PC では共有画面が出ないため。初回だけフォルダを選びます）。iPhone はこれまで通り共有画面から送ります" },
@@ -4768,6 +4769,7 @@ async function buildSiteState(site) {
   });
   const items = {};
   let updated = "";
+  const itemById = manualMeta ? Object.fromEntries(manualMeta.items.map((x) => [x.id, x])) : {};
   recs.forEach((r) => {
     const m = {};
     Object.entries(r.marks || {}).forEach(([k, v]) => (m[k] = (v && v.at) || ""));
@@ -4778,11 +4780,23 @@ async function buildSiteState(site) {
     if (r.noPhoto && Object.keys(r.noPhoto).length) it.np = r.noPhoto;
     if (r.notes && r.notes.length) it.notes = r.notes;
     if (photoKeys[r.itemId]) it.ph = Object.keys(photoKeys[r.itemId]);
+    if (itemById[r.itemId]) it.g = groupOfProcess(itemById[r.itemId].cat).name; // 見守りで段階ごとに数えるため
     items[r.itemId] = it;
     if ((r.updatedAt || "") > updated) updated = r.updatedAt || "";
   });
   const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [] };
-  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items }) };
+  // 段階ごとの進み具合（週の報告の progress と同じ形）
+  let progress = null;
+  if (manualMeta) {
+    const recMap = Object.fromEntries(recs.map((r) => [r.itemId, r]));
+    const phMap = {};
+    (await getSitePhotos(site.id)).filter(isRecordPhoto).forEach((p) => (phMap[`${p.itemId}|${p.checkKey}`] = p));
+    progress = GROUPS.map((g, i) => {
+      const pr = groupProgress(g, recMap, phMap);
+      return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
+    });
+  }
+  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items, progress }) };
 }
 // 自分の記録を送る（中身が前回と同じ現場は送らない）
 async function pushStates(force = false) {

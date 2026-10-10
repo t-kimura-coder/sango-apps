@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -343,6 +343,65 @@ function applyGas() {
   });
   updateNavBadge();
 }
+
+/* ---------- チェック記録（GAS の states）：週の報告を待たずに、今の進み具合を出す ----------
+   現場ナビが置く「現場ごと・人ごとのチェック記録」を、工事番号のある現場について読む（写真・メモは来ない）。
+   報告より新しければ、進み具合はこちらを使う */
+let stateCache = new Map(); // "k:工事番号" → [{ person, at, progress, items: { itemId: { m: {checkKey: 日時}, g: 段階 } } }]
+let stateFetching = false;
+function siteStateKey(s) {
+  const k = normKouji(s && s.koujiNo);
+  return k ? "k:" + k : "";
+}
+function statesOf(s) {
+  const k = siteStateKey(s);
+  return k ? stateCache.get(k) || [] : [];
+}
+async function loadStateCache() {
+  try {
+    const v = await kvGet("states");
+    if (Array.isArray(v)) stateCache = new Map(v);
+  } catch (e) {}
+}
+// 読み直して、変わったら true
+async function fetchStates() {
+  if (!gasOn() || stateFetching || demoMode || noData()) return false;
+  stateFetching = true;
+  try {
+    const keys = [...new Set([...data.sites.values()].map(siteStateKey).filter(Boolean))];
+    const next = new Map();
+    for (let i = 0; i < keys.length; i += 60) {
+      const j = await gasCall({ action: "getStates", keys: keys.slice(i, i + 60) });
+      (j.states || []).forEach((x) => {
+        let st = {};
+        try {
+          st = JSON.parse(x.state || "{}");
+        } catch (e) {
+          return;
+        }
+        if (!next.has(x.key)) next.set(x.key, []);
+        next.get(x.key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {} });
+      });
+    }
+    const changed = JSON.stringify([...next]) !== JSON.stringify([...stateCache]);
+    stateCache = next;
+    try {
+      await kvSet("states", [...next]);
+    } catch (e) {}
+    return changed;
+  } catch (e) {
+    console.warn(e);
+    return false;
+  } finally {
+    stateFetching = false;
+  }
+}
+async function refreshStatesAndDraw() {
+  const changed = await fetchStates();
+  const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "");
+  if (changed && !typing && $("drawer").hidden && !noData()) route();
+}
+
 let gasSyncing = false;
 async function syncGas(manual = false) {
   if (!gasOn() || gasSyncing) return;
@@ -385,6 +444,7 @@ async function syncGas(manual = false) {
   } finally {
     gasSyncing = false;
   }
+  await refreshStatesAndDraw();
 }
 async function postGas(msg) {
   if (!gasOn()) return false;
@@ -1320,6 +1380,7 @@ async function loadFromHandle() {
     buildData(reports, replies, statuses, meetings);
     data.source = { name: dirHandle.name, at: new Date().toISOString(), reports: data.reports.length, photos: data.photoFiles.size, writable: true };
     toast(`報告 ${data.reports.length}件・写真 ${data.photoFiles.size}枚を読み込みました`);
+    refreshStatesAndDraw();
   } catch (e) {
     console.error(e);
     alert("報告フォルダを読めませんでした。設定からフォルダを選び直してください。");
@@ -1941,8 +2002,22 @@ function renderPerson(key) {
 
 // 現場全体の進み具合。一人なら最新の報告の数字、二人以上なら全員のチェックを合わせて数える
 function siteProgress(s) {
-  const latest = (s.reports.find((r) => r.progress) || {}).progress || null;
-  if (!latest || s.persons.size <= 1) return latest;
+  const per = personProgress(s);
+  const sts = statesOf(s);
+  // いちばん新しい進み具合（報告かチェック記録）を土台にする
+  const freshest = per.slice().sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  const latest = freshest ? freshest.prog : (s.reports.find((r) => r.progress) || {}).progress || null;
+  if (!latest || (s.persons.size <= 1 && sts.length <= 1)) return latest;
+  // チェック記録の和集合（段階ごと。チェックポイントだけ）
+  const uni = {};
+  sts.forEach((st) =>
+    Object.entries(st.items || {}).forEach(([itemId, it]) => {
+      if (!it || !it.g) return;
+      Object.keys(it.m || {}).forEach((k) => {
+        if (k.startsWith("checks|")) (uni[it.g] = uni[it.g] || new Set()).add(`${itemId}|${k}`);
+      });
+    })
+  );
   const done = {};
   s.reports.forEach((r) =>
     (r.checks || []).forEach((c) => {
@@ -1955,24 +2030,31 @@ function siteProgress(s) {
     })
   );
   // 写真の数は人ごとの最新の数字のうち多い方
-  const per = personProgress(s);
   return latest.map((g) => ({
     group: g.group,
     before_start: !!g.before_start && per.every((p) => (p.prog.find((x) => x.group === g.group) || {}).before_start), // 誰か一人でも記録していれば出す
     checks_total: g.checks_total,
     checks_na: g.checks_na || 0,
-    checks_done: Math.min(g.checks_total, Math.max(done[g.group] ? done[g.group].size : 0, ...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).checks_done || 0))),
+    checks_done: Math.min(g.checks_total, Math.max(done[g.group] ? done[g.group].size : 0, uni[g.group] ? uni[g.group].size : 0, ...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).checks_done || 0))),
     photos_total: g.photos_total,
     photos_done: Math.max(...per.map((p) => (p.prog.find((x) => x.group === g.group) || {}).photos_done || 0)),
   }));
 }
 function personProgress(s) {
+  const sts = statesOf(s);
   return [...s.persons.entries()]
     .map(([key, name]) => {
       const r = s.reports.find((x) => personKeyOf(x) === key && x.progress);
-      return r ? { key, name, prog: r.progress } : null;
+      const st = sts.find((x) => normName(x.person) === normName(name) && x.progress);
+      if (st && (!r || (st.at || "") > (r.sent_at || ""))) return { key, name, prog: st.progress, at: st.at, fromState: true };
+      return r ? { key, name, prog: r.progress, at: r.sent_at || "" } : null;
     })
     .filter(Boolean);
+}
+// 進み具合がいつの時点か（チェック記録なら、その時刻）
+function progressAsOf(s) {
+  const per = personProgress(s).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  return per ? { at: per.at, fromState: !!per.fromState } : null;
 }
 
 const GROUP_ART = { 基礎: "g1", 上棟: "g2", 外装: "g3", 内装: "g4", 設備: "g5", 引渡し: "g6" };
@@ -1990,6 +2072,7 @@ function renderSite(key) {
   const [cd, ct, pd, pt, na] = [sum("checks_done"), sum("checks_total"), sum("photos_done"), sum("photos_total"), sum("checks_na")];
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const state = s.completedAt ? ["fin", `完工 ${fmtMD(s.completedAt)}`] : s.pausedAt ? ["paused", `休工中（${fmtMD(s.pausedAt)}〜）`] : ["doing", "進行中"];
+  const asOf = progressAsOf(s);
   let html =
     `<section class="hero small sdHero"><img src="art/site-bg.webp" class="siteBg" alt="">` +
     `<a class="backLink" href="#/home">${icon("back", 18)}一覧に戻る</a><h1 class="heroTitle">現場の詳細</h1></section>` +
@@ -1997,7 +2080,9 @@ function renderSite(key) {
     `<div class="sdMeta"><span>工事番号 <b>${s.koujiNo ? "No." + esc(s.koujiNo) : "なし"}</b></span><span>${icon("user", 16)}担当者</span>` +
     [...s.persons.entries()].map(([pk, n]) => `<button class="sdPerson" data-person="${esc(pk)}">${avatar(n, 24)}${esc(n)}</button>`).join("") +
     (s.members.size ? `<span class="mutedText">登録された担当：${esc([...s.members].join("・"))}</span>` : "") +
-    `</div></div>`;
+    `</div>` +
+    (asOf && asOf.fromState ? `<div class="asOf">${icon("reload", 14)}進み具合は現場ナビのチェック記録（${fmtDateTime(asOf.at)} 時点）。週の報告より新しい状態です</div>` : "") +
+    `</div>`;
 
   // 工程の進捗：6段階のステッパー＋チェック・品質写真の合計
   html += prog
@@ -2345,6 +2430,7 @@ async function init() {
   applyTheme(getLS("theme") || "auto");
   if (!(await passGate())) return;
   await loadGasStore();
+  await loadStateCache();
   setTimeout(() => syncGas(), 3000);
   setInterval(() => !document.hidden && syncGas(), 2 * 60 * 1000);
   document.addEventListener("visibilitychange", () => !document.hidden && syncGas());
