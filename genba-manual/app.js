@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 86;
+const APP_VERSION = 87;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "fix", text: "初めて開いた時の案内に「合言葉」を足しました。「使い方」と送信画面の説明も直しました（お客様メールの下書きは、送る前に必ず人が確認します）" },
   { date: "2026-10-10", type: "fix", text: "「使い方」を今の機能に合わせて書き直しました（合言葉でできること、チェックの同期、上司への届き方、データについて）。工事番号が空の時の説明も直しました" },
   { date: "2026-10-10", type: "fix", text: "報告済みにした時に、報告の要約をすぐ上司に送るようにしました（今までは次に開いた時）" },
   { date: "2026-10-10", type: "feature", text: "チェックの同期で、最近の報告の要約（期間・工程の様子・来週の予定・写真の枚数。写真そのものは送りません）も送るようにしました。上司がスマホの見守りで現場の状況を見られます" },
@@ -2931,6 +2932,7 @@ async function sendToBox() {
     const noted = processes.filter((p) => p.status || p.note);
     custHead.innerHTML =
       `お客様への報告メールの材料<span class="psSub">任意</span>` +
+      `<div class="mutedText">AI でメールの下書きを作る時の材料です（試験中）。下書きは、お客様に送る前に必ず人が読んで直します。</div>` +
       `<div class="mutedText">${noted.length ? `工程の様子：${esc(noted.map((p) => `${shortProcessName(p)}${p.status ? "（" + p.status + "）" : ""}`).join("・"))}` : "工程ごとの「完了・作業中」と一言は、各工程のページで書けます。"}</div>`;
     body.appendChild(custHead);
     const doneOther = field("写真以外で今週やったこと", "doneOther", "例：ガスボンベ・灯油タンクの設置が完了。レンジフードの高さを調整", 2);
@@ -6094,6 +6096,20 @@ const TOUR_STEPS = [
     onNext: () => {
       const v = $("boxEmailInput").value.trim();
       if (v && !BOX_UPLOAD_EMAIL) setSetting(BOX_EMAIL_KEY, v);
+    },
+  },
+  {
+    view: "settingsView",
+    target: () => $("gasTokenInput"),
+    text: () =>
+      gasOn()
+        ? "合言葉は入っています。上司とのやりとりとチェックの同期は、これで動きます。"
+        : "木村から受け取った「合言葉」をここに入れて、下の「つながるか確かめる」を押します。上司とのやりとりがすぐ届き、チェックの記録も同期されます。まだ受け取っていなければ「次へ」。",
+    next: true,
+    scroll: true,
+    onNext: () => {
+      const v = $("gasTokenInput").value.trim();
+      if (v) setSetting(GAS_TOKEN_KEY, v);
     },
   },
   {
