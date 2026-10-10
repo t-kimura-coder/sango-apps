@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 79;
+const APP_VERSION = 80;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-10", type: "feature", text: "チェックの記録を同期できるようになりました（合言葉を入れた人）。同じ人の PC とスマホの進み具合がそろい、同じ現場（同じ工事番号）の他の人が付けたチェックには「○○さんが確認済み」と出ます（自分のチェックにはなりません）。写真は同期しません。開いた時に自動で、設定の「今すぐ同期」でも動きます" },
   { date: "2026-10-10", type: "feature", text: "工程マニュアルの項目ページの「報告写真」から撮った・取り込んだ写真に、その項目を記録するようにしました（お客様への報告メールで、どの場面の写真か分かるように）。報告の工程ページの上に「項目「○○」の写真として残します」と出ます（「外す」で記録しない）。「今週のこの工程」に、一部完了の目安と一言の書き方の例を足しました" },
   { date: "2026-10-09", type: "feature", text: "PC（Edge・Chrome）で開いた時、「Boxへ送信」・上司への知らせ・完工の知らせは、Box Drive の「社内報告」フォルダに直接保存するようにしました（PC では共有画面が出ないため。初回だけフォルダを選びます）。iPhone はこれまで通り共有画面から送ります" },
   { date: "2026-10-08", type: "feature", text: "工程の段階を開くと、その現場でその段階を最後に見ていた項目が開くようになりました（毎回最初の項目に戻らない）。「工程」タブの上の「続きから」で、前回見ていた項目にすぐ戻れます" },
@@ -3680,6 +3681,12 @@ function lineHtml(x) {
   return `<li>${esc(x.text)}${x.added ? ` <span class="addedDate">（${esc(x.added)}追記）</span>` : ""}</li>`;
 }
 
+function othersHtml(itemId, key) {
+  const o = othersMarked(itemId, key);
+  if (!o.length) return "";
+  const who = o.map((x) => `${x.person}さん`).slice(0, 2).join("・") + (o.length > 2 ? `ほか${o.length - 2}人` : "");
+  return `<span class="otherBy">${icon(ICONS.check, 12, 3)}${esc(who)}が確認済み（${esc(fmtDate(toDateKey(new Date(o[0].at))))}）</span>`;
+}
 function checkRowHtml(sec, c, rec, it) {
   const key = checkKey(sec, c);
   const mark = rec.marks[key];
@@ -3702,6 +3709,8 @@ function checkRowHtml(sec, c, rec, it) {
     c.photo === "要" ? `<span class="photoReq">${icon(ICONS.camera, 12)}写真要</span>` : "",
     c.added ? `<span class="addedDate">${esc(c.added)}追記</span>` : "",
     mark ? `<span class="checkBy">${esc(fmtDateTime(mark.at))}${mark.by ? " " + esc(mark.by) : ""}</span>` : "",
+    !mark && !naC ? othersHtml(it.id, key) : "",
+    c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && (rec.remotePhotos || []).includes(key) ? `<span class="remotePhoto">${icon(ICONS.camera, 12)}品質写真は別の端末にあります</span>` : "",
   ].join("");
   return (
     `<div class="checkRow${mark ? " on" : ""}${naC ? " naC" : ""}" data-key="${esc(key)}">` +
@@ -3992,6 +4001,7 @@ async function saveCheckRec(rec) {
   rec.updatedAt = new Date().toISOString();
   siteCheckRecs[rec.itemId] = rec;
   await dbPut("checks", rec);
+  scheduleStatePush();
 }
 
 async function toggleMark(it, key) {
@@ -4702,11 +4712,212 @@ function initGas() {
     }
   });
   $("gasSyncBtn").addEventListener("click", () => syncGas(true));
+  if ($("stateSyncBtn")) $("stateSyncBtn").addEventListener("click", () => syncStates(true));
+  if ($("stateStatus") && getSetting("stateSyncAt")) $("stateStatus").textContent = `最後に同期：${fmtDateTime(getSetting("stateSyncAt"))}`;
   // 開いた時・画面に戻った時・3分ごと（開いている間）に受け取る。電波が戻ったら送り直す
   setTimeout(() => syncGas(), 2500);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && syncGas());
-  setInterval(() => document.visibilityState === "visible" && syncGas(), 3 * 60 * 1000);
+  setTimeout(() => syncStates(), 4000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      syncGas();
+      syncStates();
+    } else if (statePushTimer) {
+      // 画面から離れる時は、待っている分をすぐ送る
+      clearTimeout(statePushTimer);
+      statePushTimer = null;
+      syncStates();
+    }
+  });
+  setInterval(() => {
+    if (document.visibilityState === "visible") {
+      syncGas();
+      syncStates();
+    }
+  }, 3 * 60 * 1000);
   window.addEventListener("online", () => flushGas());
+}
+
+
+/* ---------- チェック記録の同期（GAS の states。写真は送らない） ----------
+   ・同じ人の別の端末（PC とスマホなど）：現場ごとのチェック記録を置き、項目ごとに新しい方を取り込む（外したチェックも、項目ごと新しい方になる）
+   ・同じ工事番号の他の人：チェックを付けた印だけを読み、「○○さんが確認済み」と表示する（自分のチェックにはしない＝育成の記録は人ごとのまま）
+   開いた時・画面に戻った時・3分ごと・チェックを付けて少し後・「今すぐ同期」で動く。合言葉を入れた人だけ */
+const STATE_SENT_KEY = "genba-photo-state-sent"; // key → 最後に送った中身の印（同じなら送らない）
+const OTHERS_KEY = "genba-photo-others"; // key → [{ person, at: {itemId: {checkKey: 日時}} }]
+let othersByKey = {};
+try {
+  othersByKey = JSON.parse(localStorage.getItem(OTHERS_KEY) || "{}");
+} catch (e) {}
+let stateSyncing = false;
+let statePushTimer = null;
+
+function stateKeyOf(site) {
+  const k = normKoujiNo(site && site.koujiNo);
+  return k ? `k:${k}` : `s:${site.id}`;
+}
+function textSig(t) {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+  return `${t.length}:${h}`;
+}
+async function buildSiteState(site) {
+  const recs = await dbGetAll("checks", "siteId", site.id);
+  const photoKeys = {};
+  (await getSitePhotos(site.id)).filter(isRecordPhoto).forEach((p) => {
+    if (p.itemId && p.checkKey) (photoKeys[p.itemId] = photoKeys[p.itemId] || {})[p.checkKey] = 1;
+  });
+  const items = {};
+  let updated = "";
+  recs.forEach((r) => {
+    const m = {};
+    Object.entries(r.marks || {}).forEach(([k, v]) => (m[k] = (v && v.at) || ""));
+    const it = { u: r.updatedAt || "", m };
+    if (r.na) it.na = true;
+    if (r.naAt) it.naAt = r.naAt;
+    if (r.naChecks && Object.keys(r.naChecks).length) it.nc = r.naChecks;
+    if (r.noPhoto && Object.keys(r.noPhoto).length) it.np = r.noPhoto;
+    if (r.notes && r.notes.length) it.notes = r.notes;
+    if (photoKeys[r.itemId]) it.ph = Object.keys(photoKeys[r.itemId]);
+    items[r.itemId] = it;
+    if ((r.updatedAt || "") > updated) updated = r.updatedAt || "";
+  });
+  const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [] };
+  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items }) };
+}
+// 自分の記録を送る（中身が前回と同じ現場は送らない）
+async function pushStates(force = false) {
+  const sites = (await getSites()).filter((s) => !s.archived);
+  let sent = {};
+  try {
+    sent = JSON.parse(localStorage.getItem(STATE_SENT_KEY) || "{}");
+  } catch (e) {}
+  const list = [];
+  for (const site of sites) {
+    const st = await buildSiteState(site);
+    if (!st.updated_at) continue; // まだ何も付けていない現場
+    const sig = textSig(st.state);
+    if (!force && sent[st.key] === sig) continue;
+    list.push({ st, sig });
+  }
+  if (!list.length) return 0;
+  await gasCall({ action: "putStates", states: list.map((x) => x.st) });
+  list.forEach((x) => (sent[x.st.key] = x.sig));
+  try {
+    localStorage.setItem(STATE_SENT_KEY, JSON.stringify(sent));
+  } catch (e) {}
+  return list.length;
+}
+// 別の端末の自分の記録を、項目ごとに新しい方で取り込む
+async function mergeMine(site, state) {
+  const me = getSetting(USER_NAME_KEY);
+  const local = Object.fromEntries((await dbGetAll("checks", "siteId", site.id)).map((r) => [r.itemId, r]));
+  const changed = [];
+  Object.entries(state.items || {}).forEach(([itemId, it]) => {
+    const r = local[itemId];
+    const remoteU = it.u || "";
+    if (r && (r.updatedAt || "") >= remoteU) {
+      // 写真の有無だけは別の端末の分を覚えておく（表示用）
+      const ph = (it.ph || []).join("|");
+      if ((r.remotePhotos || []).join("|") !== ph) {
+        r.remotePhotos = it.ph || [];
+        changed.push(r);
+      }
+      return;
+    }
+    const rec = r || { key: `${site.id}|${itemId}`, siteId: site.id, itemId, na: false, marks: {} };
+    rec.marks = Object.fromEntries(Object.entries(it.m || {}).map(([k, at]) => [k, { at, by: me }]));
+    rec.na = !!it.na;
+    if (it.naAt) rec.naAt = it.naAt;
+    rec.naChecks = it.nc || {};
+    rec.noPhoto = it.np || {};
+    // メモは id でまとめる（どちらかにしか無いものは足す）
+    const notes = (rec.notes || []).slice();
+    (it.notes || []).forEach((n) => {
+      if (n && n.id && !notes.some((x) => x.id === n.id)) notes.push(n);
+    });
+    if (notes.length) rec.notes = notes.sort((a, b) => (a.at < b.at ? -1 : 1));
+    rec.remotePhotos = it.ph || [];
+    rec.updatedAt = remoteU; // 取り込んだ時刻にしない（送り返しの行ったり来たりを防ぐ）
+    changed.push(rec);
+  });
+  if (changed.length) await dbPutMany("checks", changed);
+  return changed.length;
+}
+async function syncStates(manual = false) {
+  if (!gasOn() || stateSyncing) return;
+  stateSyncing = true;
+  try {
+    const sites = (await getSites()).filter((s) => !s.archived);
+    const keyToSite = {};
+    sites.forEach((s) => (keyToSite[stateKeyOf(s)] = s));
+    const j = await gasCall({ action: "getStates", keys: Object.keys(keyToSite), mine: true });
+    let merged = 0;
+    let added = 0;
+    const others = {};
+    for (const x of j.states || []) {
+      let st = {};
+      try {
+        st = JSON.parse(x.state || "{}");
+      } catch (e) {
+        continue;
+      }
+      if (x.mine) {
+        let site = keyToSite[x.key];
+        // 別の端末にしか無い現場は、この端末にも作る（同じ現場の id のまま）
+        if (!site && st.site && st.site.id && !sites.some((s) => s.id === st.site.id)) {
+          const all = await getSites();
+          if (all.some((s) => s.id === st.site.id)) continue; // 完工などで外した現場は戻さない
+          site = { id: st.site.id, name: st.site.name, koujiNo: st.site.koujiNo, members: st.site.members || [], kind: st.site.kind || "", startGroup: st.site.startGroup || 0, createdAt: st.site.createdAt || new Date().toISOString(), archived: false, processes: [], lastReportEnd: null, pauses: st.site.pauses || [] };
+          await dbPut("sites", site);
+          keyToSite[x.key] = site;
+          added++;
+        }
+        if (site) merged += await mergeMine(site, st);
+      } else {
+        const at = {};
+        Object.entries(st.items || {}).forEach(([itemId, it]) => (at[itemId] = it.m || {}));
+        (others[x.key] = others[x.key] || []).push({ person: x.person, at });
+      }
+    }
+    othersByKey = others;
+    try {
+      localStorage.setItem(OTHERS_KEY, JSON.stringify(others));
+    } catch (e) {}
+    const sent = await pushStates(manual);
+    setSetting("stateSyncAt", new Date().toISOString());
+    if ($("stateStatus")) $("stateStatus").textContent = `最後に同期：${fmtDateTime(new Date().toISOString())}`;
+    if (merged || added) {
+      await refreshSites();
+      await loadSiteChecks();
+      rerenderCurrentView();
+    } else if (Object.keys(others).length && currentView === "groupView") {
+      rerenderCurrentView();
+    }
+    if (manual) toast(added ? `同期しました（別の端末の現場 ${added}件を追加）` : merged ? `同期しました（別の端末の記録を ${merged}項目 取り込み）` : sent ? "同期しました（この端末の記録を送りました）" : "同期しました（変わったところはありません）");
+  } catch (e) {
+    console.error(e);
+    if (manual) toast(e.message === "unauthorized" ? "合言葉が違うか、止められています" : "同期できませんでした（電波の良い所でもう一度）");
+  } finally {
+    stateSyncing = false;
+  }
+}
+// チェックを付けたら少し待ってから送る（続けて付ける間はまとめる）
+function scheduleStatePush() {
+  if (!gasOn()) return;
+  clearTimeout(statePushTimer);
+  statePushTimer = setTimeout(() => {
+    statePushTimer = null;
+    syncStates(); // 受け取ってから送る（別の端末の新しい分を先に取り込む）
+  }, 6000);
+}
+// 同じ現場の他の人が付けたチェック（新しい順）
+function othersMarked(itemId, key) {
+  const site = currentSite();
+  if (!site) return [];
+  return (othersByKey[stateKeyOf(site)] || [])
+    .map((o) => ({ person: o.person, at: (o.at[itemId] || {})[key] }))
+    .filter((x) => x.at)
+    .sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
 /* ---------- 上司からの返信（現場ナビ 見守りが Box の「返信」フォルダに書き出す genba-reply JSON） ---------- */
