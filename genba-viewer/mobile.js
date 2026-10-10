@@ -182,6 +182,46 @@ function renderMSite(key) {
   bindCommon(main);
 }
 
+// 使い方（PC・スマホの設定の一番上）。開くと中身が出る
+function helpCardHtml(mobile) {
+  const sec = (t, items) => `<details class="helpSec"><summary>${t}</summary><ul>${items.map((x) => `<li>${x}</li>`).join("")}</ul></details>`;
+  const common = [
+    sec("疑問・気づきに返す", [
+      "監督の疑問には「返信を送る」。監督の現場ナビにすぐ届きます。",
+      "気づきは<b>返信不要</b>です。見たら「確認した」を押すと、監督に「確認しました」と届きます。",
+      "新しい疑問が届くと、下のタブ（PC は左）の「疑問・気づき」に数が出ます。",
+    ]),
+    sec("進み具合の見方", [
+      "監督がチェックを付けると、週の報告を待たずに進み具合が変わります（監督が合言葉を入れている場合）。",
+      "「○月○日時点」と出るのが、その記録の日付です。",
+      "現場は<b>工事番号</b>でまとめています。工事番号が空の現場や、監督が合言葉を入れていない現場は、スマホには出ません。",
+    ]),
+  ];
+  const pcOnly = [
+    sec("最初の準備（PC）", [
+      "報告フォルダ（Box Drive の「社内報告」）を選んで「読み込む」。次からは「読み込む」だけです。",
+      "「新着をPCに通知する」を押すと、疑問が届いた時に PC に知らせが出ます。",
+      "「自分の班」で班員を選ぶと、班の現場だけが出ます（見せ方だけ。データは消えません）。",
+    ]),
+    sec("週の報告・写真", [
+      "「週の報告」で、済・未報告・休工が一目で分かります。お客様メールの材料も見られます。",
+      "写真を押すと大きく見られ、左右でめくれます。",
+    ]),
+    sec("班の打合せ", [
+      "現場を順にめくって、決めたことと宿題を残します。宿題は監督の現場ナビの「やること」に届きます。",
+      "次の打合せは「前回の宿題」から始められます。",
+    ]),
+  ];
+  const mobileOnly = [
+    sec("スマホで見られるもの", [
+      "現場ごとの進み具合（段階ごとのバー）と、最近の報告の要約（工程の様子・来週の予定・写真の枚数）。",
+      "写真そのものは出ません。写真は Box アプリの「社内報告」フォルダで見られます（ファイル名が 現場_工程_日付）。",
+      "週の報告の一覧・班の打合せ・写真の取り出しは、PC の見守りで。",
+    ]),
+  ];
+  return `<div class="card setCard helpCardV"><h2>使い方</h2>${(mobile ? [...mobileOnly, ...common] : [...pcOnly, ...common]).join("")}<p class="sub">分からないことは木村まで。</p></div>`;
+}
+
 function viewModeCardHtml() {
   const v = getLS("viewMode") || "auto";
   return (
@@ -203,6 +243,7 @@ function renderMSettings() {
   const main = $("main");
   main.innerHTML =
     `<section class="mHead"><h1>設定</h1></section>` +
+    helpCardHtml(true) +
     `<div class="card setCard"><h2>あなたの名前</h2><p class="sub">合言葉から自動で入ります。</p><div><b>${esc(getLS("name") || "（未設定）")}</b></div></div>` +
     gasCardHtml() +
     viewModeCardHtml() +
