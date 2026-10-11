@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 93;
+const APP_VERSION = 94;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "feature", text: "合言葉を入れている人は、週の報告と上司への知らせを、メールを使わずにアプリから直接 Box に送れるようになりました（「送信する」を押すだけ。宛先の貼り付けは要りません）。写真が多い時は、かかる時間の目安を出します。送れなかった時は、もう一度押すと今まで通りメールで送れます" },
   { date: "2026-10-11", type: "fix", text: "細かい点を直しました（自分で自分に返した「確認しました」が新着に出る、マニュアル受け取り中に案内の吹き出しが押せる、受け取りに失敗した時の説明が原因と合わない）" },
   { date: "2026-10-11", type: "fix", text: "「使い方」の「はじめに」を、合言葉 → マニュアルを受け取る、の順に直しました" },
   { date: "2026-10-10", type: "feature", text: "マニュアルを「合言葉で受け取る」ボタンで取り込めるようになりました（設定の「マニュアル」。Box でファイルを探して選ばなくて済みます。約30MB なので Wi-Fi で）" },
@@ -1038,8 +1039,94 @@ async function reportDirHandle(pick) {
   await dbPut("meta", { key: REPORT_DIR_KEY, handle: h });
   return h;
 }
-// 戻り値：{ how: "shared" } ／ { how: "saved", dir: フォルダ名 } ／ null（キャンセル・失敗）
+/* ---------- メールを使わずに Box へ届ける（合言葉のある iPhone）----------
+   1枚ずつ GAS に送り、そろったら GAS が Box「社内報告」のアップロード用アドレスへメールで届ける（送り先は GAS 側で固定）。
+   途中で切れても、同じファイルの並びなら続きから送る（どこまで送ったかは GAS が覚えている） */
+const GAS_UPLOAD_KEY = "genba-photo-gas-upload";
+let mailOnce = false; // GAS で送れなかった時、次の1回だけ今まで通りメールで送る
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+function isNetworkError(e) {
+  return e && (e.name === "AbortError" || e instanceof TypeError); // 返事が来なかった・つながらなかった
+}
+async function gasRetry(body, timeoutMs) {
+  for (let t = 0; ; t++) {
+    try {
+      return await gasCall(body, timeoutMs);
+    } catch (e) {
+      if (t >= 2 || !isNetworkError(e)) throw e;
+    }
+  }
+}
+async function deliverViaGas(files, title) {
+  const sig = files.map((f) => `${f.name}:${f.size}`).join("|");
+  let st = null;
+  try {
+    st = JSON.parse(localStorage.getItem(GAS_UPLOAD_KEY) || "null");
+  } catch (e) {
+    /* ignore */
+  }
+  if (!st || st.sig !== sig) st = { sig, uid: "" };
+  setProcessing(true, "Boxへ送る準備をしています...");
+  try {
+    const b = await gasRetry({ action: "boxBegin", uid: st.uid, title, names: files.map((f) => f.name), sizes: files.map((f) => f.size) }, 60000);
+    st.uid = b.uid;
+    localStorage.setItem(GAS_UPLOAD_KEY, JSON.stringify(st));
+    const have = new Set(b.have || []);
+    const put = async (i) => {
+      await gasRetry({ action: "boxPut", uid: st.uid, i, data: await blobToBase64(files[i]) }, 90000);
+    };
+    // 3枚ずつ並べて送る（1枚ごとに数秒かかるため）
+    const todo = files.map((f, i) => i).filter((i) => !have.has(i));
+    let done = files.length - todo.length;
+    const worker = async () => {
+      while (todo.length) {
+        const i = todo.shift();
+        await put(i);
+        done++;
+        setProcessing(true, `Boxへ送っています... ${done} / ${files.length}`);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    for (let round = 0; round < 2; round++) {
+      setProcessing(true, "Box に届けています...");
+      const r = await gasRetry({ action: "boxSend", uid: st.uid }, 300000);
+      if (!r.missing) {
+        localStorage.removeItem(GAS_UPLOAD_KEY);
+        return { how: "gas", mails: r.mails };
+      }
+      for (const i of r.missing) await put(i); // 届いていなかった分を送り直す
+    }
+    throw new Error("そろいませんでした");
+  } finally {
+    setProcessing(false);
+  }
+}
+// 戻り値：{ how: "shared" } ／ { how: "saved", dir: フォルダ名 } ／ { how: "gas" } ／ null（キャンセル・失敗）
 async function deliverToBox(files, title, email) {
+  if (!PC_SAVE && gasOn() && !mailOnce) {
+    try {
+      return await deliverViaGas(files, title);
+    } catch (e) {
+      console.error(e);
+      mailOnce = true;
+      alert(
+        (e.message === "unauthorized" ? "合言葉が違うか、止められています。" : isNetworkError(e) ? "電波が弱くて送れませんでした（送れた分は覚えています）。" : `送れませんでした（${e.message}）。`) +
+          "\n\nもう一度「送信する」を押すと、今まで通りメールで送る画面が開きます。電波の良い所に移ってから押すと、続きから送れる場合もあります。"
+      );
+      return null;
+    }
+  }
+  mailOnce = false;
+  return deliverByMailOrFolder(files, title, email);
+}
+async function deliverByMailOrFolder(files, title, email) {
   if (PC_SAVE) {
     try {
       const dir = await reportDirHandle(false);
@@ -1072,6 +1159,7 @@ async function deliverToBox(files, title, email) {
 }
 // 送れたかの確認（PC はもう保存できているので、保存先を見せて確かめるだけ）
 function confirmDelivered(res, after) {
+  if (res.how === "gas") return true; // アプリから直接届けたので、確かめるまでもない
   return res.how === "saved"
     ? confirm(`「${res.dir}」フォルダに保存しました（Box Drive が同期すると上司に届きます）。\n${after}`)
     : confirm(`メールを送れましたか？\n${after}`);
@@ -1079,6 +1167,8 @@ function confirmDelivered(res, after) {
 function boxSendNote() {
   return PC_SAVE
     ? "PC では、Box Drive の「社内報告」フォルダに直接保存します（初回だけフォルダを選びます）。"
+    : gasOn()
+    ? "アプリから直接 Box の「社内報告」に送ります（メールは使いません）。"
     : "共有画面でメールを選び、宛先に貼り付けて送ってください（宛先をコピーします）。";
 }
 function pickDirButton() {
@@ -2906,10 +2996,21 @@ async function sendToBox() {
       thumbs.appendChild(im);
     });
     body.appendChild(thumbs);
-    if (photoBytes > MAIL_WARN_BYTES) {
+    const viaGas = !PC_SAVE && gasOn();
+    const n = entries.length;
+    const warnMsg = viaGas
+      ? n > 80
+        ? `写真がとても多いです（${n}枚・送るのに${Math.ceil(n / 30)}分ほど）。送る写真を絞るか、Wi-Fi のある所で送ってください。`
+        : n > 40
+        ? `写真が多いので、送るのに${Math.ceil(n / 30)}分ほどかかります。Wi-Fi のある所で送るのがおすすめです。`
+        : ""
+      : !PC_SAVE && photoBytes > MAIL_WARN_BYTES
+      ? "メールの容量上限を超えるおそれがあります。枚数を減らすか、2回に分けて送ってください。"
+      : "";
+    if (warnMsg) {
       const warn = document.createElement("div");
       warn.className = "warnText";
-      warn.textContent = "メールの容量上限を超えるおそれがあります。枚数を減らすか、2回に分けて送ってください。";
+      warn.textContent = warnMsg;
       body.appendChild(warn);
     }
     // お客様向け（報告メールの材料）と上司向けを分けて書く。書きかけは現場に残す（金〜月に分けて書けるように）
@@ -2952,7 +3053,9 @@ async function sendToBox() {
     note.className = "mutedText";
     note.textContent = PC_SAVE
       ? "「保存する」を押すと、Box Drive の「社内報告」フォルダに報告と写真を直接保存します（初回だけフォルダを選びます）。Box Drive が同期すると上司に届きます。"
-      : "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。";
+      : gasOn()
+      ? "「送信する」を押すと、報告と写真をアプリから直接 Box の「社内報告」に送ります（メールは使いません）。送り終わるまで、アプリを開いたままにしてください。"
+      : "「送信する」を押すと宛先アドレスをコピーして共有画面を開きます。メールを選び、宛先に貼り付けて送信してください。（設定で合言葉を入れると、メールを使わずに送れます）";
     body.appendChild(note);
 
     body.appendChild(
