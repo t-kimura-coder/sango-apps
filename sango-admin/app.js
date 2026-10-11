@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -168,13 +168,15 @@ async function loadApiRecords(manual) {
   } finally { apiLoading = false; renderSync(); }
 }
 function renderSync() {
-  const el = $("syncInfo"); if (!el) return;
-  if (!S.api || S.demo) { el.textContent = ""; return; }
-  el.textContent = S.syncError ? "窓口につながりません" : S.syncedAt ? `自動更新 ${fmtTime(S.syncedAt)}` : "読み込み中…";
-  el.className = "syncInfo" + (S.syncError ? " bad" : "");
+  const text = !S.api || S.demo ? "" : S.syncError ? "窓口につながりません" : S.syncedAt ? `自動更新 ${fmtTime(S.syncedAt)}` : "読み込み中…";
+  ["syncInfo", "mSync"].forEach((id) => { const el = $(id); if (!el) return; el.textContent = text; el.className = "syncInfo" + (S.syncError && S.api && !S.demo ? " bad" : ""); });
 }
-/** 自動更新のあと、いま開いている画面を新しいデータで描き直す（入力中の詳細画面は触らない） */
 function refreshView() {
+  if (typeof MOBILE !== "undefined" && MOBILE) { // スマホ表示：入力中・開いている項目は、描き直さない
+    const n = route().name, ae = document.activeElement;
+    if (n === "r" || (ae && ae.id === "mQ") || (n === "insp" && document.querySelector("details[open]")) || n === "settings" || n === "help") return renderSync();
+    mobileRender(); return;
+  }
   const name = route().name;
   if (S.records.length && $("main").querySelector(".empty, .emptyBox") ) return render(); // 空表示のままだった画面を、症例が入ったら描き直す
   if (name === "list" && $("listBody")) { if (!$("sideExtra").contains(document.activeElement)) renderFilters(); renderListBody(); } // 左の選択欄を操作中は、作り直さない
@@ -366,6 +368,7 @@ function renderHeader() {
 let viewTok = 0;
 function render() {
   viewTok++;
+  if (typeof MOBILE !== "undefined" && MOBILE) { mobileRender(); return; } // スマホ表示（mobile.js）
   const r = route();
   document.querySelectorAll(".sideNav > a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name)));
   $("sideExtra").innerHTML = "";
@@ -600,16 +603,17 @@ function viewSettings(main) {
       <p><input id="apiToken" class="fSelect" type="password" placeholder="あなたの合言葉" value="${esc(S.api ? S.api.token : "")}" autocomplete="off"></p>
       <p><button class="btn primary" id="apiSave">つないで読み込む</button> ${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</p>
       <p class="note">${S.api ? (S.syncError ? `<span class="statusWarn">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="statusOk">つながっています</span>　最終更新 ${fmtDate(S.syncedAt)} ${fmtTime(S.syncedAt)}　症例 ${S.apiRecs.length}件` : "読み込み中…") : "未接続"}</p></div>
-    <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
+    ${typeof MOBILE !== "undefined" && MOBILE ? "" : `    <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
       <p class="note">過去履歴（過去履歴.json）や、メールでBoxに届いた報告が入っているフォルダ（Box Drive の「8.山郷サポート」）を選びます。窓口につないでいれば、新しい症例は窓口から入ります。</p>
       <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
       <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
-      ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>
+      ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>`}
     ${meAdmin() ? `<div class="panel"><h3>編集</h3><p><span class="statusOk">編集できます</span>　${esc(S.api.me.name)}さん（${esc(S.api.me.role)}）</p><p class="note">管理者の合言葉でつながっているので、金額・原因・メモを編集できます。ほかの管理者が整理した内容も、窓口で自動で合わさります（同じ項目は、新しい方が残ります）。記録には、あなたの名前が残ります。</p></div>` : `<div class="panel"><h3>編集モード</h3>
       <label><input type="checkbox" id="sEdit" ${canEdit() ? "checked" : ""}> このPCで金額・原因・メモを編集する</label>
       <p class="note">窓口につないでいない時（Boxのフォルダだけを使う時）の編集です。整理した内容は、選んだフォルダの「${ADMIN_FILE}」1ファイルに保存されます。</p>
       <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>`}
     ${S.api && !S.demo ? `<div class="panel"><h3>質問・要望・不具合</h3><p class="note">困ったこと、直してほしいことを、木村に送れます。</p><p><button class="btn" id="fbOpen">質問・要望を送る</button></p></div>` : ""}
+    ${typeof viewModePanelHtml === "function" ? viewModePanelHtml() : ""}
     <div class="panel"><h3>原因の分類</h3><p class="note">${CAUSES.join("・")}</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　症例のデータはこのアプリには含まれず、選んだフォルダから毎回読みます。</p></div></div>`;
   $("apiSave").onclick = async () => {
@@ -633,7 +637,8 @@ function viewSettings(main) {
     renderHeader(); viewSettings($("main")); fillIcons($("main"));
   };
   const off = $("apiOff"); if (off) off.onclick = () => { if (!confirm("窓口につなぐのをやめますか？（窓口の症例は、この画面から消えます。再びつなげば戻ります）")) return; setLS("api", ""); S.api = null; S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); rebuild(); renderSync(); viewSettings($("main")); fillIcons($("main")); };
-  $("sPick").onclick = pickFolder; $("sReload").onclick = reopenFolder; $("sDemo").onclick = startDemo;
+  if ($("sPick")) { $("sPick").onclick = pickFolder; $("sReload").onclick = reopenFolder; $("sDemo").onclick = startDemo; }
+  if (typeof wireViewMode === "function") wireViewMode();
   const fbo = $("fbOpen"); if (fbo) fbo.onclick = openFeedback;
   if ($("sEdit")) $("sEdit").onchange = (e) => { setLS("edit", e.target.checked ? "1" : "0"); renderHeader(); toast(e.target.checked ? "編集モードにしました" : "閲覧専用にしました"); };
   if ($("sName")) $("sName").onchange = (e) => setLS("name", e.target.value.trim());

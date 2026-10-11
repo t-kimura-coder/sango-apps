@@ -36,7 +36,7 @@ async function inspLoad() {
     IA.data = { meta: j.meta || { buildings: [], groups: [] }, items: j.items || [], logs: j.logs || [], at: Date.now() };
     IA.err = "";
     iaBadge();
-    if (route().name === "insp") viewInsp($("main"));
+    if (route().name === "insp" && !(typeof MOBILE !== "undefined" && MOBILE && document.querySelector("details[open]"))) viewInsp($("main"));
     return true;
   } catch (e) { IA.err = String((e && e.message) || e); if (route().name === "insp" && !IA.data) viewInsp($("main")); return false; } finally { IA.busy = false; }
 }
@@ -66,6 +66,7 @@ function iaBadge() {
 }
 
 function viewInsp(main) {
+  if (typeof MOBILE !== "undefined" && MOBILE) return mobileInsp(main); // スマホ表示（mobile.js）
   if (!S.api || S.demo) { main.innerHTML = `<div class="empty panel"><h3>点検は、窓口につながっている時に見られます</h3><p>設定の「窓口につなぐ」で、つないでください。</p></div>`; return; }
   if (!IA.data) {
     main.innerHTML = `<div class="empty panel"><h3>${IA.err ? "点検を読み込めませんでした" : "点検を読み込んでいます…"}</h3>${IA.err ? `<p>${esc(IA.err)}</p><p><button class="btn primary" id="iaRetry">もう一度読む</button></p>` : ""}</div>`;
