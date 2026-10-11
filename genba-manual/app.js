@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 104;
+const APP_VERSION = 105;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "工事番号の英字は大文字にそろえるようにしました（s26492 と入れても S26492 として扱います。同じ現場の人とのつながりが、打ち間違いで切れないように）" },
   { date: "2026-10-11", type: "feature", text: "同じ現場を担当する人同士で、現場の登録を共有できるようになりました（合言葉を入れた人）。他の人が登録した現場の「担当者」にあなたの苗字が入っていると、ホームの「やること」に出て、「追加する」で同じ現場名・工事番号のまま自分の現場にできます。自分で登録する時に、他の人がもう登録している工事番号を入れると、名前をそろえるか聞きます" },
   { date: "2026-10-11", type: "fix", text: "名前の見分けで、同じ苗字の別の人（「木村 考宏」と「木村 太郎」）を同じ人にしないようにしました" },
   { date: "2026-10-11", type: "fix", text: "現場を切り替えた時の不具合を直しました（電話・LINEのやりとりの書きかけが切り替えた先の現場に保存される、工程タブで切り替えると前の現場で見ていた項目が開く、同期の取り込みと重なると別の現場のチェックが混ざることがある）。自分の別の現場と同じ工事番号を入れた時は確かめるようにしました" },
@@ -1062,8 +1063,9 @@ function addMemberHistory(names) {
 function mySurname() {
   return (getSetting(USER_NAME_KEY) || "").trim().split(/[\s　]+/)[0] || "";
 }
+// 工事番号：全角→半角、空白を除き、英字は大文字にそろえる（s26492 と S26492 を同じ番号にする。S は新築の印）
 function normKoujiNo(s) {
-  return String(s || "").normalize("NFKC").replace(/\s/g, "");
+  return String(s || "").normalize("NFKC").replace(/\s/g, "").toUpperCase();
 }
 
 /* ---------- 現場の顔（完成イメージ・建物の種類） ---------- */
@@ -6972,6 +6974,15 @@ function init() {
   // 写真がブラウザの判断で消されないよう永続化を要求（ホーム画面追加時は通常許可される）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
+  // 前の版で小文字のまま登録した工事番号を、大文字にそろえておく
+  getSites().then(async (list) => {
+    for (const x of list) {
+      if (x.koujiNo && x.koujiNo !== normKoujiNo(x.koujiNo)) {
+        x.koujiNo = normKoujiNo(x.koujiNo);
+        await dbPut("sites", x);
+      }
+    }
+  });
   loadManualMeta().then(async () => {
     goDash();
     if (await checkPendingShot()) return;

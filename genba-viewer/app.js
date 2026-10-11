@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 48;
+const APP_VERSION = 49;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -129,7 +129,7 @@ function contactLine(n) {
 // 同じ現場を二人以上で担当していると、現場ナビ側では別々の現場として届く。工事番号があればそれでまとめる
 let koujiBySiteId = new Map(); // site_id → 工事番号（後から番号を入れた現場の、番号が無い頃の報告もまとめるため）
 function normKouji(v) {
-  return String(v || "").normalize("NFKC").replace(/\s/g, "");
+  return String(v || "").normalize("NFKC").replace(/\s/g, "").toUpperCase(); // 英字は大文字にそろえる（s と S を同じ番号に）
 }
 function siteKeyOf(r) {
   const no = normKouji(r.kouji_no) || (r.site_id && koujiBySiteId.get(r.site_id)) || "";
