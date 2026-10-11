@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -550,7 +550,30 @@ const STATUS_LABEL = { open: "未回答", replied: "返信済み", resolved: "�
 function normName(s) {
   return String(s || "").normalize("NFKC").replace(/\s/g, "");
 }
+// 合言葉の班で決まる見える範囲（GAS の myTeam）。上司は自分の班の人だけ（切り替え不可）。設計者・班が「全員」の人は今まで通り選べる
+// 来期に班が変わっても、GAS の users シートの「班」を直すだけで、次に開いた時から変わる
+function teamLock() {
+  try {
+    const t = JSON.parse(getLS("teamLock") || "null");
+    return t && !t.all && Array.isArray(t.members) ? t : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function loadTeamLock() {
+  try {
+    const j = await gasCall({ action: "myTeam" });
+    const before = getLS("teamLock") || "";
+    const now = JSON.stringify({ all: !!j.all, team: j.team || "", members: j.members || [] });
+    setLS("teamLock", now);
+    return before !== now;
+  } catch (e) {
+    return false; // つながらない時は、前に覚えた範囲のまま
+  }
+}
 function teamList() {
+  const lock = teamLock();
+  if (lock) return lock.members;
   try {
     return JSON.parse(getLS("team", "[]"));
   } catch (e) {
@@ -559,13 +582,19 @@ function teamList() {
 }
 function teamOn() {
   if (MOBILE) return false; // スマホは GAS が班で絞っているので、この端末の絞り込みは使わない
+  if (teamLock()) return true;
   return teamList().length > 0 && getLS("scope", "team") !== "all";
+}
+// 名前は苗字のことがある（合言葉の一覧は苗字、報告の差出人は現場ナビの氏名）ので、前の方が同じなら同じ人とみなす
+function sameName(a, b) {
+  const x = normName(a);
+  const y = normName(b);
+  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
 }
 function personInScope(p) {
   if (!teamOn()) return true;
   if (!p) return false;
-  const n = normName(p.name);
-  return teamList().some((x) => normName(x) === n) || (!!getLS("name") && normName(getLS("name")) === n); // 自分の現場も出す
+  return teamList().some((x) => sameName(x, p.name)) || (!!getLS("name") && sameName(getLS("name"), p.name)); // 自分の現場も出す
 }
 function noteInScope(n) {
   return personInScope(data.people.get(n.personKey));
@@ -578,6 +607,8 @@ function scopedNotes() {
 }
 // 画面の上の「班だけ／全員」
 function scopeBarHtml() {
+  const lock = teamLock();
+  if (lock) return `<div class="scopeBar"><span>${icon("people", 16)}${esc(lock.team)}（${lock.members.length}人）の報告を表示しています</span></div>`;
   const t = teamList();
   if (!t.length) return `<div class="scopeBar"><span>${icon("people", 16)}全員を表示しています</span><a href="#/settings" class="moreLink">自分の班を設定${icon("chevron", 14)}</a></div>`;
   const on = teamOn();
@@ -2242,6 +2273,12 @@ function extractCardHtml() {
 }
 
 function teamCardHtml() {
+  const lock = teamLock();
+  if (lock)
+    return (
+      `<div class="card setCard"><h2>自分の班</h2><p class="sub">合言葉の班（${esc(lock.team)}）の人の報告・疑問だけが出ます。班が変わった時は、木村が合言葉の一覧を直すと、次に開いた時から変わります。</p>` +
+      `<div class="teamGrid">${lock.members.map((n) => `<span class="teamItem">${avatar(n, 28)}<span>${esc(n)}</span></span>`).join("")}</div></div>`
+    );
   const team = teamList();
   const inTeam = (name) => team.some((x) => normName(x) === normName(name));
   // 届いている報告の監督＋前に選んだが今は報告が無い人
@@ -2444,6 +2481,14 @@ async function passGate() {
 async function init() {
   applyTheme(getLS("theme") || "auto");
   if (!(await passGate())) return;
+  // 見える範囲（合言葉の班）。初めての時は受け取ってから表示。2回目からは前に覚えた範囲ですぐ表示し、変わっていたら表示し直す
+  if (!getLS("teamLock")) await loadTeamLock();
+  else loadTeamLock().then((changed) => {
+    if (changed && typeof route === "function") {
+      updateNavBadge();
+      route();
+    }
+  });
   await loadGasStore();
   await loadStateCache();
   setTimeout(() => syncGas(), 3000);

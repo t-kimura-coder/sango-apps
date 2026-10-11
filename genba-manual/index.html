@@ -287,7 +287,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card">
       <div class="cardTitle">報告の送信先</div>
       <label class="fieldLabel" for="userNameInput">氏名</label>
-      <input id="userNameInput" class="sheetInput" placeholder="山郷 太郎" autocomplete="name">
+      <input id="userNameInput" class="sheetInput" placeholder="苗字（例：山郷）" autocomplete="family-name">
       <label class="fieldLabel" for="boxEmailInput">Boxのアップロード用メールアドレス</label>
       <div class="mutedText">送信時にこのアドレスをコピーするので、メールの宛先に貼り付けてください。</div>
       <div class="addrRow">
@@ -402,7 +402,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
-        <li>右上の歯車（設定）で<b>氏名</b>を登録します。報告の送り先（Box のアドレス）は最初から入っています。</li>
+        <li>右上の歯車（設定）で<b>氏名</b>を<b>苗字だけ</b>で登録します（例：木村。合言葉の名前と同じ書き方に）。報告の送り先（Box のアドレス）は最初から入っています。</li>
         <li>設定の「上司とのやりとり」に、木村から受け取った<b>合言葉</b>を入れて「つながるか確かめる」を押します（下の「合言葉でできること」）。氏名と合言葉の名前が違う時は知らせが出るので、合わせてください。</li>
         <li>設定の「マニュアル」で<b>合言葉で受け取る</b>を押します（約30MB・Wi-Fi で1〜2分）。マニュアルはこのiPhoneの中に保存されます。</li>
         <li>ホームの担当現場の<b>現場を追加</b>（「現場の管理」からも追加できます）から、現場名・<b>工事番号</b>（経理の番号）・<b>担当者</b>を登録します。工事番号は<b>なるべく入れてください</b>。二人で担当する現場は、全員が同じ工事番号を入れてください。</li>
@@ -535,6 +535,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=94"></script>
+<script src="app.js?v=95"></script>
 </body>
 </html>
