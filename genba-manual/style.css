@@ -1216,3 +1216,9 @@ img.imgBroken { visibility: hidden; }
 .req.soft::before { background: var(--color-text-sub); }
 .announceTabs { margin-bottom: var(--space-md); }
 .announceNewCount { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--color-wood, #a86b2d); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+
+/* チェックポイントが無い工程の「済みにする」 */
+.itemDoneBox { display: flex; flex-direction: column; gap: 10px; }
+.itemDoneBtn { min-height: 52px; border-radius: var(--radius-sm); border: 2px solid var(--color-primary); background: var(--color-surface); color: var(--color-primary); font-size: var(--fs-md, 17px); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.itemDoneBtn.on { background: var(--color-ok-soft); border-color: var(--color-ok-text); color: var(--color-ok-text); }
+.itemDoneMeta { font-size: var(--fs-xs); color: var(--color-text-muted); text-align: right; }

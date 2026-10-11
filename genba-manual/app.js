@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 112;
+const APP_VERSION = 113;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "チェックポイントが無い工程（2F建て方・左官工事など）に「済みにする」ボタンを付けました。押すと工程の並びに✓が付き、ホームの「次の項目」も先に進みます（もう一度押すと戻せます）" },
   { date: "2026-10-12", type: "fix", text: "マニュアルの新しい版を受け取った時に、「該当なし」「撮影不要」にしていたチェックが元に戻ってしまうのを直しました。この版を開いた時点で、元の「該当なし」「撮影不要」に戻ります" },
   { date: "2026-10-12", type: "feature", text: "メモを書く時に「マニュアルに反映してほしい」を選べるようになりました（合言葉を入れた人）。マニュアル改訂の担当に、改訂の候補として届きます。マニュアルの新しい版が出た時は、ホームの「やること」に出るようにしました" },
   { date: "2026-10-11", type: "feature", text: "お知らせを「新しい機能」と「直したこと」のタブに分けました。新しいお知らせの数は、タブの横に出ます" },
@@ -3019,7 +3020,7 @@ async function buildCheckSummary(siteId, start, end) {
         const def = checkDefOf(it, key);
         return {
           id: def && def.id ? def.id : "",
-          section: section === "prep" ? "事前準備" : "チェック",
+          section: section === "prep" ? "事前準備" : section === "done" ? "工程済み" : "チェック",
           text: def ? def.text : key.split("|").slice(1).join("|"),
           at: m.at,
           by: m.by || "",
@@ -3059,6 +3060,8 @@ async function buildCheckSummary(siteId, start, end) {
       const last = [...live.map((c) => rec.marks[checkKey("checks", c)].at), ...naChecks.map((x) => x.at)].sort().pop();
       if (inPeriod(last)) completedAt = last;
     }
+    const doneMark = noCheckItem(it) && !rec.na && rec.marks && rec.marks[ITEM_DONE_KEY];
+    if (doneMark && inPeriod(doneMark.at)) completedAt = doneMark.at;
     if (!checked.length && !na && !notes.length && !naChecks.length) continue;
     out.push({
       item_id: it.id,
@@ -3680,8 +3683,18 @@ function itemProgress(it) {
   // チェックを全部「なし」にした項目は、項目ごと該当なしと同じ扱い（完了とは分ける）
   return { done, total: checks.length, na: rec.na || (all.length > 0 && checks.length === 0) };
 }
+// チェックポイントが無い工程は「済みにする」で完了にする。印は marks に入れる（同期・報告に乗る。区分が "done" なので
+// チェックの数・見守りの進み具合には入らない）。マニュアル改訂でチェックが足されたら、普通のチェックに切り替わる
+const ITEM_DONE_KEY = "done|済み";
+function noCheckItem(it) {
+  return !!(it && it.text) && !((it.text.checks || []).length);
+}
 // チェックが全部済んだか（写真は別に数える）
 function itemDone(it) {
+  if (noCheckItem(it)) {
+    const rec = checkRecOf(it.id);
+    return !rec.na && !!(rec.marks && rec.marks[ITEM_DONE_KEY]);
+  }
   const pr = itemProgress(it);
   return !pr.na && pr.total > 0 && pr.done >= pr.total;
 }
@@ -3879,6 +3892,8 @@ async function renderItem() {
         `<button class="miniBtn" data-go="docs">原本を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
       html += tx.checks.length
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
+        : currentSiteId && !rec.na
+        ? itemDoneBoxHtml(it, rec)
         : `<div class="emptyNote">チェック項目はまだ登録されていません。</div>`;
       if (!currentSiteId) html += `<div class="hint">上の「今の現場」から現場を登録すると、チェックを記録できます。</div>`;
       // 該当なしにしている時は、チェックが押せない理由が分かるよう、チェックのすぐ下に出す
@@ -3930,6 +3945,8 @@ async function renderItem() {
   if ($("memoSection")) renderMemoSection(it);
   const na = box.querySelector("[data-na]");
   if (na) na.addEventListener("click", () => toggleNa(it));
+  const doneBtn = box.querySelector("[data-itemdone]");
+  if (doneBtn) doneBtn.addEventListener("click", () => toggleItemDone(it));
   const toReport = box.querySelector("[data-toreport]");
   if (toReport) toReport.addEventListener("click", () => openReportProc(it.cat));
   const go = box.querySelector("[data-go]");
@@ -4341,6 +4358,30 @@ async function toggleMark(it, key) {
   renderItemStrip(false);
   refreshCheckRow(it, key);
   toastIfCompleted(it, wasDone);
+}
+
+function itemDoneBoxHtml(it, rec) {
+  const m = rec.marks && rec.marks[ITEM_DONE_KEY];
+  const others = othersMarked(it.id, ITEM_DONE_KEY);
+  const meta = m ? `${fmtDateTime(m.at)}${m.by ? ` ${esc(m.by)}` : ""}` : others.length ? `${esc(others[0].person)}さんが済みにしています` : "";
+  return (
+    `<div class="itemDoneBox"><div class="emptyNote">この工程にはチェックポイントがありません。終わったら「済みにする」を押してください。</div>` +
+    `<button class="itemDoneBtn${m ? " on" : ""}" data-itemdone="1">${m ? `${icon(ICONS.check, 16, 3)}済み` : "済みにする"}</button>` +
+    (meta ? `<div class="itemDoneMeta">${meta}</div>` : "") +
+    `</div>`
+  );
+}
+async function toggleItemDone(it) {
+  if (!currentSiteId) return;
+  const rec = checkRecOf(it.id);
+  if (rec.marks[ITEM_DONE_KEY]) delete rec.marks[ITEM_DONE_KEY];
+  else rec.marks[ITEM_DONE_KEY] = { at: new Date().toISOString(), by: getSetting(USER_NAME_KEY) };
+  await saveCheckRec(rec);
+  renderItemStrip(false);
+  const y = window.scrollY;
+  await renderItem();
+  window.scrollTo(0, y);
+  if (itemDone(it)) toast(`「${it.name}」を済みにしました`);
 }
 
 async function toggleNa(it) {
@@ -6143,6 +6184,7 @@ async function renderDash() {
   const isDone = (it) => {
     const rec = siteCheckRecs[it.id];
     if (rec && rec.na) return true;
+    if (noCheckItem(it)) return !!(rec && rec.marks && rec.marks[ITEM_DONE_KEY]);
     const all = (it.text && it.text.checks) || [];
     const cs = all.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
     return !!rec && all.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
