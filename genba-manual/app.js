@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 99;
+const APP_VERSION = 100;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "ホームの「次に見る項目」が、今の現場ではなく別の現場で最後に見た項目になっていたのを直しました（今の現場で最後に見た項目から続きが出ます）" },
   { date: "2026-10-11", type: "fix", text: "「使い方」・設定・初回の案内の説明を、今の機能に合わせました（合言葉でできること、Box への直接送信、写真の通り道）" },
   { date: "2026-10-11", type: "fix", text: "Box へ直接送る時の不具合を直しました（1枚送れないと「送っています」の表示が消えなくなる、電波が切れた時に同じ報告が二重に届くことがある、途中から送り直すと古い報告が届くことがある）。名前の見分けを、林と林田のような別の人を同じにしないように直しました" },
   { date: "2026-10-11", type: "fix", text: "初めて開いた時の案内の文を、今の使い方に合わせました（送り先は最初から入っている、マニュアルは合言葉で受け取る、報告は「送信する」）" },
@@ -5940,7 +5941,9 @@ async function renderDash() {
   // ---- 次に見る項目（いつも出る） ----
   const nextBox = $("dashNext");
   nextBox.innerHTML = "";
-  const recent = manualMeta ? getRecent().map((r) => manualMeta.items.find((x) => x.id === r.id)).filter(Boolean) : [];
+  // 続きからは「今の現場」で最後に見ていた項目（現場ごとに覚えている。工程タブの「続きから」と同じ）
+  const lastId = manualMeta && currentSiteId ? lastItemOf(currentSiteId, "_last") : null;
+  const recent = lastId ? [manualMeta.items.find((x) => x.id === lastId)].filter(Boolean) : [];
   const rows = [];
   if (recent[0]) rows.push({ icon: ICONS.play, cls: "green", label: "続きから", it: recent[0] });
   const all = allManualItems();
