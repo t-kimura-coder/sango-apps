@@ -40,6 +40,9 @@ function mobileMergeSites() {
     let s = data.sites.get(sk);
     if (!s) data.sites.set(sk, (s = { key: sk, name: first.siteName || "（現場名なし）", koujiNo: normKouji(key.slice(2)), personKey: "", personName: "", persons: new Map(), members: new Set(), reports: [] }));
     if (first.siteName && (!s.name || s.name === "（現場名なし）")) s.name = first.siteName;
+    // 完工・休工：担当の全員が完工なら完工、誰かが休工中なら休工
+    s.completedAt = list.length && list.every((x) => x.completedAt) ? list.map((x) => x.completedAt).sort().pop() : null;
+    s.pausedAt = !s.completedAt && list.some((x) => x.paused) ? "1" : null;
     list.forEach((st) => {
       const has = [...s.persons.values()].some((n) => sameName(n, st.person));
       const pk = "name:" + st.person;
@@ -105,7 +108,7 @@ function renderMHome() {
       const lastAt = (latestOf(sts, "at") || {}).at || "";
       return { s, prog, open, lastAt, rep: mReportsOf(s)[0] };
     })
-    .sort((a, b) => b.open - a.open || (a.lastAt < b.lastAt ? 1 : -1));
+    .sort((a, b) => !!a.s.completedAt - !!b.s.completedAt || b.open - a.open || (a.lastAt < b.lastAt ? 1 : -1)); // 完工した現場は下に
   if (!rows.length) {
     main.innerHTML = html + emptyBox("まだ現場の記録が届いていません", "監督が現場ナビに合言葉を入れてチェックを付けると、ここに現場が出ます（工事番号のある現場だけ）。");
     bindCommon(main);
@@ -117,7 +120,7 @@ function renderMHome() {
       const sum = mSum(prog);
       return (
         `<button class="mCard" data-site="${esc(s.key)}">` +
-        `<div class="mCardTop"><b>${esc(s.name)}</b>${open ? `<span class="sBadge open">未回答 ${open}</span>` : ""}</div>` +
+        `<div class="mCardTop"><b>${esc(s.name)}</b>${s.completedAt ? `<span class="tag">完工</span>` : s.pausedAt ? `<span class="tag">休工中</span>` : ""}${open ? `<span class="sBadge open">未回答 ${open}</span>` : ""}</div>` +
         `<div class="mCardSub">${esc(mPersons(s).join("・"))}${s.koujiNo ? `　No.${esc(s.koujiNo)}` : ""}</div>` +
         (prog
           ? `<div class="mProg"><span class="mStage">${esc(st >= 0 ? prog[st].group : "－")}</span><span class="mBar"><i style="width:${sum.pct}%"></i></span><span class="mPct">${sum.pct}%</span></div>`
@@ -206,7 +209,7 @@ function helpCardHtml(mobile) {
     ]),
     sec("困った時（PC）", [
       "<b>週の報告が出ない</b>：監督が送り終えたか（合言葉あり＝現場ナビの「送信する」、無し＝メール）→ 設定の「読み直す」。Box Drive の同期に数分かかることもあります。他の班の人の報告は出ません。",
-      "<b>現場が出ない</b>：「自分の班」で絞っていないか。報告がまだ1回も無い現場は、チェックの記録（監督の合言葉と工事番号）が無いと出ません。",
+      "<b>現場が出ない</b>：自分の班の人の現場だけが出ます（班が違う時は木村へ）。報告がまだ1回も無い現場は、チェックの記録（監督の合言葉と工事番号）が無いと出ません。",
     ]),
     sec("週の報告・写真", [
       "「週の報告」で、済・未報告・休工が一目で分かります。お客様メールの材料も見られます。",

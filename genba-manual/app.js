@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 106;
+const APP_VERSION = 107;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "工事番号を必須にしました（分からない時は空のまま登録して、あとで入れられます）。現場を登録しただけでも、一緒に担当する人に「追加する」が出るようにしました。「使い方」の説明を直しました" },
   { date: "2026-10-11", type: "fix", text: "現場の共有の細かい点を直しました（完工した現場・自分の写しを消した現場・番号を変えた現場が、また候補に出る）" },
   { date: "2026-10-11", type: "fix", text: "工事番号の英字は大文字にそろえるようにしました（s26492 と入れても S26492 として扱います。同じ現場の人とのつながりが、打ち間違いで切れないように）" },
   { date: "2026-10-11", type: "feature", text: "同じ現場を担当する人同士で、現場の登録を共有できるようになりました（合言葉を入れた人）。他の人が登録した現場の「担当者」にあなたの苗字が入っていると、ホームの「やること」に出て、「追加する」で同じ現場名・工事番号のまま自分の現場にできます。自分で登録する時に、他の人がもう登録している工事番号を入れると、名前をそろえるか聞きます" },
@@ -1621,7 +1622,7 @@ function editSiteSheet(site) {
       });
       drawCover();
       drawKinds();
-      const noIn = field("工事番号", site && site.koujiNo, "例：2026-0143", "text", "なるべく");
+      const noIn = field("工事番号", site && site.koujiNo, "例：S26492", "text");
       const noHint = document.createElement("div");
       noHint.className = "mutedText";
       noHint.textContent = "経理で使っている番号";
@@ -1735,7 +1736,7 @@ function editSiteSheet(site) {
             noIn.focus();
             return;
           }
-          if (!normKoujiNo(noIn.value) && !confirm("工事番号が空です。このまま登録しますか？\n工事番号が無いと、上司のスマホの見守りに出ず、同じ現場の他の人のチェックともつながりません。\n（あとから「現場の管理」で入れられます）")) {
+          if (!normKoujiNo(noIn.value) && !confirm("工事番号は必須です（分からない時は木村に聞いてください）。\n工事番号が無いと、上司のスマホの見守りに出ず、同じ現場の人ともつながりません。\n\n今は空のまま登録して、あとで「現場の管理」から入れますか？")) {
             noIn.focus();
             return;
           }
@@ -5200,7 +5201,7 @@ async function pushStates(force = false) {
   const list = [];
   for (const site of sites) {
     const st = await buildSiteState(site);
-    if (!st.updated_at) continue; // まだ何も付けていない現場
+    if (!st.updated_at) st.updated_at = site.createdAt || new Date().toISOString(); // まだ何も付けていない現場も、登録したことを送る（共有の候補に出るように）
     const sig = textSig(st.state);
     if (!force && sent[st.key] === sig) continue;
     list.push({ st, sig });

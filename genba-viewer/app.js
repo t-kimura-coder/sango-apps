@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -252,8 +252,8 @@ function buildData(reports, replies, statuses = [], meetings = []) {
     .forEach((x) => {
       const site = data.sites.get(siteKeyOf(x));
       if (!site) return;
-      if (x.status === "completed") site.completedAt = x.at;
-      else if (x.status === "active") site.completedAt = null;
+      if (x.status === "completed") (site.doneBy = site.doneBy || new Map()).set(personKeyOf(x), x.at);
+      else if (x.status === "active") site.doneBy && site.doneBy.delete(personKeyOf(x));
       else if (x.status === "paused") site.pausedAt = x.at;
       else if (x.status === "resumed") site.pausedAt = null;
       else if (x.status === "week") (site.otherWeeks = site.otherWeeks || []).push({ week: x.week, kind: x.week_kind, memo: x.memo || "", at: x.at, personKey: personKeyOf(x) });
@@ -261,6 +261,12 @@ function buildData(reports, replies, statuses = [], meetings = []) {
       const p = data.people.get(personKeyOf(x));
       if (p) p.lastNoticeAt = !p.lastNoticeAt || x.at > p.lastNoticeAt ? x.at : p.lastNoticeAt;
     });
+  // 完工は、その現場の担当（報告した人）全員が完工の知らせを送った時だけ（1人だけ完工にしても、もう1人の分は見えるまま）
+  data.sites.forEach((site) => {
+    if (!site.doneBy || !site.doneBy.size) return void (site.completedAt = null);
+    const all = [...site.persons.keys()].every((pk) => site.doneBy.has(pk));
+    site.completedAt = all ? [...site.doneBy.values()].sort().pop() : null;
+  });
   applyGas();
 }
 
@@ -382,7 +388,7 @@ async function fetchStates() {
         if (st.deleted) return; // 消した・番号を変えた現場の古い記録
         const key = x.key.startsWith("k:") ? "k:" + normKouji(x.key.slice(2)) : x.key; // 前の版の小文字の番号も同じ現場に
         if (!next.has(key)) next.set(key, []);
-        next.get(key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [] });
+        next.get(key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [], completedAt: (st.site && st.site.completedAt) || "", paused: !!(st.site && (st.site.pauses || []).some((q) => q && q.from && !q.to)) });
       });
     }
     const changed = JSON.stringify([...next]) !== JSON.stringify([...stateCache]);
