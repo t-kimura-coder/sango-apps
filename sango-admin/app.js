@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -144,6 +144,7 @@ async function loadApiRecords(manual) {
     S.apiAdmin = mergeAdmins([j.admin && j.admin.items ? j.admin : { items: {} }, S.apiAdmin || { items: {} }]); // 手元で保存したばかりの値が、古い読み込み結果で巻き戻らないよう、項目ごとに新しい方を残す
     S.apiGetters = g;
     S.syncedAt = Date.now(); S.syncError = "";
+    if (typeof inspLoad === "function") inspLoad(); // 点検も、いっしょに最新にする
     rebuild();
     return true;
   } catch (e) {
@@ -356,10 +357,11 @@ function render() {
   $("sideExtra").innerHTML = "";
   const main = $("main");
   window.scrollTo(0, 0);
-  if (!S.records.length && r.name !== "settings") return viewEmpty(main);
+  if (!S.records.length && r.name !== "settings" && r.name !== "insp") return viewEmpty(main);
   if (r.name === "list") { renderFilters(); viewList(main); }
   else if (r.name === "r") viewDetail(main, r.id);
   else if (r.name === "summary") viewSummary(main);
+  else if (r.name === "insp") viewInsp(main);
   else if (r.name === "settings") viewSettings(main);
   else location.hash = "#/list";
   fillIcons(document.body);

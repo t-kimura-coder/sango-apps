@@ -206,3 +206,26 @@ main { padding: 16px 18px 40px; min-width: 0; }
 .chip.req { background: #f6e3c9; color: #8a5a12; }
 .chip.urgent { background: #f4d3cf; color: #a3322a; font-weight: 700; }
 .chip.doing { background: #d9e6f2; color: #2b5d8a; }
+
+/* 点検 */
+.navBadge { margin-left: 8px; background: #a3322a; color: #fff; border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 700; }
+.iaBanner { background: #f8e6d6; color: #a3322a; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: 15px; }
+.iaK.over .v { color: #a3322a; } .iaK.soon .v { color: #8a5a12; } .iaK.none .v { color: var(--muted); }
+.iaWrap { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+.iaTabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.iaTab { padding: 6px 14px; border-radius: 16px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-weight: 700; }
+.iaTab.on { background: var(--green); border-color: var(--green); color: #fff; }
+.iaNear { margin-left: auto; font-size: 13px; color: var(--muted); }
+.iaScroll { overflow-x: auto; }
+.iaTable { border-collapse: collapse; min-width: 100%; }
+.iaTable th, .iaTable td { border: 1px solid var(--line); padding: 6px 8px; text-align: center; font-size: 13px; white-space: nowrap; }
+.iaTable th { background: var(--green-soft); color: var(--green-deep); font-size: 12px; }
+.iaLegal { display: block; font-weight: 400; color: #8a5a12; }
+.iaB { text-align: left !important; font-weight: 700; background: #fff; }
+.iaC { cursor: pointer; font-weight: 700; } .iaC small { display: block; font-weight: 400; font-size: 11px; }
+.iaC.over { background: #f4d3cf; color: #a3322a; } .iaC.soon { background: #f6e3c9; color: #8a5a12; } .iaC.ok { background: #dcefe2; color: #2f6b45; } .iaC.none { background: #ebe8dc; color: var(--muted); font-weight: 400; }
+.iaC.na { background: repeating-linear-gradient(135deg, #fff, #fff 4px, #eee 4px, #eee 5px); cursor: default; }
+.iaC.sel { outline: 3px solid var(--green); outline-offset: -3px; }
+.iaSide h3 { margin: 0 0 4px; font-size: 16px; } .iaSide h4 { margin: 12px 0 6px; }
+.iaLog { border-top: 1px solid var(--line); padding: 8px 0; font-size: 13px; } .iaPh { padding: 3px 10px; font-size: 12px; margin: 4px 4px 0 0; }
+@media (max-width: 1100px) { .iaWrap { grid-template-columns: 1fr; } }
