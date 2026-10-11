@@ -61,15 +61,15 @@ function inspAddMonths(s, n) { // 月末をはみ出さないように足す（1
 /** 前回の実施日から、次の期限を出す。記録がなければ null（未実施） */
 function inspDue(item, last) {
   if (!last) return null;
-  const c = item.cycle || {};
-  if (c.type === "season" && Array.isArray(c.months) && c.months.length) {
+  const pl = inspPlanOf(item); // 予定月（管理者が変えた月があれば、それ）
+  if (pl.length < 12) { // 予定月が決まっている：前回の実施を含む予定月の、次の予定月の末日が期限
     const ly = inspParse(last).getFullYear(), ds = [];
-    for (let y = ly - 1; y <= ly + 3; y++) c.months.forEach((m) => ds.push(inspFmt(new Date(y, m, 0)))); // その月の末日
+    for (let y = ly - 1; y <= ly + 3; y++) pl.forEach((m) => ds.push(inspFmt(new Date(y, m, 0)))); // その月の末日
     ds.sort();
     const cover = ds.find((d) => d >= last);
     return ds.find((d) => d > cover) || null;
   }
-  return inspAddMonths(last, c.n || 12);
+  return inspAddMonths(last, 1); // 毎月
 }
 
 /* ---------- データ（端末の控え・窓口との同期） ---------- */

@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -617,6 +617,7 @@ function viewSettings(main) {
       <p class="note">窓口につないでいない時（Boxのフォルダだけを使う時）の編集です。整理した内容は、選んだフォルダの「${ADMIN_FILE}」1ファイルに保存されます。</p>
       <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>`}
     ${S.api && !S.demo ? `<div class="panel"><h3>質問・要望・不具合</h3><p class="note">困ったこと、直してほしいことを、木村に送れます。</p><p><button class="btn" id="fbOpen">質問・要望を送る</button></p></div>` : ""}
+    <div class="panel"><h3>更新</h3><p class="note">アプリの版：${APP_VERSION}　／　新しい機能や直しが出た時に押します（設定や合言葉は、消えません）。</p><p><button class="btn primary" id="upData">データを最新にする</button> <button class="btn" id="upApp">アプリ本体を最新にする（読み直し）</button></p><p class="note" id="upMsg"></p></div>
     ${typeof viewModePanelHtml === "function" ? viewModePanelHtml() : ""}
     <div class="panel"><h3>原因の分類</h3><p class="note">症例の詳細の「原因の分類」で、選べる項目です：${CAUSES.join("・")}。「整理」で原因を記録しておくと、まとめで、原因ごとの件数を集計できます（ここでは、変更できません。変えたい時は、木村に連絡してください）。</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　症例のデータはこのアプリには含まれず、選んだフォルダから毎回読みます。</p></div></div>`;
@@ -644,6 +645,10 @@ function viewSettings(main) {
   if ($("sPick")) { $("sPick").onclick = pickFolder; $("sReload").onclick = reopenFolder; $("sDemo").onclick = startDemo; }
   if (typeof wireViewMode === "function") wireViewMode();
   const fbo = $("fbOpen"); if (fbo) fbo.onclick = openFeedback;
+  if ($("upData")) {
+    $("upData").onclick = async () => { $("upData").disabled = true; $("upMsg").textContent = "最新にしています…"; try { if (S.api && !S.demo) { await loadApiRecords(true); if (typeof inspLoad === "function") await inspLoad(); $("upMsg").textContent = "最新にしました"; } else $("upMsg").textContent = "窓口につないでいません（合言葉を入れてください）"; } finally { $("upData").disabled = false; } };
+    $("upApp").onclick = () => { $("upApp").disabled = true; $("upMsg").textContent = "読み直しています…"; updateApp(); };
+  }
   if ($("sEdit")) $("sEdit").onchange = (e) => { setLS("edit", e.target.checked ? "1" : "0"); renderHeader(); toast(e.target.checked ? "編集モードにしました" : "閲覧専用にしました"); };
   if ($("sName")) $("sName").onchange = (e) => setLS("name", e.target.value.trim());
 }
@@ -685,4 +690,12 @@ function openFeedback() {
     try { await apiCall({ action: "feedback", kind, text, app: "admin", app_version: APP_VERSION }, 30000); root.remove(); toast("送りました。ありがとうございます"); }
     catch (e) { root.querySelector("#fbMsg").textContent = "送れませんでした：" + String((e && e.message) || e).slice(0, 60); root.querySelector("#fbSend").disabled = false; }
   };
+}
+
+/** アプリ本体を最新にする：古い保存（キャッシュ）を消して、読み直す。症例・設定・合言葉は消えない（端末のデータは、そのまま） */
+async function updateApp() {
+  try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (e) { /* 無ければ次へ */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch (e) { /* 無ければ次へ */ }
+  try { await fetch(location.pathname, { cache: "reload" }); } catch (e) { /* 電波がなければ、そのまま読み直す */ }
+  location.reload();
 }

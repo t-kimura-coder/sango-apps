@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -871,6 +871,7 @@ async function viewSettings(main) {
   const meta = await dbGet("meta", "master");
   const recs = await dbAll("records");
   main.innerHTML = `
+    ${updateSettingsHtml()}
     ${accountSettingsHtml(meta)}
     <div class="settingSec"><h3>報告の送り方</h3><div class="formCard"><div id="apiLine">${hasApi() ? `<span class="statusOk">自動で送信</span>（ボタン1つで、症例と写真が管理者に届きます）` : `<span class="statusWarn">メールで送信</span>（業者データに送り先が入っていません）`}</div>${hasApi() ? `<button class="btn wide" id="apiPing" style="margin-top:8px">つながるか確認する</button>` : ""}</div></div>
     ${getSetting("token") ? "" : `<div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>`}

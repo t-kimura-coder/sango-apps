@@ -81,6 +81,11 @@ function renderLogin(box) {
 }
 
 /* ---------- 設定の「あなたの合言葉」「業者データ」「質問・要望」 ---------- */
+function updateSettingsHtml() {
+  return `<div class="settingSec"><h3>更新</h3><div class="formCard"><div class="mutedText">アプリの版：${APP_VERSION}　／　新しい機能や直しが出た時に押します（症例や設定は、消えません）。</div>
+    <button class="btn btnPrimary" id="upData" style="width:100%;margin-top:8px">データを最新にする（業者データ・点検）</button>
+    <button class="btn" id="upApp" style="width:100%;margin-top:8px">アプリ本体を最新にする（読み直し）</button><div id="upMsg" class="mutedText" style="margin-top:6px"></div></div></div>`;
+}
 function accountSettingsHtml(meta) {
   const t = getSetting("token"), bad = !!getSetting("tokenBad");
   const status = t ? (bad ? `<span class="statusWarn">合言葉が使えなくなっています</span>（止められたか、出し直されました。新しい合言葉を入れてください）` : `<span class="statusOk">つながっています</span>　${esc(getSetting("name"))}さん（${esc(getSetting("role"))}）`) : `<span class="statusWarn">まだ入っていません</span>`;
@@ -95,12 +100,27 @@ function accountSettingsHtml(meta) {
     <div class="settingSec"><h3>業者データ</h3><div class="formCard">
       <div class="mutedText">${t ? "窓口から、自動で最新が入ります（アプリを開いた時）。" : "合言葉を入れると、自動で入ります。"}</div>
       <div style="margin:10px 0">${meta ? `<span class="statusOk">入っています</span>　版 ${esc(meta.data.version)}／建物${meta.data.buildings.length}／${fmtDate(meta.importedAt)}` : `<span class="statusWarn">まだ入っていません</span>`}</div>
-      ${t ? `<button class="btn" id="acPull" style="width:100%">いま最新にする</button>` : ""}
+      ${t ? `<button class="btn" id="acPull" style="width:100%">業者データを、いま最新にする</button>` : ""}
       <button class="btn" id="sImport" style="width:100%;margin-top:8px;font-weight:400">ファイルから取り込む（予備）</button></div></div>
     <div class="settingSec"><h3>質問・要望・不具合</h3><div class="formCard"><div class="mutedText">困ったこと、直してほしいことを、木村に送れます。</div>
       <button class="btn" id="fbOpen" style="width:100%;margin-top:8px" ${t ? "" : "disabled"}>質問・要望を送る</button></div></div>`;
 }
+function wireUpdateSettings() {
+  const d = $("upData"), a = $("upApp"), msg = $("upMsg");
+  d.onclick = async () => {
+    d.disabled = true; msg.textContent = "最新にしています…";
+    try {
+      const out = [];
+      if (getSetting("token")) { const ch = await masterPull(true); out.push(ch ? "業者データ：更新しました" : "業者データ：最新です"); }
+      if (typeof inspSync === "function" && (await inspSync())) out.push("点検：最新にしました");
+      msg.textContent = out.join("／") || "つながっていません（合言葉を入れてください）";
+      if (route().name === "settings") setTimeout(() => render(), 600);
+    } catch (e) { msg.textContent = "最新にできませんでした：" + String((e && e.message) || e).slice(0, 60); d.disabled = false; }
+  };
+  a.onclick = () => { a.disabled = true; msg.textContent = "読み直しています…"; updateApp(); };
+}
 function wireAccountSettings() {
+  if ($("upData")) wireUpdateSettings();
   $("acGo").onclick = async () => {
     const v = $("acToken").value; if (!v.trim()) { $("acMsg").textContent = "合言葉を入れてください"; return; }
     $("acGo").disabled = true; $("acMsg").textContent = "";
@@ -138,4 +158,12 @@ function renderNoMaster(box) {
     <button class="btn btnPrimary" id="nmPull">いま受け取る</button> <button class="btn" id="nmSet">設定を開く</button><div id="nmMsg" class="mutedText" style="margin-top:8px;color:var(--warn)"></div></div>`;
   $("nmSet").onclick = () => go("#/settings");
   $("nmPull").onclick = async () => { $("nmPull").disabled = true; try { await masterPull(true); render(); } catch (e) { $("nmMsg").textContent = /unauthorized/.test(e.message) ? "合言葉が使えなくなっています。設定で、新しい合言葉を入れてください" : "受け取れませんでした：" + String(e.message).slice(0, 60); $("nmPull").disabled = false; } };
+}
+
+/** アプリ本体を最新にする：古い保存（キャッシュ）を消して、読み直す。症例・設定・合言葉は消えない（端末のデータは、そのまま） */
+async function updateApp() {
+  try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (e) { /* 無ければ次へ */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch (e) { /* 無ければ次へ */ }
+  try { await fetch(location.pathname, { cache: "reload" }); } catch (e) { /* 電波がなければ、そのまま読み直す */ }
+  location.reload();
 }

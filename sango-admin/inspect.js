@@ -17,15 +17,15 @@ function iaAddMonths(s, n) {
 }
 function iaDue(item, last) { // 前回の実施日から次の期限（リーダー用アプリと同じ計算）。記録がなければ null
   if (!last) return null;
-  const c = item.cycle || {};
-  if (c.type === "season" && Array.isArray(c.months) && c.months.length) {
+  const pl = iaPlanOf(item); // 予定月（管理者が変えた月があれば、それ）
+  if (pl.length < 12) { // 予定月が決まっている：前回の実施を含む予定月の、次の予定月の末日が期限
     const ly = iaParse(last).getFullYear(), ds = [];
-    for (let y = ly - 1; y <= ly + 3; y++) c.months.forEach((m) => ds.push(iaFmt(new Date(y, m, 0))));
+    for (let y = ly - 1; y <= ly + 3; y++) pl.forEach((m) => ds.push(iaFmt(new Date(y, m, 0))));
     ds.sort();
     const cover = ds.find((d) => d >= last);
     return ds.find((d) => d > cover) || null;
   }
-  return iaAddMonths(last, c.n || 12);
+  return iaAddMonths(last, 1); // 毎月
 }
 
 async function inspLoad() {
@@ -74,7 +74,7 @@ function viewInsp(main) {
     if (!IA.err) inspLoad();
     return;
   }
-  if (IA.mode === "plan") { main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}${iaPlanMatrixHtml()}`; iaWireMode(main, () => viewInsp(main)); return; }
+  if (IA.mode === "plan") { main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}${iaPlanMatrixHtml()}`; iaWireMode(main, () => viewInsp(main)); main.querySelectorAll("[data-pe]").forEach((b) => (b.onclick = () => iaPlanEditor(b.dataset.pe))); return; }
   const all = iaCells(), today = iaToday();
   const over = all.filter((c) => c.st === "over").length, soon = all.filter((c) => c.st === "soon").length, none = all.filter((c) => c.st === "none").length;
   const ym = today.slice(0, 7), doneMonth = IA.data.logs.filter((l) => l.done_on.slice(0, 7) === ym && l.result !== "pending").length;
@@ -144,7 +144,7 @@ function iaPlanMatrixHtml() {
   const { months, items } = iaPlanModel();
   const groups = (IA.data.meta.groups || []).filter((g) => items.some((x) => x.it.group === g.id));
   const head = `<tr><th class="iaPI">項目</th>${months.map((mo) => `<th class="${mo.now ? "iaNow" : ""}">${mo.m}月${mo.y !== months[0].y && mo.m === 1 ? `<small>${mo.y}</small>` : ""}</th>`).join("")}</tr>`;
-  const body = groups.map((g) => `<tr><td class="iaGrp" colspan="13">${esc(g.name)}</td></tr>` + items.filter((x) => x.it.group === g.id).map((x) => `<tr><td class="iaPI" title="${esc(x.bl.join("・"))}"><b>${esc(x.it.title)}</b>${x.it.legal ? `<small class="iaLegal">法定</small>` : ""}<small>${x.bl.length >= 6 ? `全${x.bl.length}棟` : esc(x.bl.join("・"))}</small></td>${x.cells.map((c, i) => (c ? `<td class="iaPC ${c.st}${months[i].now ? " iaNow" : ""}">${c.st === "done" ? "✓" : c.st === "part" ? `${c.done}/${c.total}` : "●"}</td>` : `<td class="${months[i].now ? "iaNow" : ""}"></td>`)).join("")}</tr>`).join("")).join("");
+  const body = groups.map((g) => `<tr><td class="iaGrp" colspan="13">${esc(g.name)}</td></tr>` + items.filter((x) => x.it.group === g.id).map((x) => `<tr><td class="iaPI" title="${esc(x.bl.join("・"))}"><b>${esc(x.it.title)}</b>${x.it.legal ? `<small class="iaLegal">法定</small>` : ""}<small>${x.bl.length >= 6 ? `全${x.bl.length}棟` : esc(x.bl.join("・"))}</small>${meAdmin() ? `<button class="iaEdit" data-pe="${esc(x.it.id)}">予定月を変える${x.it.plan_custom ? "（変更済み）" : ""}</button>` : x.it.plan_custom ? `<small>予定月：変更済み</small>` : ""}</td>${x.cells.map((c, i) => (c ? `<td class="iaPC ${c.st}${months[i].now ? " iaNow" : ""}">${c.st === "done" ? "✓" : c.st === "part" ? `${c.done}/${c.total}` : "●"}</td>` : `<td class="${months[i].now ? "iaNow" : ""}"></td>`)).join("")}</tr>`).join("")).join("");
   return `<div class="panel"><div class="note" style="margin-bottom:8px">「標準の予定月」です（実際の期限は、前回の実施日から計算され、「期限の一覧」に出ます）。●＝予定、✓＝その月に全部の建物で記録あり、数字＝一部の建物だけ記録あり。毎月のものは、全部の月に●が並びます。</div><div class="iaScroll"><table class="iaTable iaPlan">${head}${body}</table></div></div>`;
 }
 /** スマホ：月ごとの一覧（毎月のものは、まとめて1行） */
@@ -160,3 +160,26 @@ function iaPlanListHtml() {
 }
 const iaModeToggle = (cls) => `<div class="${cls}"><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "list" ? " on" : ""}" data-iamode="list">期限の一覧</button><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "plan" ? " on" : ""}" data-iamode="plan">年間予定</button></div>`;
 function iaWireMode(root, redraw) { root.querySelectorAll("[data-iamode]").forEach((b) => (b.onclick = () => { IA.mode = b.dataset.iamode; redraw(); })); }
+
+/** 予定月の変更（管理者）：12か月のチェック。窓口に保存され、リーダーにも・期限の計算にも反映される */
+function iaPlanEditor(itemId) {
+  const it = IA.data.items.find((x) => x.id === itemId); if (!it) return;
+  const cur = new Set(iaPlanOf(it)), def = it.plan_default || [];
+  const root = document.createElement("div"); root.className = "fbBack";
+  root.innerHTML = `<div class="fbBox"><h3>予定月を変える</h3><p><b>${esc(it.title)}</b></p>
+    <div class="iaMonths">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => `<label class="iaMonth"><input type="checkbox" value="${m}" ${cur.has(m) ? "checked" : ""}>${m}月</label>`).join("")}</div>
+    <p class="note">チェックした月が、その点検の予定月です（期限は、その月の末日）。12か月すべてにすると「毎月」になります。標準：${def.length === 12 ? "毎月" : def.map((m) => m + "月").join("・")}</p><p id="peMsg" class="note" style="color:#b4531c"></p>
+    <p><button class="btn primary" id="peSave">保存</button> ${it.plan_custom ? `<button class="btn" id="peReset">標準に戻す</button> ` : ""}<button class="btn" id="peNo">やめる</button></p></div>`;
+  document.body.appendChild(root);
+  const done = async (plan) => {
+    root.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    try {
+      const j = await apiCall({ action: "inspectPlanSave", item_id: itemId, plan }, 30000);
+      it.plan = j.result.plan; it.plan_custom = j.result.custom; root.remove(); toast(plan ? "予定月を保存しました" : "標準に戻しました");
+      if (route().name === "insp") viewInsp($("main"));
+    } catch (e) { root.querySelector("#peMsg").textContent = "保存できませんでした：" + String((e && e.message) || e).slice(0, 60); root.querySelectorAll("button").forEach((b) => (b.disabled = false)); }
+  };
+  root.querySelector("#peNo").onclick = () => root.remove();
+  root.querySelector("#peSave").onclick = () => { const ms = [...root.querySelectorAll(".iaMonth input:checked")].map((x) => +x.value); if (!ms.length) { root.querySelector("#peMsg").textContent = "1か月以上、選んでください"; return; } done(ms); };
+  const rs = root.querySelector("#peReset"); if (rs) rs.onclick = () => done(null);
+}

@@ -274,3 +274,6 @@ body.mobileMode .settingBox { max-width: none; }
 .iaPC.todo { color: #8a5a12; } .iaPC.done { color: #2f6b45; background: #dcefe2; } .iaPC.part { color: #2f6b45; background: #eef6e8; font-size: 12px; }
 .iaNowBox { background: #fbf3df; }
 .mBox .tag { padding: 1px 6px; border-radius: 8px; font-size: 11px; }
+
+.iaEdit { display: block; margin-top: 4px; padding: 2px 8px; font-size: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--green-deep); cursor: pointer; }
+.iaMonths { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; } .iaMonth { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 14px; }
