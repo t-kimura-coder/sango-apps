@@ -306,7 +306,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     </div>
     <div class="card">
       <div class="cardTitle">上司とのやりとり（すぐ届ける）</div>
-      <div class="mutedText">合言葉を入れると、疑問・やりとりが週の報告を待たずに上司に届き、上司からの返信と宿題も開いた時に自動で受け取ります（文字だけ。写真はこれまで通り報告で）。チェックの記録の同期（下の「チェックの同期」）にも使います。合言葉は木村からもらってください。</div>
+      <div class="mutedText">合言葉を入れると、疑問・やりとりが週の報告を待たずに上司に届き、上司からの返信と宿題も開いた時に自動で受け取ります（文字だけ。写真はこれまで通り報告で）。チェックの記録の同期（下の「チェックの同期」）、マニュアルの受け取り、週の報告を Box へ直接送ることにも使います（詳しくは使い方の「合言葉でできること」）。合言葉は木村からもらってください。</div>
       <input id="gasTokenInput" class="sheetInput" type="password" placeholder="合言葉" autocomplete="off">
       <div class="btnRow"><button id="gasCheckBtn" class="btn btnOutline" type="button">つながるか確かめる</button><button id="gasSyncBtn" class="btn btnOutline" type="button">今すぐ受け取る</button></div>
       <div id="gasStatus" class="mutedText"></div>
@@ -329,7 +329,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     </div>
     <div class="card">
       <div class="cardTitle">バックアップ</div>
-      <div class="mutedText">機種変更や故障に備えて、このiPhoneの中のデータを書き出します。マニュアルはBoxから取り込み直せるので含めません。</div>
+      <div class="mutedText">機種変更や故障に備えて、このiPhoneの中のデータを書き出します。マニュアルは「合言葉で受け取る」（またはBoxのファイル）で取り込み直せるので含めません。</div>
       <label class="checkOpt"><input type="checkbox" id="bkSites" checked>登録情報（現場・報告の記録・設定）</label>
       <label class="checkOpt"><input type="checkbox" id="bkChecks" checked>チェックの記録</label>
       <label class="checkOpt"><input type="checkbox" id="bkPhotos">写真（品質写真・報告写真）</label>
@@ -406,8 +406,8 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
-        <li>右上の歯車（設定）で<b>苗字</b>と名前を登録します。チェックや上司とのやりとりは苗字で見分けます。報告の送り先（Box のアドレス）は最初から入っています。</li>
-        <li>設定の「上司とのやりとり」に、木村から受け取った<b>合言葉</b>を入れて「つながるか確かめる」を押します（下の「合言葉でできること」）。氏名と合言葉の名前が違う時は知らせが出るので、合わせてください。</li>
+        <li>右上の歯車（設定）で<b>苗字</b>（名前は任意）を登録します。チェックや上司とのやりとりは苗字で見分けます。報告の送り先（Box のアドレス）は最初から入っています。</li>
+        <li>設定の「上司とのやりとり」に、木村から受け取った<b>合言葉</b>を入れて「つながるか確かめる」を押します（下の「合言葉でできること」）。苗字と合言葉の名前が違う時は知らせが出るので、合わせてください。</li>
         <li>設定の「マニュアル」で<b>合言葉で受け取る</b>を押します（約30MB・Wi-Fi で1〜2分）。マニュアルはこのiPhoneの中に保存されます。</li>
         <li>ホームの担当現場の<b>現場を追加</b>（「現場の管理」からも追加できます）から、現場名・<b>工事番号</b>（経理の番号）・<b>担当者</b>を登録します。工事番号は<b>なるべく入れてください</b>。二人で担当する現場は、全員が同じ工事番号を入れてください。</li>
         <li>途中から担当する現場は、「記録を始めた段階」を選びます。それより前は「導入前」として数えません。</li>
@@ -419,7 +419,9 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
         <li><b>やりとりがすぐ届く</b>：疑問・やりとりは上司にすぐ届き、上司からの返信・宿題は開いた時に自動で届きます。</li>
         <li><b>チェックの同期</b>：同じ人の PC とスマホで、チェックの記録がそろいます。同じ現場（同じ工事番号）の他の人が付けたチェックには「○○さんが確認済み」と出ます（自分のチェックにはなりません）。</li>
         <li><b>上司のスマホに届く</b>：進み具合と、最近の報告の要約（写真は除く）が、上司のスマホの見守りに出ます。</li>
-        <li>合言葉が無くてもアプリは使えますが、この3つが動きません。人に教えないでください。</li>
+        <li><b>マニュアルを受け取る</b>：設定の「合言葉で受け取る」で取り込めます（Box でファイルを探さなくて済みます）。</li>
+        <li><b>報告を Box へ直接送る</b>：週の報告と上司への知らせが「送信する」だけで届きます（メールを使いません）。</li>
+        <li>合言葉が無くてもアプリは使えますが、この5つが使えません（報告はメールで送ります）。人に教えないでください。</li>
       </ul>
     </div>
     <div class="card helpCard">
@@ -457,6 +459,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
         <li>「報告」タブで工程を開き、<b>送る写真</b>を選びます（「全部選ぶ」や、指でなぞってまとめて選べます）。</li>
         <li>工程のページの<b>今週のこの工程</b>で「完了・一部完了・作業中」と一言を入れると、お客様への報告メールの材料になります（任意）。送信の画面では「写真以外で今週やったこと」「来週の予定・お客様への連絡」と、上司へのメモを分けて書けます。AI でメールの下書きを作る仕組みを試験中です。下書きは、お客様に送る前に必ず人が読んで直します。書きかけは残るので、金〜月に分けて書いても大丈夫です。</li>
         <li><b>送信する</b>を押すと、合言葉を入れている人は、アプリから直接 Box に送られます（メールは使いません。送り終わるまでアプリを開いたままに）。送った写真が報告済みになります（選ばなかった写真は次の報告に残ります）。合言葉が無い人は、宛先がコピーされるので、メールを選び、宛先に貼り付けて送り、「送れましたか？」で OK を押します。</li>
+        <li>写真が40枚を超えると、送るのにかかる時間の目安が出ます（30枚で約1分）。Wi-Fi のある所で送ると安心です。途中で送れなかった時は、もう一度「送信する」を押すと、今まで通りメールで送る画面が開きます。</li>
         <li>PC（Edge・Chrome）で開いた時は、共有画面の代わりに Box Drive の「社内報告」フォルダへ直接保存します（初回だけフォルダを選びます）。</li>
         <li>アプリの外で報告した週や、自分は担当しない週は、「報告済みにする」で<b>アプリ外で報告した</b>・<b>今週は報告なし</b>を選びます。上司にもその場で知らせられます。</li>
       </ol>
@@ -473,14 +476,14 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="helpStep">上司への届き方</div>
       <ul class="helpList">
         <li><b>すぐ届く</b>（合言葉）：疑問・やりとり・書き足し、チェックの記録と進み具合、報告の要約。</li>
-        <li><b>Box で届く</b>（週の報告と同じ）：写真、休工・再開・完工・報告なしの知らせ。</li>
-        <li>「届いていない」と言われたら：すぐ届く方は、設定の「今すぐ同期」と合言葉の「つながるか確かめる」を。Box の方は、メールを送ったかを確かめてください。</li>
+        <li><b>Box で届く</b>（週の報告と同じ）：写真、休工・再開・完工・報告なしの知らせ。合言葉があればアプリから直接、無ければメールで届きます。</li>
+        <li>「届いていない」と言われたら：すぐ届く方は、設定の「今すぐ同期」と合言葉の「つながるか確かめる」を。Box の方は、合言葉がある人は「送信する」が最後まで終わったか、無い人はメールを送ったかを確かめてください。</li>
       </ul>
     </div>
     <div class="card helpCard">
       <div class="helpStep">データについて</div>
       <ul class="helpList">
-        <li><b>写真とマニュアル</b>は、このiPhoneの中だけに保存されます（同期しません）。機種変更や故障に備えて、<b>月に1回くらい</b>、設定の「バックアップ」で写真も含めて書き出しておいてください（ファイルアプリの Box などに保存）。週の報告で送った写真は Box にも残ります。</li>
+        <li><b>写真とマニュアル</b>は、このiPhoneの中だけに保存されます（同期しません）。合言葉で報告を送る時は、写真が会社の Google を一時的に通り、Box に届けたらすぐ消えます。機種変更や故障に備えて、<b>月に1回くらい</b>、設定の「バックアップ」で写真も含めて書き出しておいてください（ファイルアプリの Box などに保存）。週の報告で送った写真は Box にも残ります。</li>
         <li><b>チェックの記録・メモ</b>は、合言葉を入れていれば会社の Google にも同期されます。PC で開いても同じ記録が見られます（写真は見られません）。</li>
         <li>使っている容量は、設定の「保存容量」で現場ごとに見られます。写真1枚は約0.35MBです。</li>
       </ul>
@@ -539,6 +542,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=98"></script>
+<script src="app.js?v=99"></script>
 </body>
 </html>
