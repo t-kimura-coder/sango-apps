@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 113;
+const APP_VERSION = 114;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "fix", text: "細かい点を直しました（古いバックアップを戻した時に「該当なし」にしたチェックが付き直ることがある、「済み」にした工程を該当なしにする時の確認の文、マニュアル改訂でチェックが足された工程に「済み」の印が残る）" },
   { date: "2026-10-12", type: "feature", text: "チェックポイントが無い工程（2F建て方・左官工事など）に「済みにする」ボタンを付けました。押すと工程の並びに✓が付き、ホームの「次の項目」も先に進みます（もう一度押すと戻せます）" },
   { date: "2026-10-12", type: "fix", text: "マニュアルの新しい版を受け取った時に、「該当なし」「撮影不要」にしていたチェックが元に戻ってしまうのを直しました。この版を開いた時点で、元の「該当なし」「撮影不要」に戻ります" },
   { date: "2026-10-12", type: "feature", text: "メモを書く時に「マニュアルに反映してほしい」を選べるようになりました（合言葉を入れた人）。マニュアル改訂の担当に、改訂の候補として届きます。マニュアルの新しい版が出た時は、ホームの「やること」に出るようにしました" },
@@ -4070,9 +4071,12 @@ function checkTextOf(itemId, key) {
 // （チェックだけでなく、該当なし・撮影不要・別の端末の写真の印も移す。版の印に "|2" を付けて、前の移し替えで漏れた分も移し直す）
 const KEY_MIGRATED_KEY = "genba-photo-checkkey-migrated";
 let keyUpgradeMap = {}; // itemId → { 古い鍵: 新しい鍵 }
+let itemsWithChecks = new Set(); // チェックポイントがある項目（「済み」の印が要らない）
 function buildKeyUpgradeMap() {
   const map = {};
+  itemsWithChecks = new Set();
   ((manualMeta && manualMeta.items) || []).forEach((it) => {
+    if (!noCheckItem(it) && it.text) itemsWithChecks.add(it.id);
     const m = {};
     ["checks", "prep"].forEach((sec) =>
       ((it.text && it.text[sec]) || []).forEach((c) => {
@@ -4105,6 +4109,14 @@ function upgradeRecKeys(rec) {
   });
   if (Array.isArray(rec.remotePhotos) && rec.remotePhotos.some((k) => m[k])) {
     rec.remotePhotos = [...new Set(rec.remotePhotos.map((k) => m[k] || k))];
+    changed = true;
+  }
+  if (changed && rec.naChecks && rec.marks)
+    Object.entries(rec.naChecks).forEach(([k, v]) => {
+      if (v && !v.off && rec.marks[k] && (rec.marks[k].at || "") < (v.at || "")) delete rec.marks[k];
+    });
+  if (itemsWithChecks.has(rec.itemId) && rec.marks && rec.marks[ITEM_DONE_KEY]) {
+    delete rec.marks[ITEM_DONE_KEY];
     changed = true;
   }
   return changed;
@@ -4387,9 +4399,10 @@ async function toggleItemDone(it) {
 async function toggleNa(it) {
   const rec = checkRecOf(it.id);
   // 該当なしにする時は、付けていたチェックも外す（チェックが付いたまま灰色にならないように）
-  const marked = Object.keys(rec.marks || {}).length;
-  if (!rec.na && marked) {
-    if (!confirm(`付けていたチェック ${marked}件も外れます。\nこの現場では「該当なし」にしますか？`)) return;
+  const marked = Object.keys(rec.marks || {}).filter((k) => k !== ITEM_DONE_KEY).length;
+  const doneMarked = !!(rec.marks && rec.marks[ITEM_DONE_KEY]);
+  if (!rec.na && (marked || doneMarked)) {
+    if (!confirm(`${marked ? `付けていたチェック ${marked}件` : "「済み」の印"}も外れます。\nこの現場では「該当なし」にしますか？`)) return;
     rec.marks = {};
   }
   rec.na = !rec.na;
@@ -6492,6 +6505,9 @@ async function restoreFromFile(file, quiet) {
     }
     added.reports = await add("reports", data.reports, "id");
     if (data.checks && data.checks.length) {
+      // バックアップが古いマニュアルの時の鍵（区分|チェック文）を、今の鍵にそろえてから合わせる
+      buildKeyUpgradeMap();
+      data.checks.forEach(upgradeRecKeys);
       const current = Object.fromEntries((await dbGetAll("checks")).map((r) => [r.key, r]));
       const merged = data.checks.map((r) => {
         const cur = current[r.key];

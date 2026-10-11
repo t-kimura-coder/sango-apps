@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -964,7 +964,7 @@ function renderMeet(arg) {
   const weekReps = s.reports.filter((r) => reportWeekOf(r) === ctx.focus);
   const shownReps = weekReps.length ? weekReps : last ? [last] : [];
   const photos = shownReps.flatMap((r) => r.photos || []);
-  const checked = shownReps.reduce((t, r) => t + (r.checks || []).reduce((u, c) => u + (c.checked || []).length, 0), 0);
+  const checked = shownReps.reduce((t, r) => t + (r.checks || []).reduce((u, c) => u + (c.checked || []).filter((k) => k.section !== "工程済み").length, 0), 0);
   const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open" && noteInScope(n)).sort((a, b) => (a.at < b.at ? -1 : 1));
 
   html += scopeBarHtml();
@@ -2207,7 +2207,7 @@ function renderSite(key) {
     .map((r) => {
       const photos = r.photos || [];
       const rec = photos.filter((x) => x.kind === "record");
-      const checked = (r.checks || []).reduce((t, c) => t + (c.checked || []).length, 0);
+      const checked = (r.checks || []).reduce((t, c) => t + (c.checked || []).filter((k) => k.section !== "工程済み").length, 0);
       const completed = (r.checks || []).filter((c) => c.completed_at);
       const naChecks = (r.checks || []).flatMap((c) => (c.na_checks || []).map((x) => ({ x, c })));
       const thumbs = photos.slice(0, 4);
