@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const ART_V = 2; // 絵を差し替えたら上げる
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
@@ -249,12 +249,13 @@ async function renderInner() {
   if (r.name !== "new") form = null;
   const main = $("main");
   const back = $("backBtn"), title = $("topTitle"), brand = $("topBrand");
-  const showBack = r.name !== "home" && r.name !== "mine";
+  const showBack = r.name !== "home" && r.name !== "mine" && !(r.name === "insp" && !r.id);
   back.hidden = !showBack;
   brand.hidden = r.name !== "home";
   title.hidden = r.name === "home";
-  $("tabbar").hidden = r.name === "new" || r.name === "r";
-  document.querySelectorAll("#tabbar a").forEach((a) => a.classList.toggle("on", a.dataset.tab === (r.name === "mine" ? "mine" : r.name === "home" || r.name === "b" ? "home" : "")));
+  $("tabbar").hidden = r.name === "new" || r.name === "r" || (r.name === "insp" && !!r.id);
+  const ti = $("tabInsp"); if (ti) ti.hidden = !hasApi();
+  document.querySelectorAll("#tabbar a").forEach((a) => a.classList.toggle("on", a.dataset.tab === (r.name === "mine" ? "mine" : r.name === "insp" ? "insp" : r.name === "home" || r.name === "b" ? "home" : "")));
   main.innerHTML = "";
   window.scrollTo(0, 0);
   if (r.name === "home") await viewHome(main);
@@ -262,6 +263,7 @@ async function renderInner() {
   else if (r.name === "b") await viewBuilding(main, r.id);
   else if (r.name === "new") await viewForm(main, r);
   else if (r.name === "mine") await viewMine(main);
+  else if (r.name === "insp") await viewInspect(main, r);
   else if (r.name === "r") await viewDetail(main, r.id);
   else if (r.name === "settings") await viewSettings(main);
   else goReplace("#/home");
@@ -287,12 +289,13 @@ async function viewHome(main) {
     $("goSettings").onclick = () => go("#/settings");
     return;
   }
+  await inspEnsure();
   const recs = await dbAll("records");
   const count = {};
   recs.forEach((r) => { count[r.buildingId] = (count[r.buildingId] || 0) + 1; });
   const groups = [];
   master.buildings.forEach((b) => { let g = groups.find((x) => x.name === b.group); if (!g) groups.push((g = { name: b.group, list: [] })); g.list.push(b); });
-  main.innerHTML = hero + helpCard(false) + groups.map((g) => `
+  main.innerHTML = hero + helpCard(false) + inspBannerHtml() + groups.map((g) => `
     <div class="sectionHead"><h3>${esc(g.name)}</h3><span class="rule"></span><span class="count">${g.list.length}件</span></div>
     <div class="bldGrid">${g.list.map((b) => `
       <button class="bldCard" data-b="${esc(b.id)}">
@@ -313,10 +316,12 @@ async function viewBuilding(main, bid) {
   const b = bById(bid);
   if (!b) { goReplace("#/home"); return; }
   $("topTitle").textContent = b.name;
+  await inspEnsure();
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid).sort((a, c) => c.createdAt - a.createdAt);
   main.innerHTML = `
     <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>連絡先と症例</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
     ${helpCard(true)}
+    ${inspBuildingCard(bid)}
     <div class="sectionHead"><h3>分類から探す</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
@@ -895,6 +900,7 @@ $("gearBtn").onclick = () => go("#/settings");
     refreshBell();
     if (!location.hash) history.replaceState(null, "", location.pathname + location.search + "#/home");
     await render();
+    if (typeof inspStart === "function") inspStart();
   } catch (e) {
     console.error(e);
     $("main").innerHTML = `<div class="empty">端末の保存領域が使えませんでした。<br>Safariの「プライベートブラウズ」を使っていないか確認して、ホーム画面のアイコンから開き直してください。<br><button class="btn btnPrimary" id="retryBoot">もう一度開く</button></div>`;

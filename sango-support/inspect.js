@@ -1,0 +1,291 @@
+"use strict";
+/* 点検・メンテナンス（リーダー用）。app.js の関数（$, esc, icon, go, dbGet/dbPut, apiCall, hasApi, master, uid, toast,
+   resizeImage, readExifDate, blobToBase64, blobUrl, safeName, getSetting/setSetting …）を使う。
+   項目マスターと、全リーダーの記録は、窓口（inspectList）から読む。自分の記録は、端末に一時保存してから窓口へ送る。 */
+
+const INSP_CACHE = "insp", INSP_PEND = "inspPending";
+const INSP_GLYPH = { fire: "消", heat: "暖", air: "空", elec: "電", season: "季", ext: "外", other: "他" };
+const INSP_CAT = { fire: "CAT-12", heat: "CAT-01", air: "CAT-11", elec: "CAT-02", season: "CAT-12", ext: "CAT-05", other: "CAT-12" }; // 要対応を症例にする時の分類
+let inspData = null;      // { meta, items, logs, at }
+let inspPend = [];        // 送り終わっていない記録 [{ log, photos:[{ name, blob, takenAt }] }]
+let inspBld = "";         // 一覧の建物の絞り込み
+let inspBusy = false;
+let inspForm = null;
+let inspAllNone = false;  // 「まだ記録がありません」を全部出すか
+
+/* ---------- 日付の計算 ---------- */
+const inspToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const inspParse = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
+const inspFmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const inspMD = (s) => { const d = inspParse(s); return `${d.getMonth() + 1}/${pad(d.getDate())}`; };
+const inspDays = (a, b) => Math.round((inspParse(a) - inspParse(b)) / 86400000);
+function inspAddMonths(s, n) { // 月末をはみ出さないように足す（1/31 + 1か月 = 2/28）
+  const d = inspParse(s), day = d.getDate();
+  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  t.setDate(Math.min(day, last));
+  return inspFmt(t);
+}
+/** 前回の実施日から、次の期限を出す。記録がなければ null（未実施） */
+function inspDue(item, last) {
+  if (!last) return null;
+  const c = item.cycle || {};
+  if (c.type === "season" && Array.isArray(c.months) && c.months.length) {
+    const ly = inspParse(last).getFullYear(), ds = [];
+    for (let y = ly - 1; y <= ly + 3; y++) c.months.forEach((m) => ds.push(inspFmt(new Date(y, m, 0)))); // その月の末日
+    ds.sort();
+    const cover = ds.find((d) => d >= last);
+    return ds.find((d) => d > cover) || null;
+  }
+  return inspAddMonths(last, c.n || 12);
+}
+
+/* ---------- データ（端末の控え・窓口との同期） ---------- */
+async function inspLoadCache() {
+  try { const c = await dbGet("meta", INSP_CACHE); if (c && c.data) inspData = c.data; } catch (e) { /* 無ければ空 */ }
+  try { const p = await dbGet("meta", INSP_PEND); inspPend = (p && p.list) || []; } catch (e) { inspPend = []; }
+}
+const inspSavePend = () => dbPut("meta", { key: INSP_PEND, list: inspPend });
+const inspSaveCache = () => dbPut("meta", { key: INSP_CACHE, data: inspData });
+function inspLogs() { // 窓口の記録に、まだ送っていない自分の記録を重ねる
+  const map = new Map();
+  ((inspData && inspData.logs) || []).forEach((l) => map.set(l.id, l));
+  inspPend.forEach((p) => map.set(p.log.id, { ...p.log, _pending: true }));
+  return [...map.values()];
+}
+async function inspFlush() { // 送れていない記録を、写真→記録の順に送る
+  if (!hasApi()) return false;
+  let ok = true;
+  for (const p of [...inspPend]) {
+    try {
+      for (const ph of p.photos) await apiCall({ action: "putPhoto", name: ph.name, record_id: p.log.id, taken_at: new Date(ph.takenAt).toISOString(), data: await blobToBase64(ph.blob) }, 60000);
+      await apiCall({ action: "inspectSubmit", sender: getSetting("name"), sender_id: deviceId(), app_version: APP_VERSION, records: [p.log] }, 40000);
+      inspPend = inspPend.filter((x) => x.log.id !== p.log.id);
+      await inspSavePend();
+    } catch (e) { console.warn("点検の送信を後回しにします", e); ok = false; break; }
+  }
+  return ok;
+}
+async function inspSync() {
+  if (!hasApi() || inspBusy) return false;
+  inspBusy = true;
+  try {
+    await inspFlush();
+    const j = await apiCall({ action: "inspectList" }, 40000);
+    inspData = { meta: j.meta || { buildings: [], groups: [] }, items: j.items || [], logs: j.logs || [], at: Date.now() };
+    await inspSaveCache();
+    return true;
+  } catch (e) { console.warn("点検の読み込みに失敗", e); return false; } finally { inspBusy = false; }
+}
+
+/* ---------- 一覧の元データ ---------- */
+function inspRows() {
+  if (!inspData) return [];
+  const today = inspToday(), bnames = {};
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bnames[b.id] = b.name; });
+  const logs = inspLogs();
+  const rows = [];
+  inspData.items.filter((i) => i.enabled).forEach((item) => {
+    (item.buildings || []).forEach((bid) => {
+      if (!bnames[bid]) return;
+      const mine = logs.filter((l) => l.item_id === item.id && l.building_id === bid);
+      const done = mine.filter((l) => l.result !== "pending").sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0));
+      const waiting = mine.some((l) => l.result === "pending");
+      const last = done[0] || null;
+      const due = inspDue(item, last && last.done_on);
+      let st = "none", days = 0;
+      if (due) { days = inspDays(due, today); st = days < 0 ? "over" : due.slice(0, 7) === today.slice(0, 7) ? "month" : "later"; }
+      rows.push({ item, bid, bname: bnames[bid], last, due, st, days, waiting });
+    });
+  });
+  return rows;
+}
+const inspCount = (rows) => ({ over: rows.filter((r) => r.st === "over").length, month: rows.filter((r) => r.st === "month").length });
+const inspIconHtml = (item) => `<img src="art/insp-${esc(item.icon)}.webp?v=${ART_V}" alt="" loading="lazy" data-fb="cat" data-glyph="${esc(INSP_GLYPH[item.group] || "点")}">`;
+
+/* ---------- 一覧 ---------- */
+function inspCard(r, cls) {
+  const who = r.last ? `前回 ${inspMD(r.last.done_on)}${r.last.done_by ? " " + esc(r.last.done_by) + "さん" : ""}${r.last.result === "issue" ? "（要対応あり）" : ""}` : "まだ記録がありません";
+  const due = r.due ? `期限 ${inspMD(r.due)}${r.st === "over" ? `（${-r.days}日超過）` : ""}` : "";
+  return `<div class="inspCard ${cls}" data-i="${esc(r.item.id)}" data-b="${esc(r.bid)}">
+    <div class="inspIcon">${inspIconHtml(r.item)}</div>
+    <div class="inspBody"><div class="inspTitle">${esc(r.item.title)}${r.item.legal ? ` <span class="tag warn">法定</span>` : ""}</div>
+      <div class="inspMeta"><span class="tag gray">${esc(r.bname)}</span> ${esc((r.item.cycle || {}).label || "")}</div>
+      ${due ? `<div class="inspDue ${r.st}">${due}</div>` : ""}<div class="inspLast">${who}${r.waiting ? "　報告書待ち" : ""}</div></div>
+    <button class="btn btnPrimary inspGo">記録する</button></div>`;
+}
+async function viewInspect(main, r) {
+  if (r.id === "rec") return viewInspRecord(main, r.sub, r.sid);
+  if (r.id === "hist") return viewInspHist(main, r.sub, r.sid);
+  $("topTitle").textContent = "点検";
+  if (!hasApi()) { main.innerHTML = `<div class="empty">点検は、窓口につながっている時に使えます。<br>設定で「報告の送り方」を確認してください。</div>`; return; }
+  const q = r.q.get("b"); if (q) inspBld = q;
+  if (!inspData) await inspLoadCache();
+  draw();
+  inspSync().then((ok) => { if (ok && location.hash.startsWith("#/insp") && !route().id) draw(); }); // 最新を読んで、描き直す
+  function draw() {
+    if (!inspData) { main.innerHTML = `<div class="empty">${inspBusy ? "読み込んでいます…" : "点検の項目を読み込めませんでした。電波のある所で、もう一度開いてください。"}</div>`; return; }
+    const all = inspRows(), cnt = inspCount(all);
+    const blds = ((inspData.meta && inspData.meta.buildings) || []).filter((b) => all.some((x) => x.bid === b.id));
+    const rows = all.filter((x) => !inspBld || x.bid === inspBld);
+    const today = inspToday();
+    const sec = (title, cls, list, note) => (list.length ? `<div class="sectionHead"><h3 class="${cls}">${title}</h3><span class="rule"></span><span class="count">${list.length}件</span></div>${note ? `<div class="mutedText" style="margin:-2px 4px 8px">${note}</div>` : ""}${list.map((x) => inspCard(x, x.st)).join("")}` : "");
+    const byDue = (a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0);
+    const over = rows.filter((x) => x.st === "over").sort(byDue), month = rows.filter((x) => x.st === "month").sort(byDue);
+    const none = rows.filter((x) => x.st === "none"), later = rows.filter((x) => x.st === "later").sort(byDue);
+    const recent = rows.filter((x) => x.last && inspDays(today, x.last.done_on) <= 7 && x.st === "later");
+    main.innerHTML = `<div class="inspSum"><span class="chipN over">期限超過 ${cnt.over}</span><span class="chipN month">今月 ${cnt.month}</span></div>
+      <div class="chips"><button class="chip${inspBld ? "" : " on"}" data-bb="">すべて</button>${blds.map((b) => `<button class="chip${inspBld === b.id ? " on" : ""}" data-bb="${esc(b.id)}">${esc(b.name)}</button>`).join("")}</div>
+      ${sec("期限が過ぎています", "over", over)}${sec("今月やること", "month", month)}${sec("最近済んだもの", "done", recent)}${sec("次の予定", "later", later.filter((x) => !recent.includes(x)))}${sec("まだ記録がありません", "none", inspAllNone ? none : none.slice(0, 6), "初めての記録をすると、次の期限が出ます。")}
+      ${!inspAllNone && none.length > 6 ? `<button class="btn" id="inspMore" style="width:100%;margin:4px 0 12px">あと ${none.length - 6}件を表示する</button>` : ""}
+      ${rows.length ? "" : `<div class="empty">この建物の点検の項目はありません。</div>`}`;
+    const more = $("inspMore"); if (more) more.onclick = () => { inspAllNone = true; draw(); };
+    main.querySelectorAll("[data-bb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.bb; draw(); }));
+    main.querySelectorAll(".inspCard").forEach((el) => (el.onclick = () => go(`#/insp/rec/${encodeURIComponent(el.dataset.i)}/${encodeURIComponent(el.dataset.b)}`)));
+    fillIcons(main);
+  }
+}
+
+/* ---------- 記録の入力 ---------- */
+const inspNames = () => { try { return JSON.parse(getSetting("inspNames", "[]")); } catch (e) { return []; } };
+function inspRememberName(n) { const l = [n, ...inspNames().filter((x) => x !== n)].slice(0, 8); setSetting("inspNames", JSON.stringify(l)); }
+function inspItem(id) { return inspData && inspData.items.find((i) => i.id === id); }
+
+async function viewInspRecord(main, itemId, bid) {
+  if (!inspData) await inspLoadCache();
+  const item = inspItem(itemId), bname = (((inspData && inspData.meta.buildings) || []).find((b) => b.id === bid) || {}).name;
+  if (!item || !bname) { goReplace("#/insp"); return; }
+  $("topTitle").textContent = "点検を記録";
+  const key = location.hash;
+  if (!inspForm || inspForm.key !== key) {
+    inspForm = { key, id: uid(), date: inspToday(), by: inspNames()[0] || getSetting("name"), result: "ok", memo: "", vendor: "", photos: [], rows: (item.checklist || []).map((t) => ({ t, r: "ok", m: "" })) };
+  }
+  const f = inspForm;
+  const rows = inspRows().filter((x) => x.item.id === itemId && x.bid === bid), cur = rows[0];
+  const draw = () => {
+    const isCheck = item.kind === "check";
+    const next = inspDue(item, f.date);
+    main.innerHTML = `<div class="formCard inspHead"><div class="inspIcon">${inspIconHtml(item)}</div><div><div class="inspTitle">${esc(item.title)}${item.legal ? ` <span class="tag warn">法定</span>` : ""}</div>
+        <div class="inspMeta"><span class="tag gray">${esc(bname)}</span> ${esc((item.cycle || {}).label || "")}</div>${cur && cur.due ? `<div class="inspDue ${cur.st}">期限 ${inspMD(cur.due)}${cur.st === "over" ? `（${-cur.days}日超過）` : ""}</div>` : ""}</div></div>
+      ${item.note ? `<div class="infoBar">${icon("info")}${esc(item.note)}</div>` : ""}
+      <div class="formCard"><div class="fieldLabel">実施日</div><input class="textInput" type="date" id="iDate" value="${esc(f.date)}" max="${esc(inspToday())}"></div>
+      <div class="formCard"><div class="fieldLabel">${isCheck ? "点検した人" : "点検した人（立ち会った人）"}<span class="req">必須</span></div><input class="textInput" id="iBy" list="iByList" maxlength="40" placeholder="名前を入れる" value="${esc(f.by)}"><datalist id="iByList">${inspNames().map((n) => `<option value="${esc(n)}">`).join("")}</datalist></div>
+      ${isCheck ? `<div class="formCard"><div class="fieldLabel">点検表</div><div id="iRows"></div></div>` : `
+      <div class="formCard"><div class="fieldLabel">実施した業者<span class="opt">任意</span></div><input class="textInput" id="iVendor" maxlength="60" value="${esc(f.vendor)}"></div>
+      <div class="formCard"><div class="fieldLabel">結果</div><div class="segRow" id="iRes">${[["ok", "異常なし"], ["issue", "要対応あり"], ["pending", "報告書待ち"]].map(([k, l]) => `<button class="segBtn${f.result === k ? " on " + k : ""}" data-v="${k}">${l}</button>`).join("")}</div></div>`}
+      <div class="formCard"><div class="fieldLabel">${isCheck ? "写真" : "点検報告書の写真"}<span class="opt">任意・複数枚OK</span></div><div class="photoStrip" id="iStrip"></div></div>
+      <div class="formCard"><div class="fieldLabel">メモ<span class="opt">任意</span></div><textarea id="iMemo" maxlength="500" placeholder="気づいたことなど">${esc(f.memo)}</textarea></div>
+      ${isCheck ? "" : `<div class="infoBar">${icon("info")}点検は有資格者が行います。ここには、いつ・誰が行ったかの記録を残します。${next ? `次回の期限：${inspMD(next)}（${next.slice(0, 4)}）` : ""}</div>`}
+      <div class="formActions" style="flex-direction:column"><button class="btn btnPrimary" id="iSave">この内容で記録する</button>
+        <button class="btn" id="iIssue" ${(isCheck ? f.rows.some((x) => x.r === "issue") : f.result === "issue") ? "" : "hidden"}>要対応を、症例・依頼にする</button>
+        <div class="mutedText" style="text-align:center" ${(isCheck ? f.rows.some((x) => x.r === "issue") : f.result === "issue") ? "" : "hidden"}>建物・分類・内容があらかじめ入ります</div></div>
+      <div class="mutedText" style="text-align:center;margin-top:8px"><a href="#/insp/hist/${encodeURIComponent(itemId)}/${encodeURIComponent(bid)}" style="text-decoration:underline">この点検の履歴を見る</a></div>`;
+    if (isCheck) drawRows();
+    drawStrip();
+    $("iDate").onchange = (e) => { f.date = e.target.value || inspToday(); };
+    $("iBy").oninput = (e) => { f.by = e.target.value; };
+    $("iMemo").oninput = (e) => { f.memo = e.target.value; };
+    const v = $("iVendor"); if (v) v.oninput = (e) => { f.vendor = e.target.value; };
+    main.querySelectorAll("#iRes .segBtn").forEach((b) => (b.onclick = () => { f.result = b.dataset.v; draw(); }));
+    $("iSave").onclick = () => save(false);
+    $("iIssue").onclick = () => save(true);
+    fillIcons(main);
+  };
+  const drawRows = () => {
+    const box = $("iRows");
+    box.innerHTML = f.rows.map((x, i) => `<div class="chkRow"><div class="chkText"><span class="chkNo">${i + 1}</span>${esc(x.t)}</div>
+      <div class="segRow">${[["ok", "○"], ["issue", "要対応"], ["na", "対象外"]].map(([k, l]) => `<button class="segBtn${x.r === k ? " on " + k : ""}" data-i="${i}" data-v="${k}">${l}</button>`).join("")}</div>
+      ${x.r === "issue" ? `<input class="textInput" data-m="${i}" maxlength="100" placeholder="どんな状態か（例：圧力計が黄色）" value="${esc(x.m)}">` : ""}</div>`).join("");
+    box.querySelectorAll(".segBtn").forEach((b) => (b.onclick = () => { f.rows[+b.dataset.i].r = b.dataset.v; draw(); }));
+    box.querySelectorAll("[data-m]").forEach((el) => (el.oninput = (e) => { f.rows[+el.dataset.m].m = e.target.value; }));
+  };
+  const drawStrip = () => {
+    const strip = $("iStrip"); strip.innerHTML = "";
+    f.photos.forEach((p) => {
+      const d = document.createElement("div"); d.className = "photoThumb";
+      d.innerHTML = `<img src="${blobUrl(p.thumb)}" alt=""><button class="x" aria-label="削除">${icon("close")}</button>`;
+      d.querySelector("img").onclick = () => showLightbox(p.blob);
+      d.querySelector(".x").onclick = () => { f.photos = f.photos.filter((x) => x !== p); drawStrip(); };
+      strip.appendChild(d);
+    });
+    const add = (label, ic, capture) => {
+      const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.hidden = true; if (capture) inp.capture = "environment"; else inp.multiple = true;
+      inp.onchange = async () => {
+        for (const file of [...inp.files]) {
+          try { const taken = ((await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date())).getTime(); f.photos.push({ id: uid(), takenAt: taken, blob: await resizeImage(file, 1600), thumb: await resizeImage(file, 360) }); }
+          catch (e) { toast("読み込めない写真がありました"); }
+        }
+        if (inspForm === f) drawStrip();
+      };
+      const b = document.createElement("button"); b.className = "photoAdd"; b.innerHTML = `${icon(ic)}${label}`; b.onclick = () => inp.click(); strip.append(b, inp);
+    };
+    add("カメラで撮る", "camera", true); add("撮影済みを選ぶ", "image", false);
+    fillIcons(strip);
+  };
+  async function save(toIssue) {
+    const by = f.by.trim();
+    if (!by) { toast("点検した人の名前を入れてください"); return; }
+    const isCheck = item.kind === "check";
+    const result = isCheck ? (f.rows.some((x) => x.r === "issue") ? "issue" : "ok") : f.result;
+    const now = new Date().toISOString();
+    const photos = f.photos.map((p, n) => ({ name: safeName(`点検_${bname}_${item.id}_${f.date.replace(/-/g, "")}_${f.id.slice(-4)}_${n + 1}_${p.id.slice(-4)}.jpg`), blob: p.blob, takenAt: p.takenAt }));
+    const log = { id: f.id, item_id: item.id, building_id: bid, done_on: f.date, done_by: by, result, checks: isCheck ? f.rows.map((x) => ({ t: x.t, r: x.r, m: x.r === "issue" ? x.m.trim() : "" })) : [], memo: f.memo.trim(), photos: photos.map((p) => ({ file: p.name })), vendor: f.vendor.trim(), created_at: now, updated_at: now };
+    $("iSave").disabled = true;
+    inspPend.push({ log, photos });
+    try { await inspSavePend(); } catch (e) { inspPend.pop(); $("iSave").disabled = false; toast("保存できませんでした。端末の空き容量を確認してください"); return; }
+    inspRememberName(by);
+    const issueText = isCheck ? f.rows.filter((x) => x.r === "issue").map((x) => x.t + (x.m.trim() ? "（" + x.m.trim() + "）" : "")).join("／") : "";
+    const sent = await inspFlush().catch(() => false);
+    inspForm = null;
+    toast(sent ? "記録しました" : "記録しました（電波がない時は、あとで自動で送ります）");
+    if (toIssue) {
+      try { sessionStorage.setItem(P + "prefill", `【点検で要対応】${item.title}${issueText ? "：" + issueText : ""}${f.memo.trim() ? "　" + f.memo.trim() : ""}`); } catch (e) { /* 無くても進める */ }
+      goReplace(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(INSP_CAT[item.group] || "CAT-12")}`);
+    } else goReplace("#/insp");
+    inspSync(); // 一覧を最新に
+  }
+  draw();
+}
+
+/* ---------- 履歴 ---------- */
+async function viewInspHist(main, itemId, bid) {
+  if (!inspData) await inspLoadCache();
+  const item = inspItem(itemId), bname = (((inspData && inspData.meta.buildings) || []).find((b) => b.id === bid) || {}).name;
+  if (!item || !bname) { goReplace("#/insp"); return; }
+  $("topTitle").textContent = "点検の履歴";
+  const logs = inspLogs().filter((l) => l.item_id === itemId && l.building_id === bid).sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0));
+  const RL = { ok: "異常なし", issue: "要対応あり", pending: "報告書待ち" };
+  main.innerHTML = `<div class="formCard"><div class="inspTitle">${esc(item.title)}</div><div class="inspMeta"><span class="tag gray">${esc(bname)}</span> ${esc((item.cycle || {}).label || "")}</div></div>
+    ${logs.length ? logs.map((l) => `<div class="formCard"><div class="recMeta"><span>${esc(l.done_on.replace(/-/g, "/"))}</span><span class="tag${l.result === "issue" ? " warn" : ""}">${RL[l.result] || ""}</span>${l._pending ? `<span class="tag gray">送信待ち</span>` : ""}</div>
+      <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>
+      ${(l.checks || []).filter((c) => c.r === "issue").map((c) => `<div class="mutedText">要対応：${esc(c.t)}${c.m ? "（" + esc(c.m) + "）" : ""}</div>`).join("")}
+      ${l.memo ? `<div class="mutedText">${esc(l.memo)}</div>` : ""}${(l.photos || []).length ? `<div class="mutedText">写真 ${l.photos.length}枚</div>` : ""}</div>`).join("") : `<div class="empty">まだ記録がありません。</div>`}`;
+}
+
+/* ---------- ホーム・建物ページの入口 ---------- */
+function inspBannerHtml() {
+  if (!hasApi() || !inspData) return "";
+  const c = inspCount(inspRows());
+  if (!c.over) return "";
+  return `<div class="inspBanner" data-insp-go="#/insp">${icon("info")}<span>期限が過ぎている点検が <b>${c.over}件</b> あります</span><span class="inspBannerGo">見る</span></div>`;
+}
+function inspBuildingCard(bid) {
+  if (!hasApi() || !inspData) return "";
+  const rows = inspRows().filter((x) => x.bid === bid);
+  if (!rows.length) return "";
+  const c = inspCount(rows);
+  return `<div class="inspEntry" data-insp-go="#/insp?b=${encodeURIComponent(bid)}"><div class="catIcon">${icon("check")}</div><div class="catBody"><div class="catLabel">点検・メンテナンス</div><div class="catSub">建物の定期点検・メンテナンス</div></div>${c.over ? `<span class="chipN over">期限超過 ${c.over}</span>` : ""}${c.month ? `<span class="chipN month">今月 ${c.month}</span>` : ""}</div>`;
+}
+document.addEventListener("click", (e) => { const t = e.target.closest("[data-insp-go]"); if (t) go(t.dataset.inspGo); });
+window.addEventListener("online", () => { inspFlush().catch(() => {}); });
+let inspReady = null;
+const inspEnsure = () => inspReady || (inspReady = inspLoadCache());
+/** アプリの起動時に、app.js から呼ぶ（端末の控えを読み、窓口から最新を読む。失敗しても他の機能は使える） */
+async function inspStart() {
+  try {
+    await inspEnsure();
+    if (!hasApi()) return;
+    const before = JSON.stringify(inspCount(inspRows()));
+    if (await inspSync() && JSON.stringify(inspCount(inspRows())) !== before && ["home", "b"].includes(route().name)) render(); // ホームの帯・建物の入口を更新
+  } catch (e) { console.warn("点検の準備に失敗", e); }
+}

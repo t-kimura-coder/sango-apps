@@ -240,3 +240,35 @@ textarea { min-height: 84px; }
 .tag.urgent { background: #f4d3cf; color: #a3322a; font-weight: 700; }
 .urgentRow { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 15px; }
 .urgentRow input { width: 20px; height: 20px; }
+
+/* 点検・メンテナンス */
+.inspSum { display: flex; gap: 8px; margin: 2px 0 10px; }
+.chipN.over { background: var(--warn-soft); color: #a3322a; font-weight: 700; }
+.chipN.month { background: #f6e9c8; color: #8a5a12; font-weight: 700; }
+.inspSum .chipN { padding: 6px 14px; border-radius: 16px; font-size: 14px; }
+.sectionHead h3.over { color: #a3322a; } .sectionHead h3.month { color: #8a5a12; } .sectionHead h3.done, .sectionHead h3.none, .sectionHead h3.later { color: var(--muted); }
+.inspCard { display: flex; gap: 10px; align-items: center; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 10px; margin-bottom: 8px; border-left: 5px solid var(--line); cursor: pointer; }
+.inspCard.over { border-left-color: #a3322a; } .inspCard.month { border-left-color: #b07a3f; } .inspCard.later, .inspCard.none { opacity: 0.92; }
+.inspIcon { width: 46px; height: 46px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--green-soft, #e4ede2); color: var(--green); font-weight: 700; font-size: 20px; overflow: hidden; }
+.inspIcon img { width: 100%; height: 100%; object-fit: cover; }
+.inspBody { flex: 1; min-width: 0; }
+.inspTitle { font-weight: 700; font-size: 15px; }
+.inspMeta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.inspDue { font-size: 13px; font-weight: 700; margin-top: 2px; } .inspDue.over { color: #a3322a; } .inspDue.month { color: #8a5a12; }
+.inspLast { font-size: 12px; color: var(--muted); }
+.inspGo { flex: none; min-height: 38px; padding: 6px 12px; font-size: 14px; }
+.inspHead { display: flex; gap: 10px; align-items: center; }
+.chkRow { padding: 8px 0; border-bottom: 1px solid var(--line); } .chkRow:last-child { border-bottom: 0; }
+.chkText { font-size: 14px; margin-bottom: 6px; } .chkNo { display: inline-block; width: 20px; height: 20px; border-radius: 10px; background: #ebe8dc; text-align: center; font-size: 12px; line-height: 20px; margin-right: 6px; }
+.segRow { display: flex; gap: 6px; flex-wrap: wrap; }
+.segBtn { flex: 1; min-width: 64px; min-height: 38px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-size: 14px; cursor: pointer; }
+.segBtn.on.ok { background: var(--green); border-color: var(--green); color: #fff; font-weight: 700; }
+.segBtn.on.issue { background: #a3322a; border-color: #a3322a; color: #fff; font-weight: 700; }
+.segBtn.on.na, .segBtn.on.pending { background: #8a8f84; border-color: #8a8f84; color: #fff; }
+.chkRow .textInput { margin-top: 6px; }
+.inspBanner { display: flex; gap: 8px; align-items: center; background: var(--warn-soft); color: #a3322a; border-radius: 12px; padding: 10px 12px; margin: 10px 0; font-size: 14px; cursor: pointer; }
+.inspBanner svg { width: 20px; height: 20px; flex: none; } .inspBannerGo { margin-left: auto; font-weight: 700; text-decoration: underline; }
+.inspEntry { display: flex; align-items: center; gap: 10px; background: var(--card); border: 2px solid var(--green); border-radius: 14px; padding: 10px 12px; margin: 10px 0; cursor: pointer; }
+.inspEntry .catIcon { color: var(--green); } .inspEntry .catLabel { font-weight: 700; } .inspEntry .catSub { font-size: 12px; color: var(--muted); }
+.inspEntry .chipN { padding: 3px 9px; border-radius: 10px; font-size: 12px; }
+
