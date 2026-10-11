@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -380,8 +380,9 @@ async function fetchStates() {
           return;
         }
         if (st.deleted) return; // 消した・番号を変えた現場の古い記録
-        if (!next.has(x.key)) next.set(x.key, []);
-        next.get(x.key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [] });
+        const key = x.key.startsWith("k:") ? "k:" + normKouji(x.key.slice(2)) : x.key; // 前の版の小文字の番号も同じ現場に
+        if (!next.has(key)) next.set(key, []);
+        next.get(key).push({ person: x.person, at: x.updated_at, progress: Array.isArray(st.progress) ? st.progress : null, items: st.items || {}, reports: Array.isArray(st.reports) ? st.reports : [], siteName: (st.site && st.site.name) || x.site, members: (st.site && st.site.members) || [] });
       });
     }
     const changed = JSON.stringify([...next]) !== JSON.stringify([...stateCache]);

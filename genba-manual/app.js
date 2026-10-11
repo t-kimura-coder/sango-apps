@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 105;
+const APP_VERSION = 106;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "現場の共有の細かい点を直しました（完工した現場・自分の写しを消した現場・番号を変えた現場が、また候補に出る）" },
   { date: "2026-10-11", type: "fix", text: "工事番号の英字は大文字にそろえるようにしました（s26492 と入れても S26492 として扱います。同じ現場の人とのつながりが、打ち間違いで切れないように）" },
   { date: "2026-10-11", type: "feature", text: "同じ現場を担当する人同士で、現場の登録を共有できるようになりました（合言葉を入れた人）。他の人が登録した現場の「担当者」にあなたの苗字が入っていると、ホームの「やること」に出て、「追加する」で同じ現場名・工事番号のまま自分の現場にできます。自分で登録する時に、他の人がもう登録している工事番号を入れると、名前をそろえるか聞きます" },
   { date: "2026-10-11", type: "fix", text: "名前の見分けで、同じ苗字の別の人（「木村 考宏」と「木村 太郎」）を同じ人にしないようにしました" },
@@ -996,10 +997,21 @@ async function pendingSharedOffers() {
   const seen = new Set();
   return lsList(SHARED_OFFERS_KEY).filter((o) => {
     const k = normKoujiNo(o.kouji_no);
-    if (!k || mine.has(k) || dismissed.has(o.key) || seen.has(k)) return false;
+    if (!k || mine.has(k) || dismissed.has(o.key) || dismissed.has("k:" + k) || seen.has(k)) return false;
     seen.add(k);
     return true;
   });
+}
+function dismissSharedOffer(koujiNo) {
+  const k = normKoujiNo(koujiNo);
+  if (!k) return;
+  const d = new Set(lsList(SHARED_DISMISS_KEY));
+  d.add("k:" + k);
+  try {
+    localStorage.setItem(SHARED_DISMISS_KEY, JSON.stringify([...d]));
+  } catch (e) {
+    /* ignore */
+  }
 }
 function sharedOfferFor(koujiNo) {
   const k = normKoujiNo(koujiNo);
@@ -1029,13 +1041,7 @@ function openSharedOffer(o) {
     body.appendChild(
       sheetButton("いらない（自分では記録しない）", "btnSecondary", () => {
         close();
-        const d = new Set(lsList(SHARED_DISMISS_KEY));
-        d.add(o.key);
-        try {
-          localStorage.setItem(SHARED_DISMISS_KEY, JSON.stringify([...d]));
-        } catch (e) {
-          /* ignore */
-        }
+        dismissSharedOffer(o.kouji_no);
         if (currentView === "dashView") renderDash();
       })
     );
@@ -1471,6 +1477,7 @@ function openCompleteSheet(site, photos) {
     const open = (site.pauses || []).find((p) => !p.to);
     if (open) open.to = todayKey();
     await dbPut("sites", site);
+    if (gasOn()) buildSiteState(site).then((st) => gasCall({ action: "putStates", states: [st] })).catch(() => {});
     toast(`「${site.name}」を完工にしました`);
     await refreshSites();
     if (currentView === "siteManageView") renderSiteManage();
@@ -1513,6 +1520,7 @@ async function editSiteInfo(site) {
   Object.assign(site, info);
   await dbPut("sites", site);
   await saveCover(site.id, coverFile);
+  if (oldKey !== stateKeyOf(site) && oldKey.startsWith("k:")) dismissSharedOffer(oldKey.slice(2)); // 前の番号の現場を、共有の候補にまた出さない
   if (gasOn() && oldKey !== stateKeyOf(site)) {
     gasCall({ action: "putStates", states: [{ key: oldKey, kouji_no: oldKey.startsWith("k:") ? oldKey.slice(2) : "", site_id: site.id, site: site.name, updated_at: new Date().toISOString(), state: JSON.stringify({ v: 1, deleted: true, moved: stateKeyOf(site), site: { id: site.id, name: site.name }, items: {} }) }] }).catch(() => {});
     scheduleStatePush(); // 新しい番号で送り直す
@@ -1708,6 +1716,9 @@ function editSiteSheet(site) {
           if (offer && (nameIn.value.trim() !== offer.name || startGroup !== (offer.start_group || 0)) && confirm(`${offer.owner}さんが同じ工事番号を「${offer.name}」（${(GROUPS[offer.start_group || 0] || GROUPS[0]).name}から記録）で登録しています。\n現場名と記録を始めた段階をそろえますか？`)) {
             nameIn.value = offer.name;
             startGroup = offer.start_group || 0;
+            if (offer.kind) kind = offer.kind;
+            drawSg();
+            drawKinds();
           }
           const name = nameIn.value.trim();
           if (!name) {
@@ -1853,6 +1864,7 @@ async function renderSiteManage() {
       await dbDeleteMany("checks", checks.map((r) => r.key));
       await dbDeleteMany("sites", [site.id]);
       rememberDeletedSite(site.id);
+      dismissSharedOffer(site.koujiNo); // 自分の写しを消しても、共有の候補にまた出さない
       // 置き場所の自分の記録にも「消した」と残す（別の端末で作り直さないように。別の端末の現場そのものは消さない）
       if (gasOn())
         gasCall({ action: "putStates", states: [{ key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: new Date().toISOString(), state: JSON.stringify({ v: 1, deleted: true, site: { id: site.id, name: site.name, koujiNo: site.koujiNo || "" }, items: {} }) }] }).catch(() => {});
@@ -5948,7 +5960,9 @@ async function renderDash() {
   // 行の頭に「どの現場の話か」を出す（site: 現場 / 現場名の文字 / "全体"）。1現場だけの人にも出す（全体の話と見分けるため）
   const todo = [];
   const siteNameOf = (id) => (sites.find((x) => x.id === id) || {}).name || "";
-  (await pendingSharedOffers()).forEach((o) =>
+  const offers = await pendingSharedOffers();
+  if (gen !== renderGen.dash) return; // 後から始まった描き直しに任せる
+  offers.forEach((o) =>
     todo.push({ site: o.name, icon: ICONS.building, cls: "wood", html: `${esc(o.owner)}さんが登録した現場の担当者に入っています <b class="em">追加する</b>`, go: () => openSharedOffer(o) })
   );
   if (unread.length) {

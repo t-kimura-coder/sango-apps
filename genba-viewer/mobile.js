@@ -35,10 +35,10 @@ async function initMobile() {
 function mobileMergeSites() {
   stateCache.forEach((list, key) => {
     if (!key.startsWith("k:")) return;
-    const sk = "kouji:" + key.slice(2);
+    const sk = "kouji:" + normKouji(key.slice(2));
     const first = list[0] || {};
     let s = data.sites.get(sk);
-    if (!s) data.sites.set(sk, (s = { key: sk, name: first.siteName || "（現場名なし）", koujiNo: key.slice(2), personKey: "", personName: "", persons: new Map(), members: new Set(), reports: [] }));
+    if (!s) data.sites.set(sk, (s = { key: sk, name: first.siteName || "（現場名なし）", koujiNo: normKouji(key.slice(2)), personKey: "", personName: "", persons: new Map(), members: new Set(), reports: [] }));
     if (first.siteName && (!s.name || s.name === "（現場名なし）")) s.name = first.siteName;
     list.forEach((st) => {
       const has = [...s.persons.values()].some((n) => sameName(n, st.person));
