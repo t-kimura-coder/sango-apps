@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -299,7 +299,7 @@ function applyGas() {
     if (!p.note_id) return;
     if (p.deleted) return data.notes.delete(p.note_id);
     const sk = siteKeyOf({ kouji_no: p.kouji_no, site_id: p.site_id, site: p.site });
-    const byName = [...data.people.values()].find((x) => normName(x.name) === normName(p.sender || m.from));
+    const byName = [...data.people.values()].find((x) => sameName(x.name, p.sender || m.from));
     const pk = p.sender_id && data.people.has(p.sender_id) ? p.sender_id : byName ? byName.key : p.sender_id || "name:" + m.from;
     const pname = (data.people.get(pk) || {}).name || p.sender || m.from;
     if (!data.sites.has(sk)) data.sites.set(sk, { key: sk, name: p.site || "（現場名なし）", koujiNo: p.kouji_no || "", personKey: pk, personName: pname, persons: new Map([[pk, pname]]), members: new Set(), reports: [] });
@@ -410,6 +410,7 @@ async function syncGas(manual = false) {
   gasSyncing = true;
   const me = normName(getLS("name"));
   let fresh = 0;
+  const freshNotes = [];
   try {
     for (let round = 0; round < 10; round++) {
       const j = await gasCall({ action: "sync", since: gasStore.cursor || 0 });
@@ -419,7 +420,7 @@ async function syncGas(manual = false) {
       }
       (j.messages || []).forEach((m) => {
         if (m.kind === "note") {
-          if (!gasStore.notes[m.id] && normName(m.from) !== me) fresh++;
+          if (!gasStore.notes[m.id] && normName(m.from) !== me) freshNotes.push((m.payload && m.payload.note_id) || m.id);
           gasStore.notes[m.id] = m; // 同じ疑問の出し直しは新しい方
         } else if (m.kind === "reply") {
           if (!gasStore.replies[m.id] && normName(m.from) !== me) fresh++;
@@ -431,6 +432,11 @@ async function syncGas(manual = false) {
     }
     await kvSet("gas", gasStore);
     if (!noData()) applyGas();
+    // 新しい疑問は、見える範囲（自分の班）の分だけ数える
+    fresh += freshNotes.filter((id) => {
+      const n = data.notes.get(id);
+      return !n || noteInScope(n);
+    }).length;
     if (fresh) {
       toast(`現場から新しいやりとりが ${fresh}件 届きました`);
       if (document.hidden && "Notification" in window && Notification.permission === "granted") new Notification("現場ナビ 見守り", { body: `現場から新しいやりとりが ${fresh}件 届きました`, icon: "icon-192.png?v=2" });
@@ -473,10 +479,12 @@ function bindGasCard(main) {
   if (!inp) return;
   inp.addEventListener("change", () => {
     setLS("gasToken", inp.value.trim());
-    clearGate(); // 次に開く時は入口で確かめ直す
+    clearGate(); // 入口で確かめ直す
+    try {
+      ["teamLock", "drafts", "meetIdx", "meetKey"].forEach((k) => localStorage.removeItem(LS + k));
+    } catch (e) {}
     gasStore = { cursor: 0, notes: {}, replies: {} };
-    kvSet("gas", gasStore);
-    toast(inp.value.trim() ? "合言葉を保存しました" : "合言葉を消しました");
+    Promise.all([kvSet("gas", gasStore), kvSet("states", [])]).then(() => location.reload()); // 前の人の範囲・名前のまま使わないよう、開き直す
   });
   main.querySelector("#gasCheck").addEventListener("click", async () => {
     setLS("gasToken", inp.value.trim());
@@ -599,7 +607,8 @@ function sameName(a, b) {
   if (!x || !y) return false;
   if (x === y) return true;
   const first = (s) => String(s || "").normalize("NFKC").trim().split(/\s+/)[0];
-  if (first(a) === first(b) && /\s/.test(String(a).trim() + String(b).trim())) return true; // 「木村 考宏」と「木村」
+  const sp = (s) => /\s/.test(String(s || "").normalize("NFKC").trim());
+  if (first(a) === first(b) && sp(a) !== sp(b)) return true; // 「木村 考宏」と「木村」（片方が苗字だけの時）。「木村 考宏」と「木村 太郎」は別の人
   const [short, long] = x.length < y.length ? [x, y] : [y, x];
   return long.startsWith(short) && long.length - short.length >= 2; // 「木村考宏」と「木村」（名前が2文字以上の時だけ）
 }
@@ -922,7 +931,18 @@ function renderMeet(arg) {
     return;
   }
   let idx = Math.min(sites.length, Math.max(1, parseInt(arg || getLS("meetIdx", "1"), 10) || 1)) - 1;
+  // 同じ画面の描き直し（同期など）や番号なしで開いた時は、前に見ていた現場を探す
+  const wantKey = location.hash === meetLastHash || !arg ? getLS("meetKey") : "";
+  if (wantKey) {
+    const j = sites.findIndex((x) => x.key === wantKey);
+    if (j >= 0 && j !== idx) {
+      idx = j;
+      history.replaceState(null, "", `#/meet/${idx + 1}`);
+    }
+  }
   setLS("meetIdx", String(idx + 1));
+  setLS("meetKey", sites[idx].key);
+  meetLastHash = location.hash;
   const s = sites[idx];
   const ctx = makeWeekCtx();
   const prog = siteProgress(s);
@@ -2386,9 +2406,10 @@ function route() {
   else if (name === "person") renderPerson(decodeURIComponent(arg || ""));
   else if (name === "settings") renderSettings();
   else renderHome();
-  if (!$("drawer").hidden && drawerNoteId && !data.notes.has(drawerNoteId)) closeDrawer();
+  if (!$("drawer").hidden && drawerNoteId && (!data.notes.has(drawerNoteId) || !noteInScope(data.notes.get(drawerNoteId)))) closeDrawer();
 }
 
+let meetLastHash = "";
 function applyTheme(t) {
   if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
   else document.documentElement.removeAttribute("data-theme");
@@ -2429,9 +2450,18 @@ async function checkGateToken() {
       return null;
     }
   })();
-  if (!prevGate || prevGate.tail !== getLS("gasToken").slice(-6)) {
+  if (prevGate && prevGate.tail !== getLS("gasToken").slice(-6)) {
+    // 別の人の合言葉に替えた：前の人のやりとり・チェックの記録・返信の下書き・見える範囲は持ち越さない
     try {
-      localStorage.removeItem(LS + "teamLock"); // 別の人の合言葉に替えた
+      ["teamLock", "drafts", "meetIdx", "meetKey"].forEach((k) => localStorage.removeItem(LS + k));
+    } catch (e) {}
+    gasStore = { cursor: 0, notes: {}, replies: {} };
+    await kvSet("gas", gasStore);
+    await kvSet("states", []);
+    stateCache = new Map();
+  } else if (!prevGate) {
+    try {
+      localStorage.removeItem(LS + "teamLock");
     } catch (e) {}
   }
   setLS("gate", JSON.stringify({ tail: getLS("gasToken").slice(-6), name: j.me.name, role: j.me.role, at: new Date().toISOString() }));
@@ -2510,7 +2540,8 @@ async function init() {
   else loadTeamLock().then((changed) => {
     if (changed && typeof route === "function") {
       updateNavBadge();
-      route();
+      const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "");
+      if (!typing && $("drawer").hidden) route();
     }
   });
   await loadGasStore();

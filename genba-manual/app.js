@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 100;
+const APP_VERSION = 101;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "現場を切り替えた時の不具合を直しました（電話・LINEのやりとりの書きかけが切り替えた先の現場に保存される、工程タブで切り替えると前の現場で見ていた項目が開く、同期の取り込みと重なると別の現場のチェックが混ざることがある）。自分の別の現場と同じ工事番号を入れた時は確かめるようにしました" },
   { date: "2026-10-11", type: "fix", text: "ホームの「次に見る項目」が、今の現場ではなく別の現場で最後に見た項目になっていたのを直しました（今の現場で最後に見た項目から続きが出ます）" },
   { date: "2026-10-11", type: "fix", text: "「使い方」・設定・初回の案内の説明を、今の機能に合わせました（合言葉でできること、Box への直接送信、写真の通り道）" },
   { date: "2026-10-11", type: "fix", text: "Box へ直接送る時の不具合を直しました（1枚送れないと「送っています」の表示が消えなくなる、電波が切れた時に同じ報告が二重に届くことがある、途中から送り直すと古い報告が届くことがある）。名前の見分けを、林と林田のような別の人を同じにしないように直しました" },
@@ -879,11 +880,19 @@ function currentSite() {
 }
 
 async function setCurrentSite(id) {
+  const changed = id !== currentSiteId;
   currentSiteId = id;
   setSetting(CURRENT_SITE_KEY, id || "");
+  if (changed) {
+    // 前の現場で開いていたメモ・電話のやりとりの書きかけは、次の現場に持ち越さない（別の現場に保存されないように）
+    memoOpenFor = null;
+    contactDraft = null;
+    memoType = null;
+    mailOnce = false;
+  }
   await refreshSites();
   if (typeof loadSiteChecks === "function") await loadSiteChecks();
-  rerenderCurrentView();
+  rerenderCurrentView(changed);
 }
 
 // 長い現場名：2行に収まらない時だけ文字を少し小さくする
@@ -1623,6 +1632,11 @@ function editSiteSheet(site) {
             toast("担当者を1人以上選んでください");
             return;
           }
+          const dupNo = normKoujiNo(noIn.value) && (activeSitesCache || []).find((x) => x.id !== (site && site.id) && normKoujiNo(x.koujiNo) === normKoujiNo(noIn.value));
+          if (dupNo && !confirm(`「${dupNo.name}」と同じ工事番号です。別の現場なら番号を確かめてください（同じ番号の現場は、チェックの記録が1つにまとまります）。\nこのまま登録しますか？`)) {
+            noIn.focus();
+            return;
+          }
           if (!normKoujiNo(noIn.value) && !confirm("工事番号が空です。このまま登録しますか？\n工事番号が無いと、上司のスマホの見守りに出ず、同じ現場の他の人のチェックともつながりません。\n（あとから「現場の管理」で入れられます）")) {
             noIn.focus();
             return;
@@ -1648,8 +1662,10 @@ function editSiteSheet(site) {
   });
 }
 
-// いま表示している画面を、現場が変わった内容で描き直す
-function rerenderCurrentView() {
+// いま表示している画面を、現場が変わった内容で描き直す。siteChanged：別の現場に切り替えた時
+function rerenderCurrentView(siteChanged = false) {
+  if (siteChanged && currentView === "reportProcView") return goReport(); // 前の現場の工程のページは開いたままにしない
+  if (siteChanged && currentView === "groupView") return openGroup(currentGroupId); // 新しい現場で最後に見ていた項目を開く（前の現場の項目で上書きしない）
   const fns = {
     dashView: renderDash,
     manualView: renderManual,
@@ -3521,20 +3537,30 @@ function allManualItems() {
   return GROUPS.flatMap((g) => g.cats.flatMap((pid) => manualMeta.items.filter((it) => it.cat === pid)));
 }
 
+// 読み込みが重なった時（同期の取り込み中に現場を切り替えた等）に、2つの現場の記録が混ざらないよう、
+// 手元で組み立ててから、最後に「いちばん新しい呼び出し」かつ「今の現場のまま」の時だけ入れ替える
+let loadChecksGen = 0;
 async function loadSiteChecks() {
-  siteCheckRecs = {};
-  siteRecordPhotos = {};
-  siteRecordLists = {};
-  if (!currentSiteId) return;
-  (await dbGetAll("checks", "siteId", currentSiteId)).forEach((r) => (siteCheckRecs[r.itemId] = r));
-  (await getSitePhotos(currentSiteId))
-    .filter(isRecordPhoto)
-    .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
-    .forEach((p) => {
-      const k = `${p.itemId}|${p.checkKey}`;
-      siteRecordPhotos[k] = p;
-      (siteRecordLists[k] = siteRecordLists[k] || []).push(p);
-    });
+  const gen = ++loadChecksGen;
+  const siteId = currentSiteId;
+  const recs = {};
+  const photos = {};
+  const lists = {};
+  if (siteId) {
+    (await dbGetAll("checks", "siteId", siteId)).forEach((r) => (recs[r.itemId] = r));
+    (await getSitePhotos(siteId))
+      .filter(isRecordPhoto)
+      .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
+      .forEach((p) => {
+        const k = `${p.itemId}|${p.checkKey}`;
+        photos[k] = p;
+        (lists[k] = lists[k] || []).push(p);
+      });
+  }
+  if (gen !== loadChecksGen || siteId !== currentSiteId) return; // もっと新しい読み込みが始まっている
+  siteCheckRecs = recs;
+  siteRecordPhotos = photos;
+  siteRecordLists = lists;
 }
 
 function checkRecOf(itemId) {
@@ -3720,7 +3746,6 @@ async function openItemAnywhere(itemId) {
 async function renderItem() {
   const it = groupItems[currentItemIdx];
   if (!it) return;
-  pushRecent(it);
   rememberLastItem(currentSiteId, currentGroupId, it.id);
   renderNavButtons();
   document.querySelectorAll(".itemTab").forEach((t) => t.classList.toggle("active", t.dataset.mtab === currentMTab));
@@ -5457,27 +5482,6 @@ function openSearch() {
   const input = $("searchInput");
   input.focus();
   renderSearch();
-}
-
-/* ---------- 最近見た項目（ホームの「次に見る項目」の「続きから」） ---------- */
-
-const RECENT_KEY = "genba-photo-recent";
-
-function getRecent() {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-  } catch (e) {
-    return [];
-  }
-}
-function pushRecent(item) {
-  const list = getRecent().filter((r) => r.id !== item.id);
-  list.unshift({ id: item.id, at: new Date().toISOString() });
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 3)));
-  } catch (e) {
-    /* ignore */
-  }
 }
 
 function fmtDateTime(iso) {
