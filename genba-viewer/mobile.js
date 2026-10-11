@@ -41,7 +41,8 @@ function mobileMergeSites() {
     if (!s) data.sites.set(sk, (s = { key: sk, name: first.siteName || "（現場名なし）", koujiNo: normKouji(key.slice(2)), personKey: "", personName: "", persons: new Map(), members: new Set(), reports: [] }));
     if (first.siteName && (!s.name || s.name === "（現場名なし）")) s.name = first.siteName;
     // 完工・休工：担当の全員が完工なら完工、誰かが休工中なら休工
-    s.completedAt = list.length && list.every((x) => x.completedAt) ? list.map((x) => x.completedAt).sort().pop() : null;
+    const working = list.filter((x) => x.completedAt || Object.keys(x.items || {}).length);
+    s.completedAt = working.length && working.every((x) => x.completedAt) ? working.map((x) => x.completedAt).sort().pop() : null;
     s.pausedAt = !s.completedAt && list.some((x) => x.paused) ? "1" : null;
     list.forEach((st) => {
       const has = [...s.persons.values()].some((n) => sameName(n, st.person));

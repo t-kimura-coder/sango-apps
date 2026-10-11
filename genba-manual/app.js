@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 107;
+const APP_VERSION = 109;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,8 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "現場がたくさんある時もチェックの記録を送れるようにしました（30現場ずつ送る）。「使い方」の工事番号の説明を直しました" },
+  { date: "2026-10-11", type: "fix", text: "合言葉を入れている人には、ホームの「やること」に「上司からの返信・宿題を取り込む（Box から）」を出さないようにしました（返信・宿題は自動で届きます）" },
   { date: "2026-10-11", type: "fix", text: "工事番号を必須にしました（分からない時は空のまま登録して、あとで入れられます）。現場を登録しただけでも、一緒に担当する人に「追加する」が出るようにしました。「使い方」の説明を直しました" },
   { date: "2026-10-11", type: "fix", text: "現場の共有の細かい点を直しました（完工した現場・自分の写しを消した現場・番号を変えた現場が、また候補に出る）" },
   { date: "2026-10-11", type: "fix", text: "工事番号の英字は大文字にそろえるようにしました（s26492 と入れても S26492 として扱います。同じ現場の人とのつながりが、打ち間違いで切れないように）" },
@@ -5207,7 +5209,7 @@ async function pushStates(force = false) {
     list.push({ st, sig });
   }
   if (!list.length) return 0;
-  await gasCall({ action: "putStates", states: list.map((x) => x.st) });
+  for (let i = 0; i < list.length; i += 30) await gasCall({ action: "putStates", states: list.slice(i, i + 30).map((x) => x.st) });
   list.forEach((x) => (sent[x.st.key] = x.sig));
   try {
     localStorage.setItem(STATE_SENT_KEY, JSON.stringify(sent));
@@ -6034,7 +6036,8 @@ async function renderDash() {
       html: `撮り忘れの品質写真 <b class="em">${curSum.missing.length}件</b>`,
       go: () => openRequired("missing"),
     });
-  if (!unread.length) todo.push({ site: "全体", icon: ICONS.reply, cls: "muted", html: `上司からの返信・宿題を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
+  // 合言葉を入れている人は返信・宿題が自動で届くので、Box から取り込む案内は合言葉が無い人だけ
+  if (!unread.length && !gasOn()) todo.push({ site: "全体", icon: ICONS.reply, cls: "muted", html: `上司からの返信・宿題を取り込む<small>Box の「返信」フォルダから</small>`, pick: true });
   const todoBox = $("dashTodo");
   todoBox.innerHTML = "";
   if (todo.length === 1 && todo[0].pick) {

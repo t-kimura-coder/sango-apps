@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 51;
+const APP_VERSION = 52;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -252,8 +252,9 @@ function buildData(reports, replies, statuses = [], meetings = []) {
     .forEach((x) => {
       const site = data.sites.get(siteKeyOf(x));
       if (!site) return;
-      if (x.status === "completed") (site.doneBy = site.doneBy || new Map()).set(personKeyOf(x), x.at);
-      else if (x.status === "active") site.doneBy && site.doneBy.delete(personKeyOf(x));
+      const who = (data.people.get(personKeyOf(x)) || {}).name || x.sender || "";
+      if (x.status === "completed") (site.doneBy = site.doneBy || new Map()).set(normName(who), x.at);
+      else if (x.status === "active" && site.doneBy) [...site.doneBy.keys()].filter((k) => sameName(k, who)).forEach((k) => site.doneBy.delete(k));
       else if (x.status === "paused") site.pausedAt = x.at;
       else if (x.status === "resumed") site.pausedAt = null;
       else if (x.status === "week") (site.otherWeeks = site.otherWeeks || []).push({ week: x.week, kind: x.week_kind, memo: x.memo || "", at: x.at, personKey: personKeyOf(x) });
@@ -264,7 +265,7 @@ function buildData(reports, replies, statuses = [], meetings = []) {
   // 完工は、その現場の担当（報告した人）全員が完工の知らせを送った時だけ（1人だけ完工にしても、もう1人の分は見えるまま）
   data.sites.forEach((site) => {
     if (!site.doneBy || !site.doneBy.size) return void (site.completedAt = null);
-    const all = [...site.persons.keys()].every((pk) => site.doneBy.has(pk));
+    const all = [...site.persons.values()].every((name) => [...site.doneBy.keys()].some((k) => sameName(k, name)));
     site.completedAt = all ? [...site.doneBy.values()].sort().pop() : null;
   });
   applyGas();
