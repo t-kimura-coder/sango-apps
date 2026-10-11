@@ -2,12 +2,12 @@
 /* 点検・メンテナンス（山郷の管理者用・閲覧）。窓口の inspectList から、項目マスターと全リーダーの記録を読んで、
    「建物 × 項目」の一覧で、期限の状況（超過・近い・先・未実施）を見せる。app.js の $, esc, apiCall, S, route, icon, fillIcons, toast を使う。 */
 
-const IA = { data: null, group: "fire", near: false, sel: null, busy: false, err: "" };
+const IA = { mode: "list", data: null, group: "fire", near: false, sel: null, busy: false, err: "" };
 const iaPad = (n) => String(n).padStart(2, "0");
 const iaToday = () => { const d = new Date(); return `${d.getFullYear()}-${iaPad(d.getMonth() + 1)}-${iaPad(d.getDate())}`; };
 const iaParse = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
 const iaFmt = (d) => `${d.getFullYear()}-${iaPad(d.getMonth() + 1)}-${iaPad(d.getDate())}`;
-const iaMD = (s) => { const d = iaParse(s); return `${d.getMonth() + 1}/${iaPad(d.getDate())}`; };
+const iaMD = (s) => { const d = iaParse(s); return `${d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "/" : ""}${d.getMonth() + 1}/${iaPad(d.getDate())}`; };
 const iaDays = (a, b) => Math.round((iaParse(a) - iaParse(b)) / 86400000);
 function iaAddMonths(s, n) {
   const d = iaParse(s), day = d.getDate();
@@ -74,6 +74,7 @@ function viewInsp(main) {
     if (!IA.err) inspLoad();
     return;
   }
+  if (IA.mode === "plan") { main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}${iaPlanMatrixHtml()}`; iaWireMode(main, () => viewInsp(main)); return; }
   const all = iaCells(), today = iaToday();
   const over = all.filter((c) => c.st === "over").length, soon = all.filter((c) => c.st === "soon").length, none = all.filter((c) => c.st === "none").length;
   const ym = today.slice(0, 7), doneMonth = IA.data.logs.filter((l) => l.done_on.slice(0, 7) === ym && l.result !== "pending").length;
@@ -85,7 +86,7 @@ function viewInsp(main) {
   const cellOf = (itemId, bid) => cells.find((c) => c.item.id === itemId && c.bid === bid);
   const sel = IA.sel && all.find((c) => c.item.id === IA.sel.i && c.bid === IA.sel.b);
   const label = (c) => (c.st === "over" ? `${iaMD(c.due)}<small>超過</small>` : c.st === "none" ? "未実施" : `${iaMD(c.due)}`);
-  main.innerHTML = `<h2 class="pageTitle">点検</h2>
+  main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}
     ${over ? `<div class="iaBanner">期限が過ぎている点検が <b>${over}件</b> あります</div>` : ""}
     <div class="kpis"><div class="kpi iaK over"><small>期限超過</small><div class="v">${over}</div></div><div class="kpi iaK soon"><small>期限が近い</small><div class="v">${soon}</div></div><div class="kpi iaK ok"><small>今月の記録</small><div class="v">${doneMonth}</div></div><div class="kpi iaK none"><small>未実施</small><div class="v">${none}</div></div></div>
     <div class="iaWrap"><div class="panel iaMain">
@@ -94,7 +95,8 @@ function viewInsp(main) {
         ${blds.map((b) => `<tr><td class="iaB">${esc(b.name)}</td>${items.map((i) => { const c = cellOf(i.id, b.id); return c ? `<td class="iaC ${c.st}${sel && sel.item.id === i.id && sel.bid === b.id ? " sel" : ""}" data-i="${esc(i.id)}" data-b="${esc(b.id)}">${label(c)}</td>` : `<td class="iaC na"></td>`; }).join("")}</tr>`).join("") || `<tr><td colspan="${items.length + 1}" class="iaB">該当する建物はありません</td></tr>`}</table></div>
       <div class="note">色：赤＝期限超過／黄土＝期限が近い／緑＝先／グレー＝未実施／斜線＝その項目のない建物。数字は次の期限。セルを押すと、右に履歴が出ます。</div></div>
     <div class="panel iaSide">${sel ? iaSide(sel) : `<div class="note">左の一覧のセルを押すと、その点検の履歴が出ます。</div>`}</div></div>`;
-  main.querySelectorAll(".iaTab").forEach((b) => (b.onclick = () => { IA.group = b.dataset.g; viewInsp(main); }));
+  main.querySelectorAll(".iaTab[data-g]").forEach((b) => (b.onclick = () => { IA.group = b.dataset.g; viewInsp(main); }));
+  iaWireMode(main, () => viewInsp(main));
   $("iaNear").onchange = (e) => { IA.near = e.target.checked; viewInsp(main); };
   main.querySelectorAll(".iaC[data-i]").forEach((el) => (el.onclick = () => { IA.sel = { i: el.dataset.i, b: el.dataset.b }; viewInsp(main); }));
   main.querySelectorAll("[data-photo]").forEach((el) => (el.onclick = async () => {
@@ -111,3 +113,50 @@ function iaSide(c) {
       <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>${(l.checks || []).filter((x) => x.r === "issue").map((x) => `<div class="note">要対応：${esc(x.t)}${x.m ? "（" + esc(x.m) + "）" : ""}</div>`).join("")}${l.memo ? `<div class="note">${esc(l.memo)}</div>` : ""}
       ${(l.photos || []).map((p, n) => `<button class="btn iaPh" data-photo="${esc(p)}">写真${n + 1}</button>`).join("")}</div>`).join("") : `<div class="note">まだ記録がありません</div>`}`;
 }
+
+/* ---------- 年間予定（何月に何をやるか） ---------- */
+const iaPlanOf = (it) => {
+  if (Array.isArray(it.plan) && it.plan.length) return it.plan;
+  const c = it.cycle || {};
+  if (c.type === "season") return c.months || [];
+  const n = c.n || 12;
+  return n === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : n === 3 ? [1, 4, 7, 10] : n === 6 ? [5, 11] : [4];
+};
+/** 今月から12か月の、(項目×月) の状況。done＝その月に、全部の建物で記録がある／part＝一部 */
+function iaPlanModel() {
+  const today = iaToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);
+  const bn = {}; (IA.data.meta.buildings || []).forEach((b) => { bn[b.id] = b.name; });
+  const months = [];
+  for (let k = 0; k < 12; k++) { const idx = m0 - 1 + k, m = (idx % 12) + 1, y = y0 + Math.floor(idx / 12); months.push({ m, y, ym: `${y}-${iaPad(m)}`, now: k === 0 }); }
+  const items = IA.data.items.filter((i) => i.enabled).sort((a, b) => a.no - b.no).map((it) => {
+    const bl = (it.buildings || []).filter((b) => bn[b]);
+    const cells = months.map((mo) => {
+      if (iaPlanOf(it).indexOf(mo.m) < 0) return null;
+      const done = bl.filter((b) => IA.data.logs.some((l) => l.item_id === it.id && l.building_id === b && l.result !== "pending" && String(l.done_on).slice(0, 7) === mo.ym)).length;
+      return { done, total: bl.length, st: bl.length && done === bl.length ? "done" : done ? "part" : "todo" };
+    });
+    return { it, bl: bl.map((b) => bn[b]), cells, monthly: iaPlanOf(it).length === 12 };
+  });
+  return { months, items };
+}
+/** PC：項目 × 月の表 */
+function iaPlanMatrixHtml() {
+  const { months, items } = iaPlanModel();
+  const groups = (IA.data.meta.groups || []).filter((g) => items.some((x) => x.it.group === g.id));
+  const head = `<tr><th class="iaPI">項目</th>${months.map((mo) => `<th class="${mo.now ? "iaNow" : ""}">${mo.m}月${mo.y !== months[0].y && mo.m === 1 ? `<small>${mo.y}</small>` : ""}</th>`).join("")}</tr>`;
+  const body = groups.map((g) => `<tr><td class="iaGrp" colspan="13">${esc(g.name)}</td></tr>` + items.filter((x) => x.it.group === g.id).map((x) => `<tr><td class="iaPI" title="${esc(x.bl.join("・"))}"><b>${esc(x.it.title)}</b>${x.it.legal ? `<small class="iaLegal">法定</small>` : ""}<small>${x.bl.length >= 6 ? `全${x.bl.length}棟` : esc(x.bl.join("・"))}</small></td>${x.cells.map((c, i) => (c ? `<td class="iaPC ${c.st}${months[i].now ? " iaNow" : ""}">${c.st === "done" ? "✓" : c.st === "part" ? `${c.done}/${c.total}` : "●"}</td>` : `<td class="${months[i].now ? "iaNow" : ""}"></td>`)).join("")}</tr>`).join("")).join("");
+  return `<div class="panel"><div class="note" style="margin-bottom:8px">「標準の予定月」です（実際の期限は、前回の実施日から計算され、「期限の一覧」に出ます）。●＝予定、✓＝その月に全部の建物で記録あり、数字＝一部の建物だけ記録あり。毎月のものは、全部の月に●が並びます。</div><div class="iaScroll"><table class="iaTable iaPlan">${head}${body}</table></div></div>`;
+}
+/** スマホ：月ごとの一覧（毎月のものは、まとめて1行） */
+function iaPlanListHtml() {
+  const { months, items } = iaPlanModel();
+  const monthly = items.filter((x) => x.monthly);
+  let h = `<div class="mBox"><div class="mH">毎月やること</div><div class="mText" style="font-size:13px">${monthly.map((x) => esc(x.it.title)).join("／")}</div></div>`;
+  months.forEach((mo, k) => {
+    const list = items.map((x) => ({ x, c: x.cells[k] })).filter((o) => o.c && !o.x.monthly);
+    h += `<div class="mBox${mo.now ? " iaNowBox" : ""}"><div class="mH" style="font-size:15px">${mo.m}月${mo.now ? "（今月）" : mo.y !== months[0].y ? `（${mo.y}年）` : ""}</div>${list.map((o) => `<div class="mLog"><b>${esc(o.x.it.title)}</b>${o.x.it.legal ? ` <span class="tag warn">法定</span>` : ""} <span class="note">${o.x.bl.length >= 6 ? `全${o.x.bl.length}棟` : esc(o.x.bl.join("・"))}</span>${o.c.st === "done" ? ` <b style="color:#2f6b45">✓</b>` : o.c.st === "part" ? ` <b style="color:#2f6b45">${o.c.done}/${o.c.total}</b>` : ""}</div>`).join("") || `<div class="note">毎月のもの以外は、ありません</div>`}</div>`;
+  });
+  return h;
+}
+const iaModeToggle = (cls) => `<div class="${cls}"><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "list" ? " on" : ""}" data-iamode="list">期限の一覧</button><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "plan" ? " on" : ""}" data-iamode="plan">年間予定</button></div>`;
+function iaWireMode(root, redraw) { root.querySelectorAll("[data-iamode]").forEach((b) => (b.onclick = () => { IA.mode = b.dataset.iamode; redraw(); })); }

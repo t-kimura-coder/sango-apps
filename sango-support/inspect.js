@@ -11,13 +11,45 @@ let inspPend = [];        // 送り終わっていない記録 [{ log, photos:[{
 let inspBld = "";         // 一覧の建物の絞り込み
 let inspBusy = false;
 let inspForm = null;
-let inspAllNone = false;  // 「まだ記録がありません」を全部出すか
+let inspAllNone = false;
+let inspMode = "list";    // "list"＝期限の一覧／"plan"＝年間予定（何月に何をやるか）
+let inspItemFilter = "";  // 年間予定から選んだ項目だけを一覧に出す
+/** 標準の予定月（項目マスターの plan。無ければ周期から） */
+const inspPlanOf = (it) => {
+  if (Array.isArray(it.plan) && it.plan.length) return it.plan;
+  const c = it.cycle || {};
+  if (c.type === "season") return c.months || [];
+  const n = c.n || 12;
+  return n === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : n === 3 ? [1, 4, 7, 10] : n === 6 ? [5, 11] : [4];
+};
+/** 年間予定：毎月のものは、まとめて1行。ほかは、今月から12か月、月ごとに「何をやるか」を並べる */
+function inspPlanHtml() {
+  const today = inspToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);
+  const items = inspData.items.filter((i) => i.enabled), logs = inspLogs(), bn = {};
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bn[b.id] = b.name; });
+  const monthly = items.filter((i) => inspPlanOf(i).length === 12);
+  const doneIn = (item, bid, ym) => logs.some((l) => l.item_id === item.id && l.building_id === bid && l.result !== "pending" && String(l.done_on).slice(0, 7) === ym);
+  let html = `<div class="infoBar">${icon("info")}「標準の予定月」です。実際の期限は、前回の実施日から計算されます（「期限の一覧」）。項目を押すと、その項目だけを一覧で見られます。</div>`;
+  html += `<div class="planMonthly"><b>毎月やること</b><div>${monthly.map((i) => `<span class="planChip" data-i="${esc(i.id)}">${esc(i.title)}</span>`).join("")}</div></div>`;
+  for (let k = 0; k < 12; k++) {
+    const idx = m0 - 1 + k, m = (idx % 12) + 1, y = y0 + Math.floor(idx / 12), ym = `${y}-${pad(m)}`;
+    const list = items.filter((i) => inspPlanOf(i).length < 12 && inspPlanOf(i).indexOf(m) >= 0);
+    html += `<div class="planMonth${k === 0 ? " now" : ""}"><h4>${m}月${k === 0 ? "（今月）" : y !== y0 ? `（${y}年）` : ""}</h4>`;
+    html += list.length ? list.map((i) => {
+      const bl = (i.buildings || []).filter((b) => bn[b]), done = bl.filter((b) => doneIn(i, b, ym)).length;
+      const names = bl.length >= 6 ? `全${bl.length}棟` : bl.map((b) => esc(bn[b])).join("・");
+      return `<div class="planRow${bl.length && done === bl.length ? " done" : ""}" data-i="${esc(i.id)}"><span class="planDot ${esc(i.group)}"></span><div class="planT"><b>${esc(i.title)}</b>${i.legal ? ` <span class="tag warn">法定</span>` : ""}<div class="inspMeta">${names}</div></div><span class="planSt">${done ? (done === bl.length ? "済" : `済 ${done}/${bl.length}`) : ""}</span></div>`;
+    }).join("") : `<div class="note" style="padding:4px 2px">毎月のもの以外は、ありません</div>`;
+    html += `</div>`;
+  }
+  return html;
+}  // 「まだ記録がありません」を全部出すか
 
 /* ---------- 日付の計算 ---------- */
 const inspToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const inspParse = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
 const inspFmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const inspMD = (s) => { const d = inspParse(s); return `${d.getMonth() + 1}/${pad(d.getDate())}`; };
+const inspMD = (s) => { const d = inspParse(s); return `${d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "/" : ""}${d.getMonth() + 1}/${pad(d.getDate())}`; }; // 来年以降は、年も出す
 const inspDays = (a, b) => Math.round((inspParse(a) - inspParse(b)) / 86400000);
 function inspAddMonths(s, n) { // 月末をはみ出さないように足す（1/31 + 1か月 = 2/28）
   const d = inspParse(s), day = d.getDate();
@@ -127,18 +159,24 @@ async function viewInspect(main, r) {
     if (!inspData) { main.innerHTML = `<div class="empty">${inspBusy ? "読み込んでいます…" : "点検の項目を読み込めませんでした。電波のある所で、もう一度開いてください。"}</div>`; return; }
     const all = inspRows(), cnt = inspCount(all);
     const blds = ((inspData.meta && inspData.meta.buildings) || []).filter((b) => all.some((x) => x.bid === b.id));
-    const rows = all.filter((x) => !inspBld || x.bid === inspBld);
+    const rows = all.filter((x) => (!inspBld || x.bid === inspBld) && (!inspItemFilter || x.item.id === inspItemFilter));
     const today = inspToday();
     const sec = (title, cls, list, note) => (list.length ? `<div class="sectionHead"><h3 class="${cls}">${title}</h3><span class="rule"></span><span class="count">${list.length}件</span></div>${note ? `<div class="mutedText" style="margin:-2px 4px 8px">${note}</div>` : ""}${list.map((x) => inspCard(x, x.st)).join("")}` : "");
     const byDue = (a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0);
     const over = rows.filter((x) => x.st === "over").sort(byDue), month = rows.filter((x) => x.st === "month").sort(byDue);
     const none = rows.filter((x) => x.st === "none"), later = rows.filter((x) => x.st === "later").sort(byDue);
     const recent = rows.filter((x) => x.last && inspDays(today, x.last.done_on) <= 7 && x.st === "later");
-    main.innerHTML = `<div class="inspSum"><span class="chipN over">期限超過 ${cnt.over}</span><span class="chipN month">今月 ${cnt.month}</span></div>
+    const listHtml = `<div class="inspSum"><span class="chipN over">期限超過 ${cnt.over}</span><span class="chipN month">今月 ${cnt.month}</span></div>
       <div class="chips"><button class="chip${inspBld ? "" : " on"}" data-bb="">すべて</button>${blds.map((b) => `<button class="chip${inspBld === b.id ? " on" : ""}" data-bb="${esc(b.id)}">${esc(b.name)}</button>`).join("")}</div>
       ${sec("期限が過ぎています", "over", over)}${sec("今月やること", "month", month)}${sec("最近済んだもの", "done", recent)}${sec("次の予定", "later", later.filter((x) => !recent.includes(x)))}${sec("まだ記録がありません", "none", inspAllNone ? none : none.slice(0, 6), "初めての記録をすると、次の期限が出ます。")}
       ${!inspAllNone && none.length > 6 ? `<button class="btn" id="inspMore" style="width:100%;margin:4px 0 12px">あと ${none.length - 6}件を表示する</button>` : ""}
       ${rows.length ? "" : `<div class="empty">この建物の点検の項目はありません。</div>`}`;
+    const tg = `<div class="segRow inspTg"><button class="segBtn${inspMode === "list" ? " on ok" : ""}" data-md="list">期限の一覧</button><button class="segBtn${inspMode === "plan" ? " on ok" : ""}" data-md="plan">年間予定</button></div>`;
+    const flt = inspMode === "list" && inspItemFilter ? `<div class="inspFlt">${esc((inspItem(inspItemFilter) || {}).title || "")} だけを表示中　<button class="btn" id="inspFltOff" style="min-height:32px;padding:2px 10px">すべて見る</button></div>` : "";
+    main.innerHTML = tg + flt + (inspMode === "plan" ? inspPlanHtml() : listHtml);
+    main.querySelectorAll("[data-md]").forEach((b) => (b.onclick = () => { inspMode = b.dataset.md; if (inspMode === "plan") inspItemFilter = ""; draw(); window.scrollTo(0, 0); }));
+    main.querySelectorAll(".planRow, .planChip").forEach((el) => (el.onclick = () => { inspItemFilter = el.dataset.i; inspMode = "list"; draw(); window.scrollTo(0, 0); }));
+    const fo = $("inspFltOff"); if (fo) fo.onclick = () => { inspItemFilter = ""; draw(); };
     const more = $("inspMore"); if (more) more.onclick = () => { inspAllNone = true; draw(); };
     main.querySelectorAll("[data-bb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.bb; draw(); }));
     main.querySelectorAll(".inspCard").forEach((el) => (el.onclick = () => go(`#/insp/rec/${encodeURIComponent(el.dataset.i)}/${encodeURIComponent(el.dataset.b)}`)));

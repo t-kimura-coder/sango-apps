@@ -265,3 +265,12 @@ body.mobileMode main { padding: 12px 12px 88px; }
 .mLogs { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; } .mLog { padding: 5px 0; font-size: 13px; }
 body.mobileMode .photoGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } body.mobileMode .photoGrid img { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; }
 body.mobileMode .settingBox { max-width: none; }
+
+/* 年間予定（管理者） */
+.iaPlan th, .iaPlan td { min-width: 44px; }
+.iaPlan .iaPI { text-align: left; min-width: 220px; max-width: 280px; white-space: normal; background: #fff; } .iaPlan .iaPI small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.iaPlan .iaGrp { background: var(--green-soft); font-weight: 800; text-align: left; color: var(--green-deep); }
+.iaPlan .iaNow { background: #fbf3df; } .iaPlan th.iaNow { background: #f0dcaa; }
+.iaPC.todo { color: #8a5a12; } .iaPC.done { color: #2f6b45; background: #dcefe2; } .iaPC.part { color: #2f6b45; background: #eef6e8; font-size: 12px; }
+.iaNowBox { background: #fbf3df; }
+.mBox .tag { padding: 1px 6px; border-radius: 8px; font-size: 11px; }

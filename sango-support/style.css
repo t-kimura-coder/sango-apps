@@ -286,3 +286,16 @@ textarea { min-height: 84px; }
 .tourNext { min-height: 44px; }
 .helpSec h3 { margin: 0 0 8px; font-size: 16px; color: var(--green-deep, #1b3d2a); }
 .helpList { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14px; } .helpList li { margin-bottom: 6px; }
+
+/* 年間予定 */
+.inspTg { margin-bottom: 10px; } .inspFlt { background: #e6e9dd; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+.planMonthly { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 10px 12px; margin-bottom: 10px; }
+.planChip { display: inline-block; margin: 4px 6px 0 0; padding: 4px 10px; border-radius: 12px; background: #e4ede2; color: var(--green-deep, #1b3d2a); font-size: 13px; cursor: pointer; }
+.planMonth { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 10px 12px; margin-bottom: 10px; border-left: 5px solid var(--line); }
+.planMonth.now { border-left-color: #b07a3f; background: #fbf3df; }
+.planMonth h4 { margin: 0 0 6px; font-size: 16px; color: var(--green-deep, #1b3d2a); }
+.planRow { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer; } .planRow:first-of-type { border-top: 0; }
+.planRow.done { opacity: 0.6; }
+.planDot { width: 10px; height: 10px; border-radius: 5px; margin-top: 6px; flex: none; background: #8a8f84; }
+.planDot.fire { background: #a3322a; } .planDot.heat { background: #b4531c; } .planDot.air { background: #2b6577; } .planDot.elec { background: #8a5a12; } .planDot.season { background: #2f6b45; } .planDot.ext { background: #6b4a1c; }
+.planT { flex: 1; font-size: 14px; } .planSt { font-size: 12px; font-weight: 700; color: #2f6b45; white-space: nowrap; }

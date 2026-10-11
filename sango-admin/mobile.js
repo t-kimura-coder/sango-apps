@@ -107,16 +107,18 @@ function mobileInsp(main) {
     if (!IA.err) inspLoad();
     return;
   }
+  if (IA.mode === "plan") { main.innerHTML = iaModeToggle("mChips") + iaPlanListHtml(); iaWireMode(main, () => mobileInsp(main)); return; }
   const all = iaCells();
   const order = { over: 0, soon: 1, ok: 2, none: 3 };
   const cells = all.filter((c) => MF.inspAll || c.st === "over" || c.st === "soon").sort((a, b) => order[a.st] - order[b.st] || (a.due < b.due ? -1 : 1));
   const nOver = all.filter((c) => c.st === "over").length, nSoon = all.filter((c) => c.st === "soon").length;
   const ST = { over: "期限超過", soon: "期限が近い", ok: "先", none: "未実施" };
   const RL = { ok: "異常なし", issue: "要対応あり", pending: "報告書待ち" };
-  main.innerHTML = `<div class="mChips"><span class="mChip over">期限超過 ${nOver}</span><span class="mChip soon">近い ${nSoon}</span><button class="mChip${MF.inspAll ? " on" : ""}" id="mAll">すべて表示</button></div>
+  main.innerHTML = iaModeToggle("mChips") + `<div class="mChips"><span class="mChip over">期限超過 ${nOver}</span><span class="mChip soon">近い ${nSoon}</span><button class="mChip${MF.inspAll ? " on" : ""}" id="mAll">すべて表示</button></div>
     ${cells.map((c) => `<details class="mIns ${c.st}"><summary><div class="mTop"><b>${esc(c.item.title)}</b></div><div class="mMeta"><span>${esc(c.bname)}</span><span class="mSt ${c.st}">${ST[c.st]}${c.due ? "　" + iaMD(c.due) : ""}${c.st === "over" ? `（${-c.days}日超過）` : ""}</span></div></summary>
       <div class="mLogs"><div class="note">${esc((c.item.cycle || {}).label || "")}／${c.item.legal ? "法定" : "任意"}／${esc(c.item.who || "")}</div>${c.logs.slice().sort((a, b) => (a.done_on < b.done_on ? 1 : -1)).slice(0, 5).map((l) => `<div class="mLog"><b>${esc(l.done_on.replace(/-/g, "/"))}</b> ${RL[l.result] || ""}　${esc(l.done_by || "")}${(l.checks || []).filter((x) => x.r === "issue").map((x) => `<div class="note">要対応：${esc(x.t)}${x.m ? "（" + esc(x.m) + "）" : ""}</div>`).join("")}${l.memo ? `<div class="note">${esc(l.memo)}</div>` : ""}</div>`).join("") || `<div class="note">まだ記録がありません</div>`}</div></details>`).join("") || `<div class="empty panel">${MF.inspAll ? "点検の項目がありません" : "期限が近い・過ぎている点検はありません"}</div>`}`;
   $("mAll").onclick = () => { MF.inspAll = !MF.inspAll; mobileInsp(main); };
+  iaWireMode(main, () => mobileInsp(main));
 }
 
 /* ---------- 設定の「表示」 ---------- */

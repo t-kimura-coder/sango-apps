@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -603,18 +603,22 @@ function viewSettings(main) {
       <p><input id="apiToken" class="fSelect" type="password" placeholder="あなたの合言葉" value="${esc(S.api ? S.api.token : "")}" autocomplete="off"></p>
       <p><button class="btn primary" id="apiSave">つないで読み込む</button> ${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</p>
       <p class="note">${S.api ? (S.syncError ? `<span class="statusWarn">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="statusOk">つながっています</span>　最終更新 ${fmtDate(S.syncedAt)} ${fmtTime(S.syncedAt)}　症例 ${S.apiRecs.length}件` : "読み込み中…") : "未接続"}</p></div>
-    ${typeof MOBILE !== "undefined" && MOBILE ? "" : `    <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
+    ${typeof MOBILE !== "undefined" && MOBILE ? "" : (S.api && !S.demo ? `    <div class="panel"><h3>Boxのフォルダ</h3><p class="note"><span class="statusOk">自動です</span>　合言葉でつながっているので、症例・過去履歴・整理した内容は、窓口から自動で入ります。フォルダを選ぶ必要はありません。</p><details><summary class="note" style="cursor:pointer">予備として、Boxのフォルダを読む（通常は使いません）</summary>
       <p class="note">過去履歴（過去履歴.json）や、メールでBoxに届いた報告が入っているフォルダ（Box Drive の「8.山郷サポート」）を選びます。窓口につないでいれば、新しい症例は窓口から入ります。</p>
       <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
       <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
-      ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>`}
+      ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</details></div>` : `    <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
+      <p class="note">過去履歴（過去履歴.json）や、メールでBoxに届いた報告が入っているフォルダ（Box Drive の「8.山郷サポート」）を選びます。窓口につないでいれば、新しい症例は窓口から入ります。</p>
+      <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
+      <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
+      ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>`)}
     ${meAdmin() ? `<div class="panel"><h3>編集</h3><p><span class="statusOk">編集できます</span>　${esc(S.api.me.name)}さん（${esc(S.api.me.role)}）</p><p class="note">管理者の合言葉でつながっているので、金額・原因・メモを編集できます。ほかの管理者が整理した内容も、窓口で自動で合わさります（同じ項目は、新しい方が残ります）。記録には、あなたの名前が残ります。</p></div>` : `<div class="panel"><h3>編集モード</h3>
       <label><input type="checkbox" id="sEdit" ${canEdit() ? "checked" : ""}> このPCで金額・原因・メモを編集する</label>
       <p class="note">窓口につないでいない時（Boxのフォルダだけを使う時）の編集です。整理した内容は、選んだフォルダの「${ADMIN_FILE}」1ファイルに保存されます。</p>
       <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>`}
     ${S.api && !S.demo ? `<div class="panel"><h3>質問・要望・不具合</h3><p class="note">困ったこと、直してほしいことを、木村に送れます。</p><p><button class="btn" id="fbOpen">質問・要望を送る</button></p></div>` : ""}
     ${typeof viewModePanelHtml === "function" ? viewModePanelHtml() : ""}
-    <div class="panel"><h3>原因の分類</h3><p class="note">${CAUSES.join("・")}</p></div>
+    <div class="panel"><h3>原因の分類</h3><p class="note">症例の詳細の「原因の分類」で、選べる項目です：${CAUSES.join("・")}。「整理」で原因を記録しておくと、まとめで、原因ごとの件数を集計できます（ここでは、変更できません。変えたい時は、木村に連絡してください）。</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　症例のデータはこのアプリには含まれず、選んだフォルダから毎回読みます。</p></div></div>`;
   $("apiSave").onclick = async () => {
     const token = $("apiToken").value.trim(), url = ADMIN_API_URL;
