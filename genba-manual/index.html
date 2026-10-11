@@ -402,8 +402,9 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <div class="card helpCard">
       <div class="helpStep">はじめに（1回だけ）</div>
       <ol class="helpList">
-        <li>右上の歯車（設定）で<b>氏名</b>を登録し、Boxにある<b>マニュアル_○○.json</b>を取り込みます。マニュアルはこのiPhoneの中に保存されます。報告の送り先（Box のアドレス）は最初から入っています。</li>
+        <li>右上の歯車（設定）で<b>氏名</b>を登録します。報告の送り先（Box のアドレス）は最初から入っています。</li>
         <li>設定の「上司とのやりとり」に、木村から受け取った<b>合言葉</b>を入れて「つながるか確かめる」を押します（下の「合言葉でできること」）。氏名と合言葉の名前が違う時は知らせが出るので、合わせてください。</li>
+        <li>設定の「マニュアル」で<b>合言葉で受け取る</b>を押します（約30MB・Wi-Fi で1〜2分）。マニュアルはこのiPhoneの中に保存されます。</li>
         <li>ホームの担当現場の<b>現場を追加</b>（「現場の管理」からも追加できます）から、現場名・<b>工事番号</b>（経理の番号）・<b>担当者</b>を登録します。工事番号は<b>なるべく入れてください</b>。二人で担当する現場は、全員が同じ工事番号を入れてください。</li>
         <li>途中から担当する現場は、「記録を始めた段階」を選びます。それより前は「導入前」として数えません。</li>
       </ol>
@@ -534,6 +535,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=91"></script>
+<script src="app.js?v=92"></script>
 </body>
 </html>
