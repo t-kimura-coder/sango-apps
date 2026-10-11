@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1613,6 +1613,13 @@ async function sendReply(n, text, ack = false) {
   return true;
 }
 
+function getReviseSent() {
+  try {
+    return JSON.parse(getLS("reviseSent", "[]"));
+  } catch (e) {
+    return [];
+  }
+}
 function getDrafts() {
   try {
     return JSON.parse(getLS("drafts", "{}"));
@@ -1985,6 +1992,23 @@ function openNote(id) {
     : isNotice
     ? `${acked ? `<div class="ackDone">${icon("check", 18, 2.6)}確認済み</div>` : `<button id="ackBtn" class="btn btnPrimary">${icon("check", 18, 2.6)}確認した</button>`}<button id="sendBtn" class="btn btnOutline">${icon("send", 18)}返信を送る</button>`
     : `<button id="draftBtn" class="btn btnOutline">${icon("save", 18)}下書き保存</button><button id="sendBtn" class="btn btnPrimary">${icon("send", 18)}送る</button>`;
+  // マニュアル改訂の候補にする★（改訂担当のシートに1行書き足す）
+  if (!n.noId && gasOn()) {
+    const starred = getReviseSent().includes(n.id);
+    $("drawerFoot").insertAdjacentHTML("afterbegin", `<button id="reviseBtn" class="btn btnOutline"${starred ? " disabled" : ""}>${starred ? "★ 改訂の候補にしました" : "☆ 改訂の候補にする"}</button>`);
+    $("reviseBtn").addEventListener("click", async () => {
+      $("reviseBtn").disabled = true;
+      try {
+        await gasCall({ action: "reviseAdd", note: { note_id: n.id, type: { question: "疑問", notice: "気づき", request: "要望", contact: "やりとり" }[n.type] || n.type || "", text: n.text || "", item_no: n.itemNo || "", item: n.item || "", process: n.process || "", site: n.siteName || "", kouji_no: n.siteKey && n.siteKey.startsWith("kouji:") ? n.siteKey.slice(6) : "", by: n.by || n.personName || "", at: n.at || "" } });
+        setLS("reviseSent", JSON.stringify([...getReviseSent(), n.id]));
+        $("reviseBtn").textContent = "★ 改訂の候補にしました";
+        toast("マニュアル改訂の候補に入れました（改訂担当のシートに届きます）");
+      } catch (e) {
+        $("reviseBtn").disabled = false;
+        toast(e.message === "unauthorized" ? "合言葉を確かめてください" : "届けられませんでした。もう一度押してください");
+      }
+    });
+  }
   const ta = $("replyText");
   if (n.noId) ta.disabled = true;
   ta.value = getDrafts()[id] || "";

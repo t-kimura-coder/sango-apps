@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 110;
+const APP_VERSION = 111;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "メモを書く時に「マニュアルに反映してほしい」を選べるようになりました（合言葉を入れた人）。マニュアル改訂の担当に、改訂の候補として届きます。マニュアルの新しい版が出た時は、ホームの「やること」に出るようにしました" },
   { date: "2026-10-11", type: "feature", text: "お知らせを「新しい機能」と「直したこと」のタブに分けました。新しいお知らせの数は、タブの横に出ます" },
   { date: "2026-10-11", type: "fix", text: "現場がたくさんある時もチェックの記録を送れるようにしました（30現場ずつ送る）。「使い方」の工事番号の説明を直しました" },
   { date: "2026-10-11", type: "fix", text: "合言葉を入れている人には、ホームの「やること」に「上司からの返信・宿題を取り込む（Box から）」を出さないようにしました（返信・宿題は自動で届きます）" },
@@ -4368,6 +4369,7 @@ function renderMemoSection(it) {
       ? `<div class="noteTypeLabel">種類を選んでから書いてください</div>` +
         `<div class="noteTypes">${NOTE_TYPES.map((t) => `<button class="noteType${t.id === memoType ? " active" : ""}" data-type="${t.id}"><b>${t.label}</b><small>${t.hint}</small></button>`).join("")}</div>` +
         `<textarea id="memoInput" class="sheetTextarea memoInput" placeholder="現場で気づいたこと、疑問に思ったこと、職人さんからの要望など"></textarea>` +
+        (gasOn() ? `<label class="checkOpt reviseOpt"><input type="checkbox" id="memoRevise">マニュアルに反映してほしい（改訂の候補として改訂担当に届く）</label>` : "") +
         `<div class="memoBtns"><button id="memoCancelBtn" class="btn btnSecondary">やめる</button><button id="memoSaveBtn" class="btn btnPrimary memoSaveBtn" hidden>保存</button></div>`
       : `<div class="hint">上の「今の現場」から現場を登録すると、メモを残せます。</div>`) +
     `<div class="noteList">${notes
@@ -4684,6 +4686,11 @@ async function saveMemo(it) {
   rec.notes.push(note);
   await saveCheckRec(rec);
   sendNoteToGas(it, note);
+  if ($("memoRevise") && $("memoRevise").checked) {
+    gasCall({ action: "reviseAdd", note: notePayload(it, note) })
+      .then(() => toast("マニュアル改訂の候補として届けました"))
+      .catch(() => toast("改訂の候補に届けられませんでした（メモは残っています）"));
+  }
   memoType = null;
   memoOpenFor = null;
   renderMemoSection(it);
@@ -5314,6 +5321,11 @@ async function syncStates(manual = false) {
       rerenderCurrentView();
     }
     try {
+      if ((await checkManualVersion()) && manualUpdateAvailable() && currentView === "dashView") renderDash();
+    } catch (e) {
+      /* ignore */
+    }
+    try {
       if ((await fetchSharedOffers()) && currentView === "dashView") renderDash();
     } catch (e) {
       /* 共有の確認だけ失敗しても、同期は済んでいる */
@@ -5606,6 +5618,32 @@ async function onManualPicked() {
   await importManualPack(() => file.text(), "Boxの「マニュアル_○○.json」を選んでいるか確認してください。");
 }
 
+// マニュアルの新しい版：配っている版の日時（GAS）と、この端末で受け取った版の日時を比べる
+const MANUAL_LATEST_KEY = "genba-photo-manual-latest";
+const MANUAL_GOT_KEY = "genba-photo-manual-got";
+async function checkManualVersion() {
+  if (!gasOn() || !manualMeta) return false;
+  const last = Number(localStorage.getItem(MANUAL_LATEST_KEY + ":at") || 0);
+  if (Date.now() - last < 12 * 3600 * 1000) return false; // 半日に1回
+  try {
+    const info = await gasCall({ action: "manualInfo" }, 60000);
+    localStorage.setItem(MANUAL_LATEST_KEY, info.updated || "");
+    localStorage.setItem(MANUAL_LATEST_KEY + ":at", String(Date.now()));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function manualUpdateAvailable() {
+  try {
+    const latest = localStorage.getItem(MANUAL_LATEST_KEY) || "";
+    if (!latest || !manualMeta) return false;
+    const got = localStorage.getItem(MANUAL_GOT_KEY) || manualMeta.importedAt || "";
+    return latest > got;
+  } catch (e) {
+    return false;
+  }
+}
 // 合言葉でマニュアルを受け取る（GAS が会社の Google ドライブから分けて渡す。約30MB なので Wi-Fi で）
 async function receiveManualViaGas() {
   if (!gasOn()) return toast("先に「上司とのやりとり」に合言葉を入れてください");
@@ -5613,6 +5651,7 @@ async function receiveManualViaGas() {
   await importManualPack(async () => {
     setProcessing(true, "マニュアルを受け取っています...");
     const info = await gasCall({ action: "manualInfo" }, 60000);
+    receivedManualUpdated = info.updated || "";
     const parts = [];
     for (let i = 0; i < info.chunks; i++) {
       setProcessing(true, `マニュアルを受け取っています... ${i + 1} / ${info.chunks}`);
@@ -5630,6 +5669,7 @@ async function receiveManualViaGas() {
   }, "電波の良い所（Wi-Fi）で、もう一度押してください。続く時は、iPhone の空き容量も確かめてください。");
 }
 
+let receivedManualUpdated = "";
 async function importManualPack(getText, failHint) {
   const tourShown = !$("tour").hidden;
   $("tour").hidden = true;
@@ -5661,6 +5701,13 @@ async function importManualPack(getText, failHint) {
       schema: pack.schema || 1,
     });
     await loadManualMeta();
+    try {
+      // 合言葉で受け取った時は配っている版の日時、ファイルから取り込んだ時は今の日時を「受け取った版」として覚える
+      localStorage.setItem(MANUAL_GOT_KEY, receivedManualUpdated || new Date().toISOString());
+    } catch (e) {
+      /* ignore */
+    }
+    receivedManualUpdated = "";
     toast(`マニュアル（${manualMeta.version}版）を取り込みました`);
     if (tourIdx >= 0 && TOUR_STEPS[tourIdx] && TOUR_STEPS[tourIdx].target() === $("manualCard")) {
       tourIdx++;
@@ -5964,6 +6011,8 @@ async function renderDash() {
   // 行の頭に「どの現場の話か」を出す（site: 現場 / 現場名の文字 / "全体"）。1現場だけの人にも出す（全体の話と見分けるため）
   const todo = [];
   const siteNameOf = (id) => (sites.find((x) => x.id === id) || {}).name || "";
+  if (manualUpdateAvailable())
+    todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `マニュアルの新しい版があります <b class="em">受け取る</b>`, go: () => openSettings() });
   const offers = await pendingSharedOffers();
   if (gen !== renderGen.dash) return; // 後から始まった描き直しに任せる
   offers.forEach((o) =>
