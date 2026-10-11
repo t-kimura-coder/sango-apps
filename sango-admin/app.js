@@ -3,7 +3,8 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 14;
+const APP_VERSION = 15;
+const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
 const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
@@ -45,7 +46,8 @@ let SUM = { period: "365", src: "all" };
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), 3000); }
 function showLoading(msg) { $("loadingText").textContent = msg; $("loading").hidden = false; }
 function hideLoading() { $("loading").hidden = true; }
-const canEdit = () => getLS("edit") === "1";
+const meAdmin = () => !!(S.api && !S.demo && S.api.me && S.api.me.caps && S.api.me.caps.indexOf("admin") >= 0 && !S.api.me.legacy); // 管理者の合言葉でつながっている
+const canEdit = () => meAdmin() || getLS("edit") === "1";
 
 /* ---------- データの取り込み ---------- */
 const str = (v) => (v == null ? "" : String(v));
@@ -115,7 +117,7 @@ function rebuild() {
 }
 
 /* ---------- 窓口（GAS）：スマホから送られた症例を自動で受け取る ---------- */
-function loadApiCfg() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } }
+function loadApiCfg() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } } // 保存した窓口の設定（合言葉と、つないだ人）
 async function apiCall(body, ms) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 60000);
@@ -346,7 +348,7 @@ const route = () => { const parts = location.hash.replace(/^#\/?/, "").split("/"
 function boot() { renderHeader(); render(); }
 function renderHeader() {
   const b = $("modeBadge");
-  b.textContent = canEdit() ? "編集モード" : "閲覧専用";
+  b.textContent = meAdmin() ? `編集できます（${S.api.me.name}）` : canEdit() ? "編集モード" : "閲覧専用";
   b.className = "modeBadge" + (canEdit() ? " edit" : "");
 }
 let viewTok = 0;
@@ -581,9 +583,8 @@ function viewSettings(main) {
   const n = S.records.length - hiddenN, todo = S.records.filter(isTodo).length, past = S.records.filter((r) => r.src === "past" && !isHidden(r)).length;
   main.innerHTML = `<div class="settingBox"><div class="listTop"><h2>設定</h2></div>
     <div class="panel"><h3>窓口につなぐ（自動で最新になります）</h3>
-      <p class="note">スマホから送られた症例が、数十秒おきに自動で入ります。管理者から教えてもらった、窓口のURLと「管理用の合言葉」を入れてください（この PC のブラウザにだけ保存されます）。</p>
-      <p><input id="apiUrl" class="fSelect" placeholder="窓口のURL（https://script.google.com/macros/s/…/exec）" value="${esc(S.api ? S.api.url : "")}"></p>
-      <p><input id="apiToken" class="fSelect" type="password" placeholder="管理用の合言葉" value="${esc(S.api ? S.api.token : "")}" autocomplete="off"></p>
+      <p class="note">スマホから送られた症例が、数十秒おきに自動で入ります。木村から受け取った、あなたの合言葉（人ごとに違います）を入れてください（この PC のブラウザにだけ保存されます）。</p>
+      <p><input id="apiToken" class="fSelect" type="password" placeholder="あなたの合言葉" value="${esc(S.api ? S.api.token : "")}" autocomplete="off"></p>
       <p><button class="btn primary" id="apiSave">つないで読み込む</button> ${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</p>
       <p class="note">${S.api ? (S.syncError ? `<span class="statusWarn">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="statusOk">つながっています</span>　最終更新 ${fmtDate(S.syncedAt)} ${fmtTime(S.syncedAt)}　症例 ${S.apiRecs.length}件` : "読み込み中…") : "未接続"}</p></div>
     <div class="panel"><h3>Boxのフォルダ（過去履歴・予備）</h3>
@@ -591,22 +592,27 @@ function viewSettings(main) {
       <p>${S.source ? `<span class="statusOk">読み込み済み</span>　${esc(S.source.name)}　症例 ${n}件（うち過去 ${past}件）・未整理 ${todo}件${hiddenN ? `・非表示 ${hiddenN}件` : ""}・写真 ${S.photoGetters.size}枚` : `<span class="statusWarn">未読み込み</span>`}</p>
       <p><button class="btn primary" id="sPick">フォルダを選ぶ</button> <button class="btn" id="sReload">読み直す</button> <button class="btn" id="sDemo">デモデータで見る</button></p>
       ${canPickFolder ? "" : `<p class="note">このブラウザではフォルダへの保存ができません。Edge か Chrome で開くと、整理した内容をフォルダに保存できます。</p>`}</div>
-    <div class="panel"><h3>編集モード</h3>
+    ${meAdmin() ? `<div class="panel"><h3>編集</h3><p><span class="statusOk">編集できます</span>　${esc(S.api.me.name)}さん（${esc(S.api.me.role)}）</p><p class="note">管理者の合言葉でつながっているので、金額・原因・メモを編集できます。ほかの管理者が整理した内容も、窓口で自動で合わさります（同じ項目は、新しい方が残ります）。記録には、あなたの名前が残ります。</p></div>` : `<div class="panel"><h3>編集モード</h3>
       <label><input type="checkbox" id="sEdit" ${canEdit() ? "checked" : ""}> このPCで金額・原因・メモを編集する</label>
-      <p class="note">編集できるのは、山郷側の管理者のPC1台だけにしてください（ほかのPCは入れないままで、閲覧専用になります）。整理した内容は、選んだフォルダの「${ADMIN_FILE}」1ファイルに保存されます。</p>
-      <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>
+      <p class="note">窓口につないでいない時（Boxのフォルダだけを使う時）の編集です。整理した内容は、選んだフォルダの「${ADMIN_FILE}」1ファイルに保存されます。</p>
+      <p><label class="note">編集者の名前（更新の記録に残ります）</label><br><input id="sName" class="fSelect" style="max-width:260px" value="${esc(getLS("name"))}" placeholder="例）山田"></p></div>`}
+    ${S.api && !S.demo ? `<div class="panel"><h3>質問・要望・不具合</h3><p class="note">困ったこと、直してほしいことを、木村に送れます。</p><p><button class="btn" id="fbOpen">質問・要望を送る</button></p></div>` : ""}
     <div class="panel"><h3>原因の分類</h3><p class="note">${CAUSES.join("・")}</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　症例のデータはこのアプリには含まれず、選んだフォルダから毎回読みます。</p></div></div>`;
   $("apiSave").onclick = async () => {
-    const url = $("apiUrl").value.trim(), token = $("apiToken").value.trim();
-    if (!/^https:\/\/script\.google\.com\//.test(url) || !token) return alert("窓口のURL（https://script.google.com/…）と、管理用の合言葉を入れてください");
+    const token = $("apiToken").value.trim(), url = ADMIN_API_URL;
+    if (token.length < 32) return alert("合言葉が短すぎます。コピーし損ねていないか、確認してください");
     const prev = S.api, was = S.demo;
     S.api = { url, token };
-    try { await apiCall({ action: "ping" }, 30000); } catch (e) { S.api = prev; return alert("つながりませんでした：" + String(e && e.message || e)); }
+    let who;
+    try { who = await apiCall({ action: "ping" }, 30000); }
+    catch (e) { S.api = prev; return alert(/unauthorized/.test(String(e && e.message)) ? "合言葉が違います（または、止められています）" : "つながりませんでした：" + String(e && e.message || e)); }
+    if (who.legacy || !who.caps || who.caps.indexOf("admin") < 0) { S.api = prev; return alert(who.legacy ? "共通の合言葉ではなく、自分の合言葉を入れてください" : "この合言葉は、管理者ビューアでは使えません（役割：" + (who.user_role || "") + "）"); }
+    S.api = { url, token, me: { name: who.name, role: who.user_role, caps: who.caps, legacy: !!who.legacy } };
     if (was) { S.demo = false; S.fileRecs = []; S.fileAdmin = null; S.fileGetters = new Map(); S.source = null; } // デモは、つながってから終わらせる
-    if (!prev || prev.url !== url || prev.token !== token) { S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); S.syncedAt = 0; } // 別の窓口なら、前の窓口のデータは捨てる
+    if (!prev || prev.token !== token) { S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); S.syncedAt = 0; } // 別の窓口なら、前の窓口のデータは捨てる
     apiLoading = false; // 読み込み中でも、つなぎ直した分を読む（前の読み込みの結果は捨てられる）
-    setLS("api", JSON.stringify({ url, token }));
+    setLS("api", JSON.stringify(S.api));
     showLoading("窓口から読み込んでいます...");
     await loadApiRecords(true);
     hideLoading();
@@ -615,8 +621,9 @@ function viewSettings(main) {
   };
   const off = $("apiOff"); if (off) off.onclick = () => { if (!confirm("窓口につなぐのをやめますか？（窓口の症例は、この画面から消えます。再びつなげば戻ります）")) return; setLS("api", ""); S.api = null; S.apiRecs = []; S.apiAdmin = null; S.apiGetters = new Map(); rebuild(); renderSync(); viewSettings($("main")); fillIcons($("main")); };
   $("sPick").onclick = pickFolder; $("sReload").onclick = reopenFolder; $("sDemo").onclick = startDemo;
-  $("sEdit").onchange = (e) => { setLS("edit", e.target.checked ? "1" : "0"); renderHeader(); toast(e.target.checked ? "編集モードにしました" : "閲覧専用にしました"); };
-  $("sName").onchange = (e) => setLS("name", e.target.value.trim());
+  const fbo = $("fbOpen"); if (fbo) fbo.onclick = openFeedback;
+  if ($("sEdit")) $("sEdit").onchange = (e) => { setLS("edit", e.target.checked ? "1" : "0"); renderHeader(); toast(e.target.checked ? "編集モードにしました" : "閲覧専用にしました"); };
+  if ($("sName")) $("sName").onchange = (e) => setLS("name", e.target.value.trim());
 }
 
 /* ---------- 起動 ---------- */
@@ -637,3 +644,23 @@ fillIcons(document.body);
   setInterval(autoRefresh, 45000); // 開いている間、45秒おきに最新にする
   document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 })();
+
+/** 質問・要望・不具合を送る（窓口のシートに残り、木村にメールが届く） */
+function openFeedback() {
+  const kinds = ["質問", "要望", "不具合", "その他"];
+  let kind = "質問";
+  const root = document.createElement("div");
+  root.className = "fbBack";
+  root.innerHTML = `<div class="fbBox"><h3>質問・要望・不具合を送る</h3><div class="fbKinds">${kinds.map((k, i) => `<button class="btn${i === 0 ? " primary" : ""}" data-v="${k}">${k}</button>`).join(" ")}</div>
+    <textarea id="fbText" maxlength="1000" placeholder="例）点検の画面で、○○が出ません"></textarea><p class="note">画面の名前や、何をした時かを書くと、早く直せます。</p><p id="fbMsg" class="note" style="color:#b4531c"></p>
+    <p><button class="btn primary" id="fbSend">送る</button> <button class="btn" id="fbNo">やめる</button></p></div>`;
+  document.body.appendChild(root);
+  root.querySelectorAll(".fbKinds .btn").forEach((b) => (b.onclick = () => { kind = b.dataset.v; root.querySelectorAll(".fbKinds .btn").forEach((x) => x.classList.toggle("primary", x === b)); }));
+  root.querySelector("#fbNo").onclick = () => root.remove();
+  root.querySelector("#fbSend").onclick = async () => {
+    const text = root.querySelector("#fbText").value.trim(); if (!text) { root.querySelector("#fbMsg").textContent = "内容を入れてください"; return; }
+    root.querySelector("#fbSend").disabled = true;
+    try { await apiCall({ action: "feedback", kind, text, app: "admin", app_version: APP_VERSION }, 30000); root.remove(); toast("送りました。ありがとうございます"); }
+    catch (e) { root.querySelector("#fbMsg").textContent = "送れませんでした：" + String((e && e.message) || e).slice(0, 60); root.querySelector("#fbSend").disabled = false; }
+  };
+}

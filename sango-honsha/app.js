@@ -1,7 +1,8 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 1;
+const APP_VERSION = 2;
+const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -22,7 +23,7 @@ async function apiCall(body, ms) {
   try {
     const res = await fetch(S.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: S.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
     let j; try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。URL・公開の設定・電波を確認してください"); }
-    if (!j.ok) throw new Error(j.error === "unauthorized" ? "合言葉が違います（本社用の合言葉を入れてください）" : (j.error || "窓口からの返事が不正です"));
+    if (!j.ok) throw new Error(j.error === "unauthorized" ? "合言葉が違います（または、止められています）" : (j.error || "窓口からの返事が不正です"));
     return j;
   } finally { clearTimeout(timer); }
 }
@@ -181,23 +182,22 @@ function viewBill(main) {
 }
 
 /* ---------- 設定 ---------- */
-function viewEmptyApi(main) { main.innerHTML = `<div class="empty"><h3>まだ窓口につながっていません</h3><p>設定で、窓口のURLと本社用の合言葉を入れてください。</p><a class="btn primary" href="#/settings">設定を開く</a></div>`; }
+function viewEmptyApi(main) { main.innerHTML = `<div class="empty"><h3>まだ窓口につながっていません</h3><p>設定で、あなたの合言葉を入れてください。</p><a class="btn primary" href="#/settings">設定を開く</a></div>`; }
 function viewSettings(main) {
   main.innerHTML = `<h2>設定</h2>
     <div class="panel"><h3>窓口につなぐ</h3>
       <p class="note">${S.api ? (S.syncError ? `<span class="warnText">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="okText">つながっています</span>　依頼 ${S.records.length}件` : "読み込み中…") : "まだつながっていません"}</p>
-      <div class="form"><div class="wide"><label>窓口のURL</label><input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(S.api ? S.api.url : "")}"></div>
-      <div class="wide"><label>本社用の合言葉</label><input type="password" id="apiToken" autocomplete="off" value="${esc(S.api ? S.api.token : "")}"></div></div>
+      <div class="form"><div class="wide"><label>あなたの合言葉</label><input type="password" id="apiToken" autocomplete="off" value="${esc(S.api ? S.api.token : "")}"></div></div>
       <div class="btnRow"><button class="btn primary" id="apiSave">つないで読み込む</button>${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</div>
-      <p class="note">本社用の合言葉は、山郷側の管理者には渡さないでください（金額・粗利が見えるため）。</p></div>
+      <p class="note">この画面は、本社（設計者）の合言葉の人だけが使えます。山郷側の管理者・リーダーの合言葉では、金額・粗利は見えません。</p></div>
     <div class="panel"><h3>更新者の名前</h3><input type="text" id="sName" maxlength="20" value="${esc(getLS("name", "木村"))}"><p class="note">保存の記録に残ります。</p></div>
     <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　開いている間は45秒おきに自動で更新します。</p></div>`;
   $("apiSave").onclick = async () => {
-    const url = $("apiUrl").value.trim(), token = $("apiToken").value.trim();
-    if (!/^https:\/\/script\.google\.com\//.test(url) || !token) return alert("窓口のURL（https://script.google.com/…）と、本社用の合言葉を入れてください");
+    const token = $("apiToken").value.trim(), url = HONSHA_API_URL;
+    if (token.length < 32) return alert("合言葉が短すぎます。コピーし損ねていないか、確認してください");
     const prev = S.api; S.api = { url, token };
-    try { const j = await apiCall({ action: "ping" }, 30000); if (j.role !== "honsha") throw new Error("本社用の合言葉ではありません"); } catch (e) { S.api = prev; return alert("つながりませんでした：" + String((e && e.message) || e)); }
-    if (!prev || prev.url !== url) { S.records = []; S.items = {}; S.loaded = false; S.syncedAt = 0; }
+    try { const j = await apiCall({ action: "ping" }, 30000); if (j.legacy && j.role !== "honsha") throw new Error("共通の合言葉ではありません"); if (!j.caps || j.caps.indexOf("honsha") < 0) throw new Error("この合言葉は、本社画面では使えません（役割：" + (j.user_role || "") + "）"); } catch (e) { S.api = prev; return alert("つながりませんでした：" + String((e && e.message) || e)); }
+    if (!prev || prev.token !== token) { S.records = []; S.items = {}; S.loaded = false; S.syncedAt = 0; }
     setLS("api", JSON.stringify({ url, token })); loading = false;
     await loadAll(true); toast("窓口につながりました"); render();
   };
