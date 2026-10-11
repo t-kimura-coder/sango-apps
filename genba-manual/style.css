@@ -1214,3 +1214,5 @@ img.imgBroken { visibility: hidden; }
 .remotePhoto { background: var(--color-bg); color: var(--color-text-sub); border: 1px solid var(--color-border); }
 .req.soft { color: var(--color-text-sub); }
 .req.soft::before { background: var(--color-text-sub); }
+.announceTabs { margin-bottom: var(--space-md); }
+.announceNewCount { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--color-wood, #a86b2d); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }

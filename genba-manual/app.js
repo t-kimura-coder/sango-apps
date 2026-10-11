@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 109;
+const APP_VERSION = 110;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "feature", text: "お知らせを「新しい機能」と「直したこと」のタブに分けました。新しいお知らせの数は、タブの横に出ます" },
   { date: "2026-10-11", type: "fix", text: "現場がたくさんある時もチェックの記録を送れるようにしました（30現場ずつ送る）。「使い方」の工事番号の説明を直しました" },
   { date: "2026-10-11", type: "fix", text: "合言葉を入れている人には、ホームの「やること」に「上司からの返信・宿題を取り込む（Box から）」を出さないようにしました（返信・宿題は自動で届きます）" },
   { date: "2026-10-11", type: "fix", text: "工事番号を必須にしました（分からない時は空のまま登録して、あとで入れられます）。現場を登録しただけでも、一緒に担当する人に「追加する」が出るようにしました。「使い方」の説明を直しました" },
@@ -6130,15 +6131,42 @@ function announceSeenCount() {
 function updateBellDot() {
   document.querySelectorAll(".bellDot").forEach((d) => (d.hidden = ANNOUNCEMENTS.length <= announceSeenCount()));
 }
+// お知らせは「新しい機能」と「直したこと」のタブに分ける（機能の追加が、細かい修正に埋もれないように）
+let announceTab = "feature";
+let announceUnseen = 0;
+function renderAnnouncements() {
+  const isFix = (a) => a.type === "fix";
+  const newIn = (fix) => ANNOUNCEMENTS.filter((a, i) => i < announceUnseen && isFix(a) === fix).length;
+  const tabs = [
+    ["feature", "新しい機能", newIn(false)],
+    ["fix", "直したこと", newIn(true)],
+  ];
+  $("announceTabs").innerHTML = tabs
+    .map(([k, l, nNew]) => `<button class="segBtn${announceTab === k ? " active" : ""}" data-ann="${k}" type="button">${l}${nNew ? `<span class="announceNewCount">${nNew}</span>` : ""}</button>`)
+    .join("");
+  $("announceTabs").querySelectorAll("[data-ann]").forEach((b) =>
+    b.addEventListener("click", () => {
+      announceTab = b.dataset.ann;
+      renderAnnouncements();
+    })
+  );
+  const list = ANNOUNCEMENTS.map((a, i) => ({ a, i })).filter(({ a }) => isFix(a) === (announceTab === "fix"));
+  $("announceList").innerHTML = list.length
+    ? list
+        .map(
+          ({ a, i }) =>
+            `<div class="announceItem"><div class="announceHead">` +
+            `<span class="pill ${isFix(a) ? "pillWood" : "pillGreen"}">${isFix(a) ? "修正" : "機能"}</span>` +
+            `<span class="announceDate">${fmtDate(a.date)}</span>${i < announceUnseen ? '<span class="announceNew">NEW</span>' : ""}</div>` +
+            `<div>${esc(a.text)}</div></div>`
+        )
+        .join("")
+    : `<div class="mutedText">まだありません。</div>`;
+}
 function openAnnouncements() {
-  const unseen = ANNOUNCEMENTS.length - announceSeenCount();
-  $("announceList").innerHTML = ANNOUNCEMENTS.map(
-    (a, i) =>
-      `<div class="announceItem"><div class="announceHead">` +
-      `<span class="pill ${a.type === "fix" ? "pillWood" : "pillGreen"}">${a.type === "fix" ? "修正" : "機能"}</span>` +
-      `<span class="announceDate">${fmtDate(a.date)}</span>${i < unseen ? '<span class="announceNew">NEW</span>' : ""}</div>` +
-      `<div>${esc(a.text)}</div></div>`
-  ).join("");
+  announceUnseen = ANNOUNCEMENTS.length - announceSeenCount();
+  announceTab = "feature";
+  renderAnnouncements();
   try {
     localStorage.setItem(ANNOUNCE_SEEN_KEY, String(ANNOUNCEMENTS.length));
   } catch (e) {
