@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -13,7 +13,7 @@ const PROGRESS = [["", "未手配"], ["arranged", "手配済み"], ["scheduled",
 const progLabel = (v) => (PROGRESS.find((p) => p[0] === v) || PROGRESS[0])[1];
 const SANGO_STATUS = { "": "依頼中", doing: "対応中", done: "完了" };
 
-const S = { api: loadApi(), records: [], items: {}, syncedAt: 0, syncError: "", loaded: false };
+const S = { api: loadApi(), records: [], items: {}, syncedAt: 0, syncError: "", loaded: false, master: null };
 function loadApi() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } }
 
 /* ---------- 窓口 ---------- */
@@ -85,37 +85,76 @@ const route = () => { const h = location.hash.replace(/^#\/?/, ""); const [name,
 let toastTimer = null;
 function toast(msg) { const el = $("toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2800); }
 
+/* ---------- 建物・分類の絵（山郷サポートの絵を使う。無ければ出さない） ---------- */
+const bldImg = (id) => `<img class="bimg" src="art/bld-${esc(id)}.webp" alt="" loading="lazy" onerror="this.remove()">`;
+const catImg = (id) => `<img class="cimg" src="art/${esc(String(id || "").toLowerCase())}.webp" alt="" loading="lazy" onerror="this.remove()">`;
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymNow = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; };
+
+/* ---------- 新着（まだ開いていない依頼） ---------- */
+const seenSet = () => { try { return new Set(JSON.parse(getLS("seen", "[]"))); } catch (e) { return new Set(); } };
+function markSeen(ids) { const s = seenSet(); ids.forEach((i) => s.add(i)); setLS("seen", JSON.stringify([...s].slice(-800))); }
+function initSeen() { if (getLS("seen") === "" && S.loaded) markSeen(S.records.map((r) => r.id)); } // 初めて開いた時は、今までの依頼を「新着」にしない
+function updateTitle() { const s = seenSet(), n = S.records.filter((r) => !s.has(r.id)).length; document.title = (n ? `(${n}) ` : "") + "山郷サポート 本社"; }
+
+/* ---------- 業者データ（手配先の候補。設計者の合言葉なら受け取れる。無くても使える） ---------- */
+async function loadMaster() {
+  try {
+    const info = await apiCall({ action: "masterInfo" }, 20000);
+    let cur = null; try { cur = JSON.parse(getLS("master", "null")); } catch (e) { cur = null; }
+    if (cur && cur.v === info.version && cur.u === info.updated) { S.master = cur.data; return; }
+    const got = await apiCall({ action: "masterGet" }, 60000);
+    S.master = got.data; setLS("master", JSON.stringify({ v: got.version, u: got.updated, data: got.data }));
+  } catch (e) { /* 本社用の合言葉だけでは受け取れない。候補が出ないだけ */ }
+}
+const entryOf = (r) => (S.master && S.master.entries ? S.master.entries.find((e) => e.b === r.building_id && e.c === r.category_id) : null);
+
 /* ---------- 一覧 ---------- */
-const F = { stage: "open", q: "" };
+const F = { stage: "open", q: "", bld: "" };
+function kpiHtml(counts) {
+  const wait = S.records.filter((r) => stage(r) === "billing"), waitSum = wait.reduce((a, r) => a + (Number(item(r).bill_amount) || 0), 0);
+  const ym = ymNow(), mon = S.records.filter((r) => item(r).bill_month === ym && (item(r).bill_amount || item(r).cost));
+  const monBill = mon.reduce((a, r) => a + (Number(item(r).bill_amount) || 0), 0), monCost = mon.reduce((a, r) => a + (Number(item(r).cost) || 0), 0);
+  const s = seenSet(), nNew = S.records.filter((r) => !s.has(r.id)).length;
+  return `<div class="kpis">
+    <button class="kpi todo" data-s="todo"><small>未手配</small><b>${counts.todo}</b>${nNew ? `<span class="kNew">新着 ${nNew}</span>` : ""}</button>
+    <button class="kpi work" data-s="work"><small>進行中</small><b>${counts.work}</b></button>
+    <button class="kpi bill" data-s="billing"><small>請求待ち</small><b>${counts.billing}</b><span>${waitSum ? yen(waitSum) : ""}</span></button>
+    <div class="kpi ok"><small>${Number(ym.slice(5))}月の請求</small><b class="yen">${monBill ? yen(monBill) : "—"}</b><span>${monBill ? "粗利 " + yen(monBill - monCost) : ""}</span></div></div>`;
+}
 function viewList(main) {
   if (!S.api) return viewEmptyApi(main);
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
   const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"]];
-  main.innerHTML = `<h2>山郷からの依頼</h2>
+  const blds = [...new Map(S.records.map((r) => [r.building_id, r.building])).entries()];
+  main.innerHTML = `<h2>山郷からの依頼</h2>${kpiHtml(counts)}
     <div class="chips">${chips.map(([k, l]) => `<button class="fchip${F.stage === k ? " on" : ""}" data-s="${k}">${l}<small>${counts[k]}</small></button>`).join("")}</div>
-    <div class="searchRow"><input id="q" type="search" placeholder="建物・内容・業者で探す" value="${esc(F.q)}"></div>
+    <div class="searchRow"><input id="q" type="search" placeholder="建物・内容・業者で探す" value="${esc(F.q)}"> <select id="fb"><option value="">すべての建物</option>${blds.map(([id, n]) => `<option value="${esc(id)}"${F.bld === id ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
     <div id="listBody"></div>`;
-  main.querySelectorAll(".fchip").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; viewList(main); }));
+  main.querySelectorAll(".fchip, .kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; viewList(main); }));
   $("q").oninput = (e) => { F.q = e.target.value; renderListBody(); };
+  $("fb").onchange = (e) => { F.bld = e.target.value; renderListBody(); };
   renderListBody();
 }
 function renderListBody() {
   const box = $("listBody"); if (!box) return;
-  const q = F.q.trim().toLowerCase();
+  const q = F.q.trim().toLowerCase(), seen = seenSet();
   const list = S.records.filter((r) => {
     const st = stage(r);
     if (F.stage === "open" ? st === "billed" : F.stage !== "all" && st !== F.stage) return false;
+    if (F.bld && r.building_id !== F.bld) return false;
     if (q && ![r.building, r.category, r.what, r.how, r.sender, item(r).vendor, item(r).memo].join(" ").toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t);
-  if (!list.length) { box.innerHTML = `<div class="empty">${S.loaded ? "該当する依頼はありません" : S.syncError ? esc(S.syncError) : "読み込んでいます…"}</div>`; return; }
+  if (!list.length) { box.innerHTML = `<div class="empty"><img class="emptyArt" src="art/hero.webp" alt="" onerror="this.remove()"><br>${S.loaded ? "該当する依頼はありません" : S.syncError ? esc(S.syncError) : "読み込んでいます…"}</div>`; return; }
   box.innerHTML = list.map((r) => {
     const st = stage(r), it = item(r);
     return `<a class="card ${r.urgent ? "urgent " : ""}${st}" href="#/r/${encodeURIComponent(r.id)}">
-      <div class="top">${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${esc(r.building)}｜${esc(r.category)}</span><span class="chip ${STAGE_CLS[st]}">${STAGE_LABEL[st]}${st === "work" ? "（" + progLabel(it.progress) + "）" : ""}</span><span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></div>
+      <div class="cardImg">${bldImg(r.building_id)}</div>
+      <div class="cardBody"><div class="top">${seen.has(r.id) ? "" : `<span class="chip new">新着</span>`}${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip ${STAGE_CLS[st]}">${STAGE_LABEL[st]}${st === "work" ? "（" + progLabel(it.progress) + "）" : ""}</span><span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></div>
       <div class="what">${esc(r.what)}</div>
-      <div class="meta">${fmtDate(r.t)}　${esc(r.sender)}${it.vendor ? "　手配先：" + esc(it.vendor) : ""}${it.bill_amount ? "　請求 " + yen(it.bill_amount) : ""}</div></a>`;
+      <div class="meta">${fmtDate(r.t)}　${esc(r.sender)}${it.vendor ? "　手配先：" + esc(it.vendor) : ""}${it.bill_amount ? "　請求 " + yen(it.bill_amount) : ""}</div></div></a>`;
   }).join("");
 }
 
@@ -125,17 +164,24 @@ function photoUrl(name) {
   if (!photoCache.has(name)) photoCache.set(name, apiCall({ action: "getPhoto", name }, 60000).then((x) => { const bin = atob(x.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return URL.createObjectURL(new Blob([u8], { type: x.mime || "image/jpeg" })); }).catch(() => { photoCache.delete(name); return null; }));
   return photoCache.get(name);
 }
+const STEPS = ["依頼を受けた", "手配済み", "施工待ち", "施工完了", "請求済み"];
+const stepIdx = (r) => { const it = item(r); return it.billed ? 4 : it.progress === "done" ? 3 : it.progress === "scheduled" ? 2 : it.progress === "arranged" ? 1 : 0; };
 let viewTok = 0, saveBusy = false;
 function viewDetail(main, id) {
   const r = S.records.find((x) => x.id === id);
   if (!r) { main.innerHTML = `<div class="empty">${S.loaded ? "その依頼は見つかりません。" : "読み込んでいます…"}<br><br><a class="btn" href="#/list">一覧へ戻る</a></div>`; return; }
-  const it = item(r), tok = ++viewTok;
+  markSeen([r.id]); updateTitle();
+  const it = item(r), tok = ++viewTok, si = stepIdx(r);
   const vendors = [...new Set(Object.values(S.items).map((x) => x.vendor).filter(Boolean))];
+  const en = entryOf(r), cands = en && !en.none ? (en.companies || []) : [];
   main.innerHTML = `<p><a href="#/list" class="note">← 依頼の一覧</a></p>
-    <div class="panel"><h3>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}｜${esc(r.category)}　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
+    <div class="hero">${bldImg(r.building_id)}<div class="heroText"><div class="heroSub">${catImg(r.category_id)}${esc(r.category)}</div><h2>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}</h2></div></div>
+    <ol class="steps">${STEPS.map((l, i) => `<li class="${i < si ? "done" : i === si ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
+    <div class="panel"><h3>依頼の内容　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
       <dl class="kv"><dt>日付</dt><dd>${fmtDate(r.t)}</dd><dt>送った人</dt><dd>${esc(r.sender)}</dd><dt>何が起きたか</dt><dd>${esc(r.what)}</dd><dt>対応・希望</dt><dd>${esc(r.how || "—")}</dd><dt>山郷が見た業者</dt><dd>${esc(r.vendor || "—")}</dd></dl>
       <div class="photos" id="photos"></div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
+      ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
       <div class="form">
         <div><label>手配先の業者</label><input type="text" id="fVendor" list="vendorList" maxlength="60" value="${esc(it.vendor || "")}"><datalist id="vendorList">${vendors.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></div>
         <div><label>進捗</label><select id="fProg">${PROGRESS.map(([k, l]) => `<option value="${k}"${(it.progress || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -150,6 +196,7 @@ function viewDetail(main, id) {
       <div class="btnRow"><button class="btn primary" id="fSave">保存する</button><span class="sum" id="gross"></span><span class="note">${it.at ? "最終更新 " + new Date(Number(it.at)).toLocaleString("ja-JP") + (it.by ? "　" + esc(it.by) : "") : ""}</span></div></div>`;
   const upGross = () => { const g = gross({ cost: $("fCost").value, bill_amount: $("fBill").value }); $("gross").textContent = g == null ? "" : "粗利 " + g.toLocaleString("ja-JP") + "円"; };
   upGross(); $("fCost").oninput = upGross; $("fBill").oninput = upGross;
+  main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); }));
   $("fSave").onclick = async () => {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
@@ -177,12 +224,14 @@ function viewBill(main) {
   billed.forEach((r) => { const it = item(r), m = it.bill_month || "（月が未入力）"; (months[m] = months[m] || []).push(r); });
   const keys = Object.keys(months).sort().reverse();
   const sum = (list, f) => list.reduce((a, r) => a + (Number(f(item(r))) || 0), 0);
+  const maxBill = Math.max(1, ...keys.map((m) => sum(months[m], (x) => x.bill_amount)));
   main.innerHTML = `<h2>請求</h2>
     <div class="panel"><h3>請求待ち（施工完了で、まだ請求していない）<span class="chip bill">${waiting.length}件</span></h3>
       ${waiting.length ? `<table class="tbl"><tr><th>日付</th><th>建物・分類</th><th>内容</th><th>手配先</th><th class="num">請求額</th></tr>${waiting.sort((a, b) => a.t - b.t).map((r) => `<tr class="link" data-id="${esc(r.id)}"><td>${fmtDate(r.t)}</td><td>${esc(r.building)}｜${esc(r.category)}</td><td>${esc(r.what.slice(0, 30))}</td><td>${esc(item(r).vendor || "")}</td><td class="num">${yen(item(r).bill_amount)}</td></tr>`).join("")}</table>` : `<div class="note">ありません</div>`}</div>
     <div class="panel"><h3>月ごとの請求</h3>
-      ${keys.length ? `<table class="tbl"><tr><th>請求月</th><th class="num">件数</th><th class="num">請求額</th><th class="num">業者への支払い</th><th class="num">粗利</th></tr>${keys.map((m) => { const l = months[m], b = sum(l, (x) => x.bill_amount), c = sum(l, (x) => x.cost); return `<tr><td>${esc(m)}</td><td class="num">${l.length}</td><td class="num">${yen(b)}</td><td class="num">${yen(c)}</td><td class="num">${yen(b - c)}</td></tr>`; }).join("")}</table>
-      <div class="btnRow"><button class="btn" id="csv">請求の一覧をCSVに出す</button><span class="note">Excelで開けます</span></div>` : `<div class="note">請求額や請求月を入れた依頼が、ここに出ます</div>`}</div>`;
+      ${keys.length ? `<div class="bars">${keys.slice(0, 8).map((m) => { const l = months[m], b = sum(l, (x) => x.bill_amount), c = sum(l, (x) => x.cost); return `<div class="barRow"><span class="barM">${esc(m)}</span><div class="barT"><div class="barB" style="width:${Math.round((b / maxBill) * 100)}%"></div></div><span class="barV">${yen(b)}<small>粗利 ${yen(b - c)}</small></span></div>`; }).join("")}</div>
+      <table class="tbl"><tr><th>請求月</th><th class="num">件数</th><th class="num">請求額</th><th class="num">業者への支払い</th><th class="num">粗利</th></tr>${keys.map((m) => { const l = months[m], b = sum(l, (x) => x.bill_amount), c = sum(l, (x) => x.cost); return `<tr><td>${esc(m)}</td><td class="num">${l.length}</td><td class="num">${yen(b)}</td><td class="num">${yen(c)}</td><td class="num">${yen(b - c)}</td></tr>`; }).join("")}</table>
+      <div class="btnRow"><button class="btn" id="csv">請求の一覧をCSVに出す</button><span class="note">Excelで開けます</span></div>` : `<div class="empty" style="margin:0"><img class="emptyArt" src="art/hero.webp" alt="" onerror="this.remove()"><br>請求額や請求月を入れた依頼が、ここに出ます</div>`}</div>`;
   main.querySelectorAll("tr.link").forEach((el) => (el.onclick = () => (location.hash = "#/r/" + encodeURIComponent(el.dataset.id))));
   const c = $("csv"); if (c) c.onclick = () => {
     const head = ["請求月", "請求済み", "日付", "建物", "分類", "内容", "手配先", "見積番号", "手配日", "請求額", "業者への支払い", "粗利", "メモ"];
@@ -192,27 +241,46 @@ function viewBill(main) {
   };
 }
 
+/* ---------- 使い方 ---------- */
+function viewHelp(main) {
+  const sec = (title, items) => `<div class="panel"><h3>${title}</h3><ol class="helpList">${items.map((i) => `<li>${i}</li>`).join("")}</ol></div>`;
+  main.innerHTML = `<h2>使い方</h2>
+    ${sec("この画面でできること", ["山郷のリーダーが「対応を依頼する」で送った依頼を、一覧で受けて、<b>業者への手配の進み具合</b>と、<b>山郷への請求</b>を管理します。", "山郷側の管理者・リーダーには、ここに入れた金額・粗利・手配先は、見えません。"])}
+    ${sec("依頼を受けて、手配する", ["依頼が届くと、メールが来ます。この画面を開くと、「<b>新着</b>」の印が付いた依頼が、一覧に出ます（急ぎは先頭）。", "依頼を開くと、写真・内容と、この建物・分類の<b>担当業者（電話番号つき）</b>が出ます。業者の名前を押すと、「手配先」に入ります。", "<b>手配先・進捗・手配した日・見積番号</b>を入れて「保存」。進捗は、「未手配 → 手配済み → 施工待ち → 施工完了」と進めます。上の帯で、今どこかが分かります。", "上の4つの数字（未手配・進行中・請求待ち・今月の請求）を押すと、その状態の依頼だけが出ます。"])}
+    ${sec("請求を管理する", ["依頼の詳細で、<b>業者への支払い</b>と<b>山郷への請求額</b>を入れると、<b>粗利</b>が自動で出ます。", "請求書を出したら、<b>請求月</b>を入れて「請求済み」にチェックして保存します（請求月が無いと、請求済みにできません）。請求書そのものは、見積アプリのPDFで、これまでどおり社内で処理します。", "「請求」の画面に、<b>請求待ち</b>（施工完了で、まだ請求していないもの）と、<b>月ごとの請求額・粗利</b>が出ます。「CSVに出す」で、Excelで開けます。"])}
+    ${sec("困った時", ["「窓口につながりません」は、ネットワークを確認して、右上の「↻」を押します。", "新しい機能が出ない時は、設定の「更新」にある2つのボタンを押します。", "山郷側の管理者が使う管理者ビューアとは、別の画面です（合言葉の役割が違うため）。"])}`;
+}
+
 /* ---------- 設定 ---------- */
-function viewEmptyApi(main) { main.innerHTML = `<div class="empty"><h3>まだ窓口につながっていません</h3><p>設定で、あなたの合言葉を入れてください。</p><a class="btn primary" href="#/settings">設定を開く</a></div>`; }
+function viewEmptyApi(main) { main.innerHTML = `<div class="empty"><img class="emptyArt" src="art/hero.webp" alt="" onerror="this.remove()"><h3>まだ窓口につながっていません</h3><p>設定で、あなたの合言葉を入れてください。</p><a class="btn primary" href="#/settings">設定を開く</a></div>`; }
+async function updateApp() {
+  try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (e) { /* 無ければ次へ */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch (e) { /* 無ければ次へ */ }
+  try { await fetch(location.pathname, { cache: "reload" }); } catch (e) { /* 電波がなければ、そのまま読み直す */ }
+  location.reload();
+}
 function viewSettings(main) {
   main.innerHTML = `<h2>設定</h2>
+    <div class="panel"><h3>更新</h3><p class="note">アプリの版：${APP_VERSION}　／　新しい機能や直しが出た時に押します（設定や合言葉は、消えません）。</p><p><button class="btn primary" id="upData">データを最新にする</button> <button class="btn" id="upApp">アプリ本体を最新にする（読み直し）</button></p><p class="note" id="upMsg"></p></div>
     <div class="panel"><h3>窓口につなぐ</h3>
       <p class="note">${S.api ? (S.syncError ? `<span class="warnText">つながりません：${esc(S.syncError)}</span>` : S.syncedAt ? `<span class="okText">つながっています</span>　依頼 ${S.records.length}件` : "読み込み中…") : "まだつながっていません"}</p>
       <div class="form"><div class="wide"><label>あなたの合言葉</label><input type="password" id="apiToken" autocomplete="off" value="${esc(S.api ? S.api.token : "")}"></div></div>
       <div class="btnRow"><button class="btn primary" id="apiSave">つないで読み込む</button>${S.api ? `<button class="btn" id="apiOff">つなぐのをやめる</button>` : ""}</div>
       <p class="note">この画面は、本社（設計者）の合言葉の人だけが使えます。山郷側の管理者・リーダーの合言葉では、金額・粗利は見えません。</p></div>
     <div class="panel"><h3>更新者の名前</h3><input type="text" id="sName" maxlength="20" value="${esc(getLS("name", "木村"))}"><p class="note">保存の記録に残ります。</p></div>
-    <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　開いている間は45秒おきに自動で更新します。</p></div>`;
+    <div class="panel"><h3>このアプリについて</h3><p class="note">バージョン ${APP_VERSION}　／　開いている間は45秒おきに自動で更新します。建物・分類の絵は、山郷サポートのものを使っています。</p></div>`;
+  $("upData").onclick = async () => { $("upData").disabled = true; $("upMsg").textContent = "最新にしています…"; try { if (S.api) { const ok = await loadAll(true); await loadMaster(); $("upMsg").textContent = ok ? "最新にしました" : "読み込めませんでした"; } else $("upMsg").textContent = "窓口につないでいません"; } finally { $("upData").disabled = false; } };
+  $("upApp").onclick = () => { $("upApp").disabled = true; $("upMsg").textContent = "読み直しています…"; updateApp(); };
   $("apiSave").onclick = async () => {
     const token = $("apiToken").value.trim(), url = HONSHA_API_URL;
     if (token.length < 32) return alert("合言葉が短すぎます。コピーし損ねていないか、確認してください");
     const prev = S.api; S.api = { url, token };
     try { const j = await apiCall({ action: "ping" }, 30000); if (j.legacy && j.role !== "honsha") throw new Error("共通の合言葉ではありません"); if (!j.caps || j.caps.indexOf("honsha") < 0) throw new Error("この合言葉は、本社画面では使えません（役割：" + (j.user_role || "") + "）"); } catch (e) { S.api = prev; return alert("つながりませんでした：" + String((e && e.message) || e)); }
-    if (!prev || prev.token !== token) { S.records = []; S.items = {}; S.loaded = false; S.syncedAt = 0; }
+    if (!prev || prev.token !== token) { S.records = []; S.items = {}; S.loaded = false; S.syncedAt = 0; S.master = null; }
     setLS("api", JSON.stringify({ url, token })); loading = false;
-    await loadAll(true); toast("窓口につながりました"); render();
+    await loadAll(true); initSeen(); loadMaster(); toast("窓口につながりました"); render();
   };
-  const off = $("apiOff"); if (off) off.onclick = () => { if (!confirm("窓口につなぐのをやめますか？（この画面の情報は消えます）")) return; setLS("api", ""); S.api = null; S.records = []; S.items = {}; S.loaded = false; render(); renderSync(); };
+  const off = $("apiOff"); if (off) off.onclick = () => { if (!confirm("窓口につなぐのをやめますか？（この画面の情報は消えます）")) return; setLS("api", ""); S.api = null; S.records = []; S.items = {}; S.loaded = false; S.master = null; render(); renderSync(); };
   $("sName").onchange = (e) => setLS("name", e.target.value.trim());
 }
 
@@ -223,26 +291,29 @@ function render() {
   window.scrollTo(0, 0);
   if (r.name === "r") viewDetail(main, r.id);
   else if (r.name === "bill") viewBill(main);
+  else if (r.name === "help") viewHelp(main);
   else if (r.name === "settings") viewSettings(main);
   else viewList(main);
-  renderSync();
+  renderSync(); updateTitle();
 }
 function refreshView() { // 自動更新のあと。入力中の画面（詳細・設定）は触らない
   const n = route().name;
-  if (n === "list" && $("listBody")) { renderListBody(); const m = $("main"); if (!m.contains(document.activeElement) || document.activeElement.tagName !== "INPUT") viewListChips(); }
+  if (n === "list" && $("listBody")) { renderListBody(); const m = $("main"); if (!m.contains(document.activeElement) || !["INPUT", "SELECT"].includes(document.activeElement.tagName)) viewListChips(); }
   else if (n === "bill") viewBill($("main"));
+  updateTitle();
 }
-function viewListChips() { // 件数の表示だけ更新する（検索欄の入力は消さない）
+function viewListChips() { // 件数の表示と、上の数字だけ更新する（検索欄の入力は消さない）
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
   document.querySelectorAll(".fchip").forEach((el) => { const s = el.querySelector("small"); if (s) s.textContent = counts[el.dataset.s]; });
+  const k = document.querySelector(".kpis"); if (k) k.outerHTML = kpiHtml(counts), document.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; viewList($("main")); }));
 }
 async function autoRefresh() { if (S.api && !document.hidden && (await loadAll(false))) refreshView(); else renderSync(); }
 
 $("reloadBtn").onclick = async () => { if (S.api) { await loadAll(true); const n = route().name; if (n === "list" || n === "bill") render(); else if (n === "r" && !$("fSave")) render(); } };
 window.addEventListener("hashchange", render);
 render();
-if (S.api) loadAll(false).then(() => { const n = route().name; if (n === "list" || n === "bill" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); });
+if (S.api) { loadAll(false).then(() => { initSeen(); loadMaster().then(() => { if (route().name === "r") render(); }); const n = route().name; if (n === "list" || n === "bill" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); }); }
 setInterval(autoRefresh, 45000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
