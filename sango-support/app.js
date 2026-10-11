@@ -2,10 +2,14 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 24;
-const ART_V = 2; // 絵を差し替えたら上げる
+const APP_VERSION = 25;
+const ART_V = 3; // 絵を差し替えたら上げる
+const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "合言葉（人ごと）を入れるだけで、業者データが自動で入るようになりました。Boxのファイルを取り込む操作は不要です。業者データが新しくなった時も、アプリを開くと自動で入れ替わります。設定に「質問・要望・不具合を送る」も追加しました。" },
+  { date: "2026-10-11", type: "feature", text: "「点検」タブを追加しました。設備の定期点検・メンテナンスの期限が一覧で分かり、点検表（○／要対応）を記録できます。誰かが記録すると、ほかのリーダーの画面にも出ます。要対応は、ボタン1つで症例・依頼にできます。" },
+  { date: "2026-10-08", type: "feature", text: "症例の入力で「報告のみ」「対応を依頼する」（＋急ぎ）を選べるようになりました。依頼は、本社にすぐ連絡が届きます。" },
   { date: "2026-10-05", type: "fix", text: "自動送信の安全性を高めました（送信中は画面を閉じられない、失敗したら残りの写真の送信も止める、送信中に編集した症例は報告済みにしない、窓口のエラーを分かりやすく表示）。" },
   { date: "2026-10-05", type: "feature", text: "「管理者に報告する」を、ボタン1つで自動送信にしました（メールの共有画面は不要）。電波が悪くて送れない時は、症例は端末に残り、もう一度送るか、メールで送れます（予備）。設定の「報告の送り方」で、つながるか確認できます。" },
   { date: "2026-10-05", type: "fix", text: "最終バグチェックで見つかった点を直しました（古い値で上書きして最新の変更を消す問題、削除途中の失敗、iPhoneでのコピー、写真ファイル名の取り違えなど）。" },
@@ -285,8 +289,8 @@ async function viewHome(main) {
   $("topLogo").innerHTML = `<img src="art/logo.webp?v=${ART_V}" alt="" data-fb="x"><span style="font-weight:700;font-size:19px">山郷サポート</span>`;
   const hero = `<div class="homeHero"><div class="heroText"><h2>建物を選ぶ</h2><p>連絡先の確認と症例の管理</p></div><img class="heroLand" src="art/hero.webp?v=${ART_V}" alt="" data-fb="x"></div>`;
   if (!master) {
-    main.innerHTML = hero + `<div class="empty" style="margin-top:12px"><img class="emptyArt" src="art/empty-master.webp?v=${ART_V}" alt="" data-fb="x"><br>業者データがまだ入っていません。<br>本社から配られたマスターデータ（JSON）を取り込んでください。<br><button class="btn btnPrimary" id="goSettings">設定を開く</button></div>`;
-    $("goSettings").onclick = () => go("#/settings");
+    main.innerHTML = hero + `<div id="loginBox"></div>`;
+    renderNoMaster($("loginBox"));
     return;
   }
   await inspEnsure();
@@ -675,7 +679,7 @@ async function viewDetail(main, id) {
       ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}${r.kind === "request" ? "依頼を送る（本社に連絡）" : "管理者に報告する"}${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>`}
       ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
       ${r.draft ? "" : `<button class="btn" id="dDone">${icon("check")}${r.doneAt ? "完了を取り消す" : "完了にする（解決した）"}</button>`}
-      ${r.draft || !hasApi() ? "" : `<button class="btn" id="dMail" style="min-height:40px;font-weight:400">メールで送る（予備）</button>`}
+      ${r.draft || !hasApi() || getSetting("token") ? "" : `<button class="btn" id="dMail" style="min-height:40px;font-weight:400">メールで送る（予備）</button>`}
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
     </div>`;
@@ -737,9 +741,10 @@ async function buildReport(list) {
   const jsonFile = new File([JSON.stringify(payload, null, 2)], jsonName, { type: "application/json" });
   return { all: [jsonFile, ...files], photoCount: files.length, bytes, jsonName, recs: outRecs, jobs };
 }
-const hasApi = () => !!(master && master.api && master.api.url && master.api.token);
+const apiCfg = () => { const t = getSetting("token"); if (t) return { url: API_URL, token: t }; const a = master && master.api; return a && a.url && a.token ? a : null; }; // 合言葉（人ごと）が先。無ければ、古い業者データに入っていた共通の送り先
+const hasApi = () => !!apiCfg();
 async function apiCall(body, ms) {
-  const api = master && master.api; // 送信中にマスターが入れ替わっても、この送り先を使い続ける
+  const api = apiCfg(); // 送信中に設定が変わっても、この送り先を使い続ける
   if (!api) throw new Error("送り先が設定されていません（業者データを取り込み直してください）");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 40000);
@@ -804,10 +809,10 @@ async function sendRecords(list) {
     openSheet("送れませんでした", (body, close) => {
       body.innerHTML = `<div class="infoBar" style="background:var(--warn-soft);color:var(--warn)">${offline ? "電波が弱いか、つながっていないようです。" : esc(String(e && e.message || e))}</div>
         <div class="mutedText" style="margin:10px 0">症例は、この端末に保存されています。電波が良い所で、もう一度送れます。急ぐ時は、メールで送れます（予備）。</div>
-        <div class="btnCol"><button class="btn btnPrimary" id="apiRetry">${icon("send")}もう一度送る</button><button class="btn" id="apiMail">メールで送る（予備）</button><button class="btn" id="apiClose">閉じる</button></div>`;
+        <div class="btnCol"><button class="btn btnPrimary" id="apiRetry">${icon("send")}もう一度送る</button>${getSetting("token") ? "" : `<button class="btn" id="apiMail">メールで送る（予備）</button>`}<button class="btn" id="apiClose">閉じる</button></div>`;
       $("apiClose").onclick = close;
       $("apiRetry").onclick = () => { close(); sendRecords(list); };
-      $("apiMail").onclick = () => { close(); sendByMail(list); };
+      const am = $("apiMail"); if (am) am.onclick = () => { close(); sendByMail(list); };
     });
   } finally { apiSending = false; }
 }
@@ -852,21 +857,17 @@ async function viewSettings(main) {
   const meta = await dbGet("meta", "master");
   const recs = await dbAll("records");
   main.innerHTML = `
-    <div class="settingSec"><h3>業者データ（マスターパック）</h3><div class="formCard">
-      <div class="mutedText">本社から配られたマスターデータ（JSON）を取り込みます。取り込み直すと入れ替わり、症例は消えません。</div>
-      <div style="margin:10px 0">${meta ? `<span class="statusOk">取り込み済み</span>　版 ${esc(meta.data.version)}／建物${meta.data.buildings.length}／${fmtDate(meta.importedAt)}` : `<span class="statusWarn">未取り込み</span>`}</div>
-      <button class="btn btnPrimary" id="sImport" style="width:100%">データを取り込む</button></div></div>
-    <div class="settingSec"><h3>あなたの名前</h3><div class="formCard"><input class="textInput" id="sName" maxlength="20" placeholder="例）木村" value="${esc(getSetting("name"))}"><div class="mutedText" style="margin-top:6px">症例を送る時に付きます。</div></div></div>
+    ${accountSettingsHtml(meta)}
     <div class="settingSec"><h3>報告の送り方</h3><div class="formCard"><div id="apiLine">${hasApi() ? `<span class="statusOk">自動で送信</span>（ボタン1つで、症例と写真が管理者に届きます）` : `<span class="statusWarn">メールで送信</span>（業者データに送り先が入っていません）`}</div>${hasApi() ? `<button class="btn wide" id="apiPing" style="margin-top:8px">つながるか確認する</button>` : ""}</div></div>
-    <div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>
+    ${getSetting("token") ? "" : `<div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>`}
     <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
-      1. 設定で業者データを取り込む（最初の1回だけ）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま「管理者に報告」（管理ページに載ります）。LINEで連絡することもできますが、その場合は管理ページには載らないので、受け取った方が登録し直します<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
+      1. 設定で合言葉を入れる（最初の1回だけ。業者データは自動で入ります）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま「管理者に報告」（管理ページに載ります）。LINEで連絡することもできますが、その場合は管理ページには載らないので、受け取った方が登録し直します<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
   const ap = $("apiPing"); if (ap) ap.onclick = async () => { toast("確認しています..."); try { const j = await apiCall({ action: "ping" }, 20000); toast("つながっています（" + j.role + "）"); } catch (e) { toast("つながりませんでした：" + String(e && e.message || e).slice(0, 60)); } };
-  $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
-  $("sName").onchange = (e) => { setSetting("name", e.target.value.trim()); toast("保存しました"); };
-  $("sBox").onchange = (e) => { if (!BOX_UPLOAD_EMAIL) { setSetting("box", e.target.value.trim()); toast("保存しました"); } };
+  if ($("sBoxCopy")) $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
+  wireAccountSettings();
+  if ($("sBox")) $("sBox").onchange = (e) => { if (!BOX_UPLOAD_EMAIL) { setSetting("box", e.target.value.trim()); toast("保存しました"); } };
 }
 $("masterFile").addEventListener("change", async (e) => {
   const f = e.target.files[0];
@@ -900,6 +901,7 @@ $("gearBtn").onclick = () => go("#/settings");
     refreshBell();
     if (!location.hash) history.replaceState(null, "", location.pathname + location.search + "#/home");
     await render();
+    if (typeof accountStart === "function") accountStart(true);
     if (typeof inspStart === "function") inspStart();
   } catch (e) {
     console.error(e);
