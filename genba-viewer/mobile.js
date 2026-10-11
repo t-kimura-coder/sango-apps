@@ -245,7 +245,11 @@ function openFeedback() {
   document.body.appendChild(ov);
   const close = () => ov.remove();
   ov.querySelector("#fbCancel").addEventListener("click", close);
-  ov.addEventListener("click", (e) => e.target === ov && close());
+  ov.addEventListener("click", (e) => {
+    if (e.target !== ov) return;
+    if (ov.querySelector("#fbText").value.trim() && !confirm("書きかけの内容を消して閉じますか？")) return;
+    close();
+  });
   ov.querySelector("#fbText").focus();
   ov.querySelector("#fbSend").addEventListener("click", async (e) => {
     const text = ov.querySelector("#fbText").value.trim();

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 92;
+const APP_VERSION = 93;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "細かい点を直しました（自分で自分に返した「確認しました」が新着に出る、マニュアル受け取り中に案内の吹き出しが押せる、受け取りに失敗した時の説明が原因と合わない）" },
   { date: "2026-10-11", type: "fix", text: "「使い方」の「はじめに」を、合言葉 → マニュアルを受け取る、の順に直しました" },
   { date: "2026-10-10", type: "feature", text: "マニュアルを「合言葉で受け取る」ボタンで取り込めるようになりました（設定の「マニュアル」。Box でファイルを探して選ばなくて済みます。約30MB なので Wi-Fi で）" },
   { date: "2026-10-10", type: "fix", text: "上司が自分の現場も持つ時（同じ合言葉で見守りも使う時）、自分の気づき・疑問への返信や「確認しました」、自分への宿題が届かなかったのを直しました" },
@@ -4652,10 +4653,11 @@ async function syncGas(manual = false) {
           if (!hit) return;
           hit.n.replies = hit.n.replies || [];
           if (hit.n.replies.some((y) => y.id === m.id)) return;
-          hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: null });
+          const self = normPersonName(m.from) === me; // 上司として自分で返したものは、もう見ているので新着にしない
+          hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: self ? new Date().toISOString() : null });
           hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
           changed.add(hit.r);
-          replies++;
+          if (!self) replies++;
         });
         if (changed.size) await dbPutMany("checks", [...changed]);
       }
@@ -5345,7 +5347,8 @@ async function receiveManualViaGas() {
           parts.push((await gasCall({ action: "manualChunk", i, updated: info.updated }, 90000)).data);
           break;
         } catch (e) {
-          if (t >= 2 || e.message === "unauthorized" || e.message === "manual changed") throw e;
+          const network = e.name === "AbortError" || e instanceof TypeError; // 返事が来なかった・つながらなかった
+          if (t >= 2 || !network) throw e;
         }
       }
     }
@@ -5354,6 +5357,8 @@ async function receiveManualViaGas() {
 }
 
 async function importManualPack(getText, failHint) {
+  const tourShown = !$("tour").hidden;
+  $("tour").hidden = true;
   setProcessing(true, "マニュアルを読み込み中...");
   try {
     const pack = JSON.parse(await getText());
@@ -5392,9 +5397,18 @@ async function importManualPack(getText, failHint) {
     else goManual();
   } catch (e) {
     console.error(e);
-    alert(e.message === "unauthorized" ? "合言葉が違うか、止められています。木村に確認してください。" : "マニュアルを取り込めませんでした。" + failHint);
+    alert(
+      e.message === "unauthorized"
+        ? "合言葉が違うか、止められています。木村に確認してください。"
+        : e.message === "manual changed"
+        ? "受け取っている途中で、マニュアルが新しい版に変わりました。もう一度押してください。"
+        : /置き場所|ファイルがありません/.test(e.message)
+        ? `マニュアルを受け取れませんでした（${e.message}）。木村に知らせてください。`
+        : "マニュアルを取り込めませんでした。" + failHint
+    );
   } finally {
     setProcessing(false);
+    if (tourShown && tourIdx >= 0) renderTourStep();
   }
 }
 
@@ -5475,6 +5489,7 @@ async function renderSettings() {
   $("deleteManualBtn").hidden = !manualMeta;
   $("importManualBtn").textContent = "ファイルから取り込む";
   $("receiveManualBtn").textContent = manualMeta ? "合言葉で新しい版を受け取る" : "合言葉で受け取る";
+  $("receiveManualBtn").className = `btn ${gasOn() ? "btnPrimary" : "btnSecondary"}`;
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
   const sites = await getSites();
