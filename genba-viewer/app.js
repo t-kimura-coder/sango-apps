@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -568,7 +568,14 @@ async function loadTeamLock() {
     setLS("teamLock", now);
     return before !== now;
   } catch (e) {
-    return false; // つながらない時は、前に覚えた範囲のまま
+    // 前に覚えた範囲があればそのまま。初めてで受け取れない時、上司は自分の分だけにする（範囲を広げない）
+    const gate = gateOk();
+    if (!getLS("teamLock") && gate && gate.role === "上司") {
+      setLS("teamLock", JSON.stringify({ all: false, team: "班を確かめられませんでした", members: [gate.name] }));
+      toast("班の範囲を受け取れませんでした。自分の分だけ表示しています（つながったら開き直してください）");
+      return true;
+    }
+    return false;
   }
 }
 function teamList() {
@@ -589,7 +596,12 @@ function teamOn() {
 function sameName(a, b) {
   const x = normName(a);
   const y = normName(b);
-  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const first = (s) => String(s || "").normalize("NFKC").trim().split(/\s+/)[0];
+  if (first(a) === first(b) && /\s/.test(String(a).trim() + String(b).trim())) return true; // 「木村 考宏」と「木村」
+  const [short, long] = x.length < y.length ? [x, y] : [y, x];
+  return long.startsWith(short) && long.length - short.length >= 2; // 「木村考宏」と「木村」（名前が2文字以上の時だけ）
 }
 function personInScope(p) {
   if (!teamOn()) return true;
@@ -804,7 +816,7 @@ function siteSectionHtml() {
 const STAGE_NAMES = ["基礎", "上棟", "外装", "内装", "設備", "引渡し"];
 const STAGE_ART = { 基礎: "stage-1", 上棟: "stage-2", 外装: "stage-3", 内装: "stage-4", 設備: "stage-5", 引渡し: "stage-6" };
 function siteVoicesHtml(s, prog, order = "old") {
-  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key);
+  const notes = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteInScope(n));
   const stage = siteStage(prog);
   const byGroup = new Map(STAGE_NAMES.map((g) => [g, []]));
   const other = [];
@@ -1620,9 +1632,9 @@ function matchesQuery(...fields) {
 /* ---------- 上の検索：打つとすぐ下に候補（現場・担当者・疑問・気づき）を出し、選ぶとそのページへ ---------- */
 function searchHits(q) {
   const has = (...f) => f.some((x) => String(x || "").toLowerCase().includes(q));
-  const sites = [...data.sites.values()].filter((s) => has(s.name, s.koujiNo, ...s.persons.values())).slice(0, 6);
-  const people = [...data.people.values()].filter((p) => has(p.name)).slice(0, 5);
-  const notes = [...data.notes.values()].filter((n) => has(n.text, n.item, n.siteName)).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 6);
+  const sites = [...data.sites.values()].filter((s) => siteInScope(s) && has(s.name, s.koujiNo, ...s.persons.values())).slice(0, 6);
+  const people = scopedPeople().filter((p) => has(p.name)).slice(0, 5);
+  const notes = scopedNotes().filter((n) => has(n.text, n.item, n.siteName)).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 6);
   return { sites, people, notes };
 }
 function renderSearchPanel() {
@@ -1884,7 +1896,7 @@ function shortProc(p) {
 let drawerNoteId = null;
 function openNote(id) {
   const n = data.notes.get(id);
-  if (!n) return;
+  if (!n || !noteInScope(n)) return;
   drawerNoteId = id;
   const st = noteStatus(n);
   const replies = data.replies.get(id) || [];
@@ -2017,7 +2029,7 @@ function renderSites() {
         `<div class="siteRows">${sites
           .map((s) => {
             const last = s.reports[0];
-            const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteStatus(n) === "open").length;
+            const open = [...data.notes.values()].filter((n) => n.siteKey === s.key && noteInScope(n) && noteStatus(n) === "open").length;
             return `<button class="siteRow${s.completedAt ? " done" : ""}" data-site="${esc(s.key)}">${icon("building", 18)}<b>${esc(s.name)}${s.completedAt ? ` <span class="tag">完工 ${fmtMD(s.completedAt)}</span>` : s.pausedAt ? ` <span class="tag">休工中</span>` : ""}</b><span>報告 ${s.reports.length}回</span><span>最終 ${last ? fmtMD(last.period.end) + "まで" : "－"}</span>${open ? `<span class="sBadge open">未回答 ${open}</span>` : "<span></span>"}${icon("chevron", 16)}</button>`;
           })
           .join("")}</div></div>`
@@ -2030,7 +2042,7 @@ function renderSites() {
 
 function renderPerson(key) {
   const p = data.people.get(key);
-  if (!p) return renderSites();
+  if (!p || !personInScope(p)) return renderSites();
   const sites = [...p.sites];
   if (sites.length === 1) return renderSite(sites[0], true);
   renderSites();
@@ -2083,7 +2095,7 @@ function personProgress(s) {
   return [...s.persons.entries()]
     .map(([key, name]) => {
       const r = s.reports.find((x) => personKeyOf(x) === key && x.progress);
-      const st = sts.find((x) => normName(x.person) === normName(name) && x.progress);
+      const st = sts.find((x) => sameName(x.person, name) && x.progress);
       if (st && (!r || (st.at || "") > (r.sent_at || ""))) return { key, name, prog: st.progress, at: st.at, fromState: true };
       return r ? { key, name, prog: r.progress, at: r.sent_at || "" } : null;
     })
@@ -2099,7 +2111,7 @@ const GROUP_ART = { 基礎: "g1", 上棟: "g2", 外装: "g3", 内装: "g4", 設�
 function renderSite(key) {
   const main = $("main");
   const s = data.sites.get(key);
-  if (noData() || !s) return renderSites();
+  if (noData() || !s || !siteInScope(s)) return renderSites();
   const prog = siteProgress(s);
   const personProg = personProgress(s);
   const stage = siteStage(prog);
@@ -2409,6 +2421,18 @@ async function checkGateToken() {
     const e = new Error("notboss");
     e.role = j.me.role;
     throw e;
+  }
+  const prevGate = (() => {
+    try {
+      return JSON.parse(getLS("gate") || "null");
+    } catch (e) {
+      return null;
+    }
+  })();
+  if (!prevGate || prevGate.tail !== getLS("gasToken").slice(-6)) {
+    try {
+      localStorage.removeItem(LS + "teamLock"); // 別の人の合言葉に替えた
+    } catch (e) {}
   }
   setLS("gate", JSON.stringify({ tail: getLS("gasToken").slice(-6), name: j.me.name, role: j.me.role, at: new Date().toISOString() }));
   // 名前は合言葉の名前に合わせる（自分の書いたものを新着に数えないため）

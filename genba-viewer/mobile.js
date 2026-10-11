@@ -41,14 +41,14 @@ function mobileMergeSites() {
     if (!s) data.sites.set(sk, (s = { key: sk, name: first.siteName || "（現場名なし）", koujiNo: key.slice(2), personKey: "", personName: "", persons: new Map(), members: new Set(), reports: [] }));
     if (first.siteName && (!s.name || s.name === "（現場名なし）")) s.name = first.siteName;
     list.forEach((st) => {
-      const has = [...s.persons.values()].some((n) => normName(n) === normName(st.person));
+      const has = [...s.persons.values()].some((n) => sameName(n, st.person));
       const pk = "name:" + st.person;
       if (!has) s.persons.set(pk, st.person);
       if (!s.personName) {
         s.personName = st.person;
         s.personKey = pk;
       }
-      if (!data.people.has(pk) && ![...data.people.values()].some((p) => normName(p.name) === normName(st.person))) data.people.set(pk, { key: pk, name: st.person, sites: new Set([sk]), reports: [] });
+      if (!data.people.has(pk) && ![...data.people.values()].some((p) => sameName(p.name, st.person))) data.people.set(pk, { key: pk, name: st.person, sites: new Set([sk]), reports: [] });
       (st.members || []).forEach((m) => s.members.add(m));
     });
   });
@@ -67,7 +67,7 @@ function mobileRoute(name, arg, params) {
 function mPersons(s) {
   const out = [];
   [...s.persons.values()].forEach((n) => {
-    if (!out.some((x) => normName(x) === normName(n))) out.push(n);
+    if (!out.some((x) => sameName(x, n))) out.push(n);
   });
   return out;
 }

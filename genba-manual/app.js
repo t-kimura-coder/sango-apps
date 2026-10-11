@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 97;
+const APP_VERSION = 98;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "Box へ直接送る時の不具合を直しました（1枚送れないと「送っています」の表示が消えなくなる、電波が切れた時に同じ報告が二重に届くことがある、途中から送り直すと古い報告が届くことがある）。名前の見分けを、林と林田のような別の人を同じにしないように直しました" },
   { date: "2026-10-11", type: "fix", text: "初めて開いた時の案内の文を、今の使い方に合わせました（送り先は最初から入っている、マニュアルは合言葉で受け取る、報告は「送信する」）" },
   { date: "2026-10-11", type: "feature", text: "名前の欄を「苗字」と「名前」に分けました。チェックや上司とのやりとりは苗字で見分けます（名前は任意）。前に「苗字 名前」と空白で区切って入れていた人は、自動で分けました" },
   { date: "2026-10-11", type: "fix", text: "名前は苗字だけで登録してもらうよう、案内と説明を直しました（合言葉の名前と合わせるため）" },
@@ -1064,24 +1065,34 @@ async function gasRetry(body, timeoutMs) {
       return await gasCall(body, timeoutMs);
     } catch (e) {
       if (t >= 2 || !isNetworkError(e)) throw e;
+      await new Promise((ok) => setTimeout(ok, 2000 * (t + 1))); // 電波が戻るのを少し待つ
     }
   }
 }
 async function deliverViaGas(files, title) {
+  // 送り途中の控えは送るものごと（週の報告の途中で知らせを送っても、報告の続きが消えないように）
+  const key = `${GAS_UPLOAD_KEY}:${title}`;
   const sig = files.map((f) => `${f.name}:${f.size}`).join("|");
   let st = null;
   try {
-    st = JSON.parse(localStorage.getItem(GAS_UPLOAD_KEY) || "null");
+    st = JSON.parse(localStorage.getItem(key) || "null");
   } catch (e) {
     /* ignore */
   }
   if (!st || st.sig !== sig) st = { sig, uid: "" };
-  setProcessing(true, "Boxへ送る準備をしています...");
+  let failed = false; // 1枚でも送れなかったら、残りは送らずに止める（処理中の表示を出しっぱなしにしない）
+  const show = (text) => !failed && setProcessing(true, text);
+  show("Boxへ送る準備をしています...");
   try {
     const b = await gasRetry({ action: "boxBegin", uid: st.uid, title, names: files.map((f) => f.name), sizes: files.map((f) => f.size) }, 60000);
     st.uid = b.uid;
-    localStorage.setItem(GAS_UPLOAD_KEY, JSON.stringify(st));
-    const have = new Set(b.have || []);
+    try {
+      localStorage.setItem(key, JSON.stringify(st));
+    } catch (e) {
+      /* ignore */
+    }
+    // 報告の JSON は中身（メモなど）が同じ大きさのまま変わることがあるので、毎回送り直す
+    const have = new Set((b.have || []).filter((i) => files[i] && !/\.json$/i.test(files[i].name)));
     const put = async (i) => {
       await gasRetry({ action: "boxPut", uid: st.uid, i, data: await blobToBase64(files[i]) }, 90000);
     };
@@ -1089,25 +1100,52 @@ async function deliverViaGas(files, title) {
     const todo = files.map((f, i) => i).filter((i) => !have.has(i));
     let done = files.length - todo.length;
     const worker = async () => {
-      while (todo.length) {
+      while (todo.length && !failed) {
         const i = todo.shift();
-        await put(i);
+        try {
+          await put(i);
+        } catch (e) {
+          failed = true;
+          todo.length = 0;
+          throw e;
+        }
         done++;
-        setProcessing(true, `Boxへ送っています... ${done} / ${files.length}`);
+        show(`Boxへ送っています... ${done} / ${files.length}`);
       }
     };
     await Promise.all([worker(), worker(), worker()]);
-    for (let round = 0; round < 2; round++) {
-      setProcessing(true, "Box に届けています...");
-      const r = await gasRetry({ action: "boxSend", uid: st.uid }, 300000);
-      if (!r.missing) {
-        localStorage.removeItem(GAS_UPLOAD_KEY);
-        return { how: "gas", mails: r.mails };
+    // 届ける。送り終えたかは GAS が覚えているので、返事が来なかった時は少し待って確かめ直す（二重には送られない）
+    for (let round = 0; round < 6; round++) {
+      show("Box に届けています...");
+      let r;
+      try {
+        r = await gasCall({ action: "boxSend", uid: st.uid }, 300000);
+      } catch (e) {
+        if (!isNetworkError(e) || round >= 5) throw e;
+        await new Promise((ok) => setTimeout(ok, 5000));
+        continue;
       }
-      for (const i of r.missing) await put(i); // 届いていなかった分を送り直す
+      if (r.busy) {
+        await new Promise((ok) => setTimeout(ok, 10000)); // 前の呼び出しがまだ送っている
+        continue;
+      }
+      if (r.missing) {
+        for (const i of r.missing) {
+          show(`届いていなかった写真を送り直しています... ${i + 1} / ${files.length}`);
+          await put(i);
+        }
+        continue;
+      }
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        /* ignore */
+      }
+      return { how: "gas", mails: r.mails };
     }
-    throw new Error("そろいませんでした");
+    throw new Error("Box に届けられませんでした");
   } finally {
+    failed = true;
     setProcessing(false);
   }
 }
@@ -3002,7 +3040,9 @@ async function sendToBox() {
     const viaGas = !PC_SAVE && gasOn();
     const n = entries.length;
     const warnMsg = viaGas
-      ? n > 80
+      ? n + 1 > 300
+        ? `写真が多すぎて一度に送れません（${n}枚・上限は299枚）。2回に分けて送ってください。`
+        : n > 80
         ? `写真がとても多いです（${n}枚・送るのに${Math.ceil(n / 30)}分ほど）。送る写真を絞るか、Wi-Fi のある所で送ってください。`
         : n > 40
         ? `写真が多いので、送るのに${Math.ceil(n / 30)}分ほどかかります。Wi-Fi のある所で送るのがおすすめです。`
@@ -3083,6 +3123,7 @@ async function sendToBox() {
           pauses: site.pauses || [],
           members: site.members || [],
           period: { start, end },
+          week: wk.mon, // この報告の週（月曜）
           processes,
           memo: memo.value.trim(),
           customer: { done_other: doneOther.value.trim(), next: nextPlan.value.trim() },
@@ -4207,7 +4248,7 @@ function renderMemoSection(it) {
           (n.type === "question"
             ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).some((r) => !r.mine) ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).some((r) => !r.mine) ? "返信あり" : "回答待ち"}</button>`
             : "") +
-          (!n.by || n.by === me ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
+          (!n.by || samePerson(n.by, me) ? `<button class="noteDel" data-del="${esc(n.id)}" aria-label="このメモを削除">${icon(ICONS.x, 16)}</button>` : "") +
           `</div>${n.type === "contact" ? contactBodyHtml(n) : `<div class="noteText">${esc(n.text)}</div>`}` +
           (n.replies || [])
             .map(
@@ -4528,7 +4569,12 @@ function normPersonName(s) {
 function samePerson(a, b) {
   const x = normPersonName(a);
   const y = normPersonName(b);
-  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const first = (s) => String(s || "").normalize("NFKC").trim().split(/\s+/)[0];
+  if (first(a) === first(b) && /\s/.test(String(a).trim() + String(b).trim())) return true; // 「木村 考宏」と「木村」
+  const [short, long] = x.length < y.length ? [x, y] : [y, x];
+  return long.startsWith(short) && long.length - short.length >= 2; // 「木村考宏」と「木村」（名前が2文字以上の時だけ）
 }
 async function importTasks(tasks) {
   const all = await getSites();
