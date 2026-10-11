@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 111;
+const APP_VERSION = 112;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -4049,13 +4049,12 @@ function checkTextOf(itemId, key) {
 }
 
 // 古い鍵（区分|チェック文）を番号の鍵へ。マニュアルを取り込んだ時・バックアップから戻した時に1回だけ走らせる
+// （チェックだけでなく、該当なし・撮影不要・別の端末の写真の印も移す。版の印に "|2" を付けて、前の移し替えで漏れた分も移し直す）
 const KEY_MIGRATED_KEY = "genba-photo-checkkey-migrated";
-async function migrateCheckKeys(force = false) {
-  if (!manualMeta) return;
-  const stamp = `${manualMeta.builtAt}|${manualMeta.importedAt}`;
-  if (!force && localStorage.getItem(KEY_MIGRATED_KEY) === stamp) return;
-  const map = {}; // itemId → { 古い鍵: 新しい鍵 }
-  manualMeta.items.forEach((it) => {
+let keyUpgradeMap = {}; // itemId → { 古い鍵: 新しい鍵 }
+function buildKeyUpgradeMap() {
+  const map = {};
+  ((manualMeta && manualMeta.items) || []).forEach((it) => {
     const m = {};
     ["checks", "prep"].forEach((sec) =>
       ((it.text && it.text[sec]) || []).forEach((c) => {
@@ -4064,19 +4063,41 @@ async function migrateCheckKeys(force = false) {
     );
     map[it.id] = m;
   });
-  const recs = (await dbGetAll("checks")).filter((r) => {
-    const m = map[r.itemId];
-    if (!m) return false;
-    let changed = false;
-    Object.keys(r.marks || {}).forEach((k) => {
+  keyUpgradeMap = map;
+}
+function upgradeKey(itemId, k) {
+  const m = keyUpgradeMap[itemId];
+  return (m && m[k]) || k;
+}
+// チェック記録の中の古い鍵を新しい鍵へ（同じチェックに両方ある時は、新しく付けた方を残す）。変えたら true
+function upgradeRecKeys(rec) {
+  const m = keyUpgradeMap[rec.itemId];
+  if (!m) return false;
+  let changed = false;
+  ["marks", "naChecks", "noPhoto"].forEach((f) => {
+    const o = rec[f];
+    if (!o) return;
+    Object.keys(o).forEach((k) => {
       const nk = m[k];
       if (!nk) return;
-      if (!r.marks[nk] || r.marks[nk].at < r.marks[k].at) r.marks[nk] = r.marks[k];
-      delete r.marks[k];
+      if (!o[nk] || (o[nk].at || "") < (o[k].at || "")) o[nk] = o[k];
+      delete o[k];
       changed = true;
     });
-    return changed;
   });
+  if (Array.isArray(rec.remotePhotos) && rec.remotePhotos.some((k) => m[k])) {
+    rec.remotePhotos = [...new Set(rec.remotePhotos.map((k) => m[k] || k))];
+    changed = true;
+  }
+  return changed;
+}
+async function migrateCheckKeys(force = false) {
+  if (!manualMeta) return;
+  buildKeyUpgradeMap();
+  const stamp = `${manualMeta.builtAt}|${manualMeta.importedAt}|2`;
+  if (!force && localStorage.getItem(KEY_MIGRATED_KEY) === stamp) return;
+  const map = keyUpgradeMap;
+  const recs = (await dbGetAll("checks")).filter(upgradeRecKeys);
   if (recs.length) await dbPutMany("checks", recs);
   // 写真は数が多いので、全部を一度に読まずに1枚ずつ見て書き換える
   const db = await dbPromise;
@@ -5235,9 +5256,10 @@ async function mergeMine(site, state) {
     const remoteU = it.u || "";
     if (r && (r.updatedAt || "") >= remoteU) {
       // 写真の有無だけは別の端末の分を覚えておく（表示用）
-      const ph = (it.ph || []).join("|");
+      const phs = [...new Set((it.ph || []).map((k) => upgradeKey(itemId, k)))];
+      const ph = phs.join("|");
       if ((r.remotePhotos || []).join("|") !== ph) {
-        r.remotePhotos = it.ph || [];
+        r.remotePhotos = phs;
         changed.push(r);
       }
       return;
@@ -5258,6 +5280,7 @@ async function mergeMine(site, state) {
     if (gone.size) rec.deletedNotes = [...gone];
     rec.remotePhotos = it.ph || [];
     rec.updatedAt = remoteU; // 取り込んだ時刻にしない（送り返しの行ったり来たりを防ぐ）
+    upgradeRecKeys(rec);
     changed.push(rec);
   });
   if (changed.length) {
@@ -5352,7 +5375,7 @@ function othersMarked(itemId, key) {
   const site = currentSite();
   if (!site) return [];
   return (othersByKey[stateKeyOf(site)] || [])
-    .map((o) => ({ person: o.person, at: (o.at[itemId] || {})[key] }))
+    .map((o) => ({ person: o.person, at: Object.entries(o.at[itemId] || {}).filter(([k]) => upgradeKey(itemId, k) === key).map(([, at]) => at).sort().pop() }))
     .filter((x) => x.at)
     .sort((a, b) => (a.at < b.at ? 1 : -1));
 }
