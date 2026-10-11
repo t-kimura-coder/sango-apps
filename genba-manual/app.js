@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 101;
+const APP_VERSION = 102;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "fix", text: "名前の見分けで、同じ苗字の別の人（「木村 考宏」と「木村 太郎」）を同じ人にしないようにしました" },
   { date: "2026-10-11", type: "fix", text: "現場を切り替えた時の不具合を直しました（電話・LINEのやりとりの書きかけが切り替えた先の現場に保存される、工程タブで切り替えると前の現場で見ていた項目が開く、同期の取り込みと重なると別の現場のチェックが混ざることがある）。自分の別の現場と同じ工事番号を入れた時は確かめるようにしました" },
   { date: "2026-10-11", type: "fix", text: "ホームの「次に見る項目」が、今の現場ではなく別の現場で最後に見た項目になっていたのを直しました（今の現場で最後に見た項目から続きが出ます）" },
   { date: "2026-10-11", type: "fix", text: "「使い方」・設定・初回の案内の説明を、今の機能に合わせました（合言葉でできること、Box への直接送信、写真の通り道）" },
@@ -4599,7 +4600,8 @@ function samePerson(a, b) {
   if (!x || !y) return false;
   if (x === y) return true;
   const first = (s) => String(s || "").normalize("NFKC").trim().split(/\s+/)[0];
-  if (first(a) === first(b) && /\s/.test(String(a).trim() + String(b).trim())) return true; // 「木村 考宏」と「木村」
+  const sp = (s) => /\s/.test(String(s || "").normalize("NFKC").trim());
+  if (first(a) === first(b) && sp(a) !== sp(b)) return true; // 「木村 考宏」と「木村」（片方が苗字だけの時）。「木村 考宏」と「木村 太郎」は別の人
   const [short, long] = x.length < y.length ? [x, y] : [y, x];
   return long.startsWith(short) && long.length - short.length >= 2; // 「木村考宏」と「木村」（名前が2文字以上の時だけ）
 }
