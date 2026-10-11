@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -746,13 +746,24 @@ async function buildReport(list) {
 }
 const apiCfg = () => { const t = getSetting("token"); if (t) return { url: API_URL, token: t }; const a = master && master.api; return a && a.url && a.token ? a : null; }; // 合言葉（人ごと）が先。無ければ、古い業者データに入っていた共通の送り先
 const hasApi = () => !!apiCfg();
+/** 窓口に送る。通信エラー（iPhone では「Load failed」）の時は、自動で2回までやり直す。症例・写真・点検の記録は、同じIDなら上書きなので、重ならない */
+async function netFetch(url, init) {
+  for (let k = 0; ; k++) {
+    try { return await fetch(url, init); }
+    catch (e) {
+      if (e && e.name === "AbortError") throw new Error("時間がかかりすぎました。電波の良い所で、もう一度お試しください");
+      if (k >= 2) throw new Error("窓口につながりませんでした。電波を確認して、もう一度お試しください（" + String((e && e.message) || e).slice(0, 40) + "）");
+      await new Promise((r) => setTimeout(r, 1200 * (k + 1)));
+    }
+  }
+}
 async function apiCall(body, ms) {
   const api = apiCfg(); // 送信中に設定が変わっても、この送り先を使い続ける
   if (!api) throw new Error("送り先が設定されていません（業者データを取り込み直してください）");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 40000);
   try {
-    const res = await fetch(api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: api.token, ...body }), signal: ctl.signal, redirect: "follow" });
+    const res = await netFetch(api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: api.token, ...body }), signal: ctl.signal, redirect: "follow" });
     let j;
     try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。電波、またはURL・公開の設定を確認してください"); }
     if (!j.ok) throw new Error(j.error || "送信に失敗しました");

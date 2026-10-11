@@ -9,7 +9,7 @@ async function acall(token, body, ms) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 30000);
   try {
-    const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token, ...body }), signal: ctl.signal, redirect: "follow" });
+    const res = await netFetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token, ...body }), signal: ctl.signal, redirect: "follow" });
     let j;
     try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。電波を確認してください"); }
     if (!j.ok) throw new Error(j.error || "窓口からの返事が不正です");

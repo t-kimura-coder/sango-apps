@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -119,11 +119,22 @@ function rebuild() {
 
 /* ---------- 窓口（GAS）：スマホから送られた症例を自動で受け取る ---------- */
 function loadApiCfg() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } } // 保存した窓口の設定（合言葉と、つないだ人）
+/** 窓口に送る。通信エラー（iPhone では「Load failed」）の時は、自動で2回までやり直す。症例・写真・点検の記録は、同じIDなら上書きなので、重ならない */
+async function netFetch(url, init) {
+  for (let k = 0; ; k++) {
+    try { return await fetch(url, init); }
+    catch (e) {
+      if (e && e.name === "AbortError") throw new Error("時間がかかりすぎました。電波の良い所で、もう一度お試しください");
+      if (k >= 2) throw new Error("窓口につながりませんでした。電波を確認して、もう一度お試しください（" + String((e && e.message) || e).slice(0, 40) + "）");
+      await new Promise((r) => setTimeout(r, 1200 * (k + 1)));
+    }
+  }
+}
 async function apiCall(body, ms) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms || 60000);
   try {
-    const res = await fetch(S.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: S.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
+    const res = await netFetch(S.api.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ token: S.api.token, ...body }), signal: ctl.signal, redirect: "follow" });
     let j; try { j = await res.json(); } catch (e) { throw new Error("窓口の応答が不正です（" + res.status + "）。URL・公開の設定・電波を確認してください"); }
     if (!j.ok) throw new Error(j.error || "窓口からの返事が不正です");
     return j;
