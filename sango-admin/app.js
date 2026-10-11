@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -34,6 +34,7 @@ const ICONS = {
   cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0114 0"/>',
   down: '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5M12 17h.01"/>',
 };
 const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 const fillIcons = (root) => root.querySelectorAll("[data-icon]").forEach((e) => { if (!e.firstChild) e.innerHTML = icon(e.dataset.icon); });
@@ -359,11 +360,12 @@ function render() {
   $("sideExtra").innerHTML = "";
   const main = $("main");
   window.scrollTo(0, 0);
-  if (!S.records.length && r.name !== "settings" && r.name !== "insp") return viewEmpty(main);
+  if (!S.records.length && r.name !== "settings" && r.name !== "insp" && r.name !== "help") return viewEmpty(main);
   if (r.name === "list") { renderFilters(); viewList(main); }
   else if (r.name === "r") viewDetail(main, r.id);
   else if (r.name === "summary") viewSummary(main);
   else if (r.name === "insp") viewInsp(main);
+  else if (r.name === "help") viewHelp(main);
   else if (r.name === "settings") viewSettings(main);
   else location.hash = "#/list";
   fillIcons(document.body);
