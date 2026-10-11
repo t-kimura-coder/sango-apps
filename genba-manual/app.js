@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 95;
+const APP_VERSION = 96;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "feature", text: "名前の欄を「苗字」と「名前」に分けました。チェックや上司とのやりとりは苗字で見分けます（名前は任意）。前に「苗字 名前」と空白で区切って入れていた人は、自動で分けました" },
   { date: "2026-10-11", type: "fix", text: "名前は苗字だけで登録してもらうよう、案内と説明を直しました（合言葉の名前と合わせるため）" },
   { date: "2026-10-11", type: "feature", text: "合言葉を入れている人は、週の報告と上司への知らせを、メールを使わずにアプリから直接 Box に送れるようになりました（「送信する」を押すだけ。宛先の貼り付けは要りません）。写真が多い時は、かかる時間の目安を出します。送れなかった時は、もう一度押すと今まで通りメールで送れます" },
   { date: "2026-10-11", type: "fix", text: "細かい点を直しました（自分で自分に返した「確認しました」が新着に出る、マニュアル受け取り中に案内の吹き出しが押せる、受け取りに失敗した時の説明が原因と合わない）" },
@@ -3069,6 +3070,7 @@ async function sendToBox() {
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
           sender: getSetting(USER_NAME_KEY),
+          sender_full: fullName(),
           sender_id: deviceId(),
           site: site.name,
           site_id: site.id,
@@ -4521,6 +4523,12 @@ async function saveMemo(it) {
 function normPersonName(s) {
   return String(s || "").normalize("NFKC").replace(/\s/g, "");
 }
+// 同じ人か（苗字とフルネームが混ざるので、頭が同じなら同じ人とみなす）
+function samePerson(a, b) {
+  const x = normPersonName(a);
+  const y = normPersonName(b);
+  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+}
 async function importTasks(tasks) {
   const all = await getSites();
   const me = normPersonName(getSetting(USER_NAME_KEY));
@@ -4529,7 +4537,7 @@ async function importTasks(tasks) {
   tasks.forEach((x) => {
     const s =
       all.find((y) => y.id === x.site_id) ||
-      all.find((y) => x.kouji_no && normKoujiNo(y.koujiNo) === normKoujiNo(x.kouji_no) && (!x.to || normPersonName(x.to) === me));
+      all.find((y) => x.kouji_no && normKoujiNo(y.koujiNo) === normKoujiNo(x.kouji_no) && (!x.to || samePerson(x.to, me)));
     if (!s) return;
     s.tasks = s.tasks || [];
     const v = { id: x.id, text: x.text || "", due: x.due || "", process_no: x.process_no || null, process: x.process || "", from: x.from || "", at: x.at || "", week: x.week || "", status: x.status || "open" };
@@ -4743,7 +4751,7 @@ async function syncGas(manual = false) {
       }
       const msgs = j.messages || [];
       // 自分が書いたものは飛ばす。ただし上司として書いた返信・宿題は取り込む（上司が自分の現場も持ち、同じ合言葉で両方使う時）
-      const fromOthers = msgs.filter((m) => normPersonName(m.from) !== me || m.kind === "task" || (m.kind === "reply" && m.payload && m.payload.from_role === "上司"));
+      const fromOthers = msgs.filter((m) => !samePerson(m.from, me) || m.kind === "task" || (m.kind === "reply" && m.payload && m.payload.from_role === "上司"));
       // 返信：元の疑問（この端末にあるメモ）に付ける
       const reps = fromOthers.filter((m) => m.kind === "reply");
       if (reps.length) {
@@ -4757,7 +4765,7 @@ async function syncGas(manual = false) {
           if (!hit) return;
           hit.n.replies = hit.n.replies || [];
           if (hit.n.replies.some((y) => y.id === m.id)) return;
-          const self = normPersonName(m.from) === me; // 上司として自分で返したものは、もう見ているので新着にしない
+          const self = samePerson(m.from, me); // 上司として自分で返したものは、もう見ているので新着にしない
           hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: self ? new Date().toISOString() : null });
           hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
           changed.add(hit.r);
@@ -4882,7 +4890,7 @@ function initGas() {
       const j = await gasCall({ action: "whoami" });
       const app = getSetting(USER_NAME_KEY);
       $("gasStatus").textContent = `つながりました：${j.me.name}（${j.me.role}${j.me.team ? "・" + j.me.team : ""}）`;
-      if (normPersonName(j.me.name) !== normPersonName(app)) alert(`合言葉の名前（${j.me.name}）と、このアプリの名前（${app || "未登録"}）が違います。返信が届かなくなるので、どちらかを合わせてください。`);
+      if (!samePerson(j.me.name, app)) alert(`合言葉の名前（${j.me.name}）と、このアプリの苗字（${app || "未登録"}）が違います。返信が届かなくなるので、設定の苗字を合わせてください。`);
       syncGas();
     } catch (e) {
       $("gasStatus").textContent = e.message === "unauthorized" ? "合言葉が違うか、止められています" : "つながりませんでした";
@@ -5527,7 +5535,11 @@ async function deleteManual() {
 
 /* ---------- 設定 ---------- */
 
-const USER_NAME_KEY = "genba-photo-user-name";
+const USER_NAME_KEY = "genba-photo-user-name"; // 苗字（記録・やりとり・見守りで人を見分けるのに使う）
+const USER_GIVEN_KEY = "genba-photo-user-given"; // 名前（任意。報告に「フルネーム」として添えるだけ）
+function fullName() {
+  return [getSetting(USER_NAME_KEY), getSetting(USER_GIVEN_KEY)].filter(Boolean).join(" ");
+}
 const BOX_EMAIL_KEY = "genba-photo-box-email";
 
 function getSetting(key) {
@@ -5583,6 +5595,7 @@ async function renderSettings() {
   updateBackupNote();
   $("tourAlwaysChk").checked = getSetting(TOUR_ALWAYS_KEY) === "1";
   $("userNameInput").value = getSetting(USER_NAME_KEY);
+  $("userGivenInput").value = getSetting(USER_GIVEN_KEY);
   $("boxEmailInput").value = getBoxEmail();
   $("boxEmailInput").readOnly = !!BOX_UPLOAD_EMAIL;
   $("versionInfo").textContent = `バージョン ${APP_VERSION}`;
@@ -6265,12 +6278,18 @@ const TOUR_STEPS = [
   },
   {
     view: "settingsView",
-    target: () => $("userNameInput"),
-    text: "ここにお名前を「苗字だけ」で入力してください（例：木村）。工程マニュアルのチェックや報告に、名前が一緒に記録されます。",
+    target: () => $("userNameRow"),
+    text: "ここに苗字（必須）と名前を入力してください。チェックや報告には苗字が記録され、上司とのやりとりも苗字で見分けます。",
     next: true,
     onNext: () => {
       const v = $("userNameInput").value.trim();
       if (v) setSetting(USER_NAME_KEY, v);
+      const g = $("userGivenInput").value.trim();
+      if (g) setSetting(USER_GIVEN_KEY, g);
+      if (!v) {
+        toast("苗字を入れてください");
+        return false;
+      }
     },
   },
   {
@@ -6747,6 +6766,16 @@ function init() {
   $("receiveManualBtn").addEventListener("click", receiveManualViaGas);
   $("deleteManualBtn").addEventListener("click", deleteManual);
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
+  $("userGivenInput").addEventListener("change", (e) => setSetting(USER_GIVEN_KEY, e.target.value.trim()));
+  // 前の版で「苗字 名前」と1つの欄に入れていた人は、苗字と名前に分ける（空白で区切っていた時だけ）
+  {
+    const old = String(getSetting(USER_NAME_KEY) || "").trim();
+    const m = old.match(/^(\S+)[\s　]+(\S+)$/);
+    if (m && !getSetting(USER_GIVEN_KEY)) {
+      setSetting(USER_NAME_KEY, m[1]);
+      setSetting(USER_GIVEN_KEY, m[2]);
+    }
+  }
   $("boxEmailInput").addEventListener("change", (e) => setSetting(BOX_EMAIL_KEY, e.target.value.trim()));
   $("copyBoxEmailBtn").addEventListener("click", copyBoxEmail);
   ["bkSites", "bkChecks", "bkPhotos"].forEach((id) => $(id).addEventListener("change", updateBackupNote));
