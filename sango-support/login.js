@@ -75,7 +75,7 @@ function renderLogin(box) {
     <div class="mutedText" style="margin-top:12px;text-align:center"><a href="#/settings" style="text-decoration:underline">ファイルから取り込む（予備）</a></div></div>`;
   $("lgGo").onclick = async () => {
     $("lgGo").disabled = true; $("lgMsg").textContent = "";
-    try { const who = await accountLogin($("lgToken").value); toast(`${who.name}さん、つながりました`); render(); }
+    try { const who = await accountLogin($("lgToken").value); toast(`${who.name}さん、つながりました`); await render(); if (typeof maybeStartTour === "function") maybeStartTour(); }
     catch (e) { $("lgMsg").textContent = e.message; $("lgGo").disabled = false; }
   };
 }

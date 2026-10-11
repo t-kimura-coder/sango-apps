@@ -11,7 +11,7 @@
 <title>山郷サポート</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=3">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=3">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <div id="app">
@@ -21,6 +21,7 @@
     <h1 id="topTitle"></h1>
     <div class="topActions">
       <button id="bellBtn" class="iconBtn" aria-label="お知らせ"><span id="bellDot" class="bellDot" hidden></span></button>
+      <button id="helpBtn" class="iconBtn" aria-label="使い方"></button>
       <button id="gearBtn" class="iconBtn" aria-label="設定"></button>
     </div>
   </header>
@@ -31,14 +32,16 @@
     <a href="#/mine" data-tab="mine"><span data-icon="doc"></span>自分の症例</a>
   </nav>
 </div>
+<div id="tour" class="tour" hidden><div id="tourSpot" class="tourSpot"></div><div id="tourBubble" class="tourBubble"><div id="tourStep" class="tourStep"></div><div id="tourText" class="tourText"></div><div class="tourBtns"><button id="tourSkip" class="tourSkip">やめる</button><button id="tourNext" class="btn btnPrimary tourNext">次へ</button></div></div></div>
 <div id="sheetRoot"></div>
 <div id="lightbox" hidden></div>
 <div id="toast" hidden></div>
 <input type="file" id="masterFile" accept=".json,application/json" hidden>
 <input type="file" id="shootInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="pickInput" accept="image/*" multiple hidden>
-<script src="app.js?v=25"></script>
-<script src="login.js?v=1"></script>
+<script src="app.js?v=26"></script>
+<script src="login.js?v=2"></script>
+<script src="guide.js?v=2"></script>
 <script src="inspect.js?v=2"></script>
 </body>
 </html>

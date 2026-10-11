@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "「使い方」ページと、初めて開いた時の画面の案内（吹き出しで場所を照らす）を追加しました。右上の「？」からいつでも見られます。案内は、使い方のページから、もう一度見られます。" },
   { date: "2026-10-12", type: "feature", text: "合言葉（人ごと）を入れるだけで、業者データが自動で入るようになりました。Boxのファイルを取り込む操作は不要です。業者データが新しくなった時も、アプリを開くと自動で入れ替わります。設定に「質問・要望・不具合を送る」も追加しました。" },
   { date: "2026-10-11", type: "feature", text: "「点検」タブを追加しました。設備の定期点検・メンテナンスの期限が一覧で分かり、点検表（○／要対応）を記録できます。誰かが記録すると、ほかのリーダーの画面にも出ます。要対応は、ボタン1つで症例・依頼にできます。" },
   { date: "2026-10-08", type: "feature", text: "症例の入力で「報告のみ」「対応を依頼する」（＋急ぎ）を選べるようになりました。依頼は、本社にすぐ連絡が届きます。" },
@@ -71,6 +72,7 @@ const ICONS = {
   person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0114 0"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5M12 17h.01"/>',
 };
 const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 function fillIcons(root) { root.querySelectorAll("[data-icon]").forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); }); }
@@ -268,6 +270,7 @@ async function renderInner() {
   else if (r.name === "new") await viewForm(main, r);
   else if (r.name === "mine") await viewMine(main);
   else if (r.name === "insp") await viewInspect(main, r);
+  else if (r.name === "help") viewHelp(main);
   else if (r.name === "r") await viewDetail(main, r.id);
   else if (r.name === "settings") await viewSettings(main);
   else goReplace("#/home");
@@ -860,13 +863,13 @@ async function viewSettings(main) {
     ${accountSettingsHtml(meta)}
     <div class="settingSec"><h3>報告の送り方</h3><div class="formCard"><div id="apiLine">${hasApi() ? `<span class="statusOk">自動で送信</span>（ボタン1つで、症例と写真が管理者に届きます）` : `<span class="statusWarn">メールで送信</span>（業者データに送り先が入っていません）`}</div>${hasApi() ? `<button class="btn wide" id="apiPing" style="margin-top:8px">つながるか確認する</button>` : ""}</div></div>
     ${getSetting("token") ? "" : `<div class="settingSec"><h3>管理者への送信先（メール・予備）</h3><div class="formCard"><input class="textInput" id="sBox" type="email" placeholder="例）xxxxxxxx@u.box.com" value="${esc(boxEmail())}" ${BOX_UPLOAD_EMAIL ? "readonly" : ""}><button class="btn wide" id="sBoxCopy" style="margin-top:8px">アドレスをコピー</button><div class="mutedText" style="margin-top:6px">Boxのアップロード用メールアドレス。管理者から教えてもらってください。</div></div></div>`}
-    <div class="settingSec"><h3>使い方</h3><div class="formCard mutedText" style="line-height:1.8">
-      1. 設定で合言葉を入れる（最初の1回だけ。業者データは自動で入ります）<br>2. ホームで建物を選び、分類（水回り・電気・建具など）を押すと「①何が起きたかを書く ②業者の連絡先 ③これまでの症例」が出ます<br>3. 困ったら電話。「症例を書く」で、何があったか・どう対応したかを写真付きで残し、そのまま「管理者に報告」（管理ページに載ります）。LINEで連絡することもできますが、その場合は管理ページには載らないので、受け取った方が登録し直します<br>4. LINEで受けた報告の内容と写真も、同じ「症例を書く」で保管（「報告した人」に名前を入れる）<br>※ 見られるのは、この端末であなたが残した症例だけです。他のリーダーの症例は管理者がまとめて見ます</div></div>
+    <div class="settingSec"><h3>使い方</h3><div class="formCard"><div class="mutedText">使い方のページと、画面の案内（初回の吹き出し）があります。</div><button class="btn" id="stHelp" style="width:100%;margin-top:8px">使い方を見る</button></div></div>
     <div class="settingSec"><h3>このアプリについて</h3><div class="formCard mutedText">バージョン ${APP_VERSION}　／　症例 ${recs.length}件（この端末内）</div></div>`;
   $("sImport").onclick = () => $("masterFile").click();
   const ap = $("apiPing"); if (ap) ap.onclick = async () => { toast("確認しています..."); try { const j = await apiCall({ action: "ping" }, 20000); toast("つながっています（" + j.role + "）"); } catch (e) { toast("つながりませんでした：" + String(e && e.message || e).slice(0, 60)); } };
   if ($("sBoxCopy")) $("sBoxCopy").onclick = () => copyText(boxEmail()).then((ok) => toast(ok ? "アドレスをコピーしました" : "コピーできませんでした"));
   wireAccountSettings();
+  $("stHelp").onclick = () => go("#/help");
   if ($("sBox")) $("sBox").onchange = (e) => { if (!BOX_UPLOAD_EMAIL) { setSetting("box", e.target.value.trim()); toast("保存しました"); } };
 }
 $("masterFile").addEventListener("change", async (e) => {
@@ -889,6 +892,8 @@ $("bellBtn").onclick = () => {
 
 /* ---------- 起動 ---------- */
 $("gearBtn").innerHTML = icon("gear");
+$("helpBtn").innerHTML = icon("help");
+$("helpBtn").onclick = () => go("#/help");
 $("bellBtn").insertAdjacentHTML("afterbegin", icon("bell"));
 $("backBtn").innerHTML = icon("back");
 $("backBtn").onclick = () => { if (history.length > 1) history.back(); else go("#/home"); };
@@ -901,6 +906,7 @@ $("gearBtn").onclick = () => go("#/settings");
     refreshBell();
     if (!location.hash) history.replaceState(null, "", location.pathname + location.search + "#/home");
     await render();
+    if (typeof maybeStartTour === "function") maybeStartTour();
     if (typeof accountStart === "function") accountStart(true);
     if (typeof inspStart === "function") inspStart();
   } catch (e) {
