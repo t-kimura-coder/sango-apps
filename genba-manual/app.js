@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 114;
+const APP_VERSION = 115;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "PC で、工程の並びなど横に並んだ欄を動かしやすくしました。欄の上でマウスのホイールを回すと横に動きます。工程の並びと写真の工程の欄には、左右に ◀ ▶ も出ます（まだ続きがある方だけ）" },
   { date: "2026-10-12", type: "fix", text: "細かい点を直しました（古いバックアップを戻した時に「該当なし」にしたチェックが付き直ることがある、「済み」にした工程を該当なしにする時の確認の文、マニュアル改訂でチェックが足された工程に「済み」の印が残る）" },
   { date: "2026-10-12", type: "feature", text: "チェックポイントが無い工程（2F建て方・左官工事など）に「済みにする」ボタンを付けました。押すと工程の並びに✓が付き、ホームの「次の項目」も先に進みます（もう一度押すと戻せます）" },
   { date: "2026-10-12", type: "fix", text: "マニュアルの新しい版を受け取った時に、「該当なし」「撮影不要」にしていたチェックが元に戻ってしまうのを直しました。この版を開いた時点で、元の「該当なし」「撮影不要」に戻ります" },
@@ -3825,6 +3826,64 @@ function renderItemStrip(scrollToActive = true) {
   const active = strip.querySelector(".itemChip.active");
   if (active && scrollToActive) strip.scrollLeft = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
 }
+
+/* ---------- PC で横並び（工程の並び・写真の工程チップなど）を動かす ----------
+   ・横に動く欄の上でマウスのホイールを回すと、横に動く（端まで行ったら、いつも通り画面が縦に動く）
+   ・マウスの PC では、工程の並びと写真の工程チップの左右に ◀ ▶ を出す（まだ先がある方だけ）。iPhone では出さない */
+const FINE_POINTER = window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+function hScrollableOf(target) {
+  for (let el = target; el && el !== document.body; el = el.parentElement) {
+    if (!(el instanceof HTMLElement) || el.scrollWidth <= el.clientWidth + 1) continue;
+    const ox = getComputedStyle(el).overflowX;
+    if (ox === "auto" || ox === "scroll") return el;
+  }
+  return null;
+}
+document.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return; // 拡大・Shift＋ホイール・タッチパッドの横なではそのまま
+    const el = hScrollableOf(e.target);
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    if ((e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 40 : 1);
+  },
+  { passive: false }
+);
+function setupHScrollArrows(el) {
+  if (!el || !FINE_POINTER) return;
+  const wrap = document.createElement("div");
+  wrap.className = "hsWrap";
+  el.parentNode.insertBefore(wrap, el);
+  wrap.appendChild(el);
+  const mk = (dir) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `hsArrow hsArrow${dir}`;
+    b.setAttribute("aria-label", dir === "L" ? "左へ" : "右へ");
+    b.textContent = dir === "L" ? "◀" : "▶";
+    b.addEventListener("click", () => el.scrollBy({ left: (dir === "L" ? -1 : 1) * el.clientWidth * 0.7, behavior: "smooth" }));
+    wrap.appendChild(b);
+    return b;
+  };
+  const left = mk("L");
+  const right = mk("R");
+  const update = () => {
+    const max = el.scrollWidth - el.clientWidth;
+    left.hidden = el.scrollLeft <= 2;
+    right.hidden = el.scrollLeft >= max - 2;
+  };
+  el.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update);
+  new MutationObserver(() => setTimeout(update, 0)).observe(el, { childList: true }); // 描き直しの後（中央寄せの後）に合わせる
+  if (window.IntersectionObserver) new IntersectionObserver(update).observe(el); // 画面が切り替わって見えた時
+  if (window.ResizeObserver) new ResizeObserver(update).observe(el);
+  update();
+}
+setupHScrollArrows($("itemStrip"));
+setupHScrollArrows($("albumChips"));
 
 function renderNavButtons() {
   const all = allManualItems();

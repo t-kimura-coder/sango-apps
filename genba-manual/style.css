@@ -1222,3 +1222,11 @@ img.imgBroken { visibility: hidden; }
 .itemDoneBtn { min-height: 52px; border-radius: var(--radius-sm); border: 2px solid var(--color-primary); background: var(--color-surface); color: var(--color-primary); font-size: var(--fs-md, 17px); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .itemDoneBtn.on { background: var(--color-ok-soft); border-color: var(--color-ok-text); color: var(--color-ok-text); }
 .itemDoneMeta { font-size: var(--fs-xs); color: var(--color-text-muted); text-align: right; }
+
+/* PC の横並びの ◀ ▶（マウスの PC だけ JS で付ける） */
+.hsWrap { position: relative; }
+.hsArrow { position: absolute; top: 50%; transform: translateY(-60%); z-index: 2; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-primary); font-size: 13px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.hsArrow[hidden] { display: none; }
+.hsArrow:hover { background: var(--color-primary-soft); }
+.hsArrowL { left: 2px; }
+.hsArrowR { right: 2px; }
