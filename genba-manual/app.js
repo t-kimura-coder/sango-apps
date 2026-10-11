@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 102;
+const APP_VERSION = 103;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-11", type: "feature", text: "同じ現場を担当する人同士で、現場の登録を共有できるようになりました（合言葉を入れた人）。他の人が登録した現場の「担当者」にあなたの苗字が入っていると、ホームの「やること」に出て、「追加する」で同じ現場名・工事番号のまま自分の現場にできます。自分で登録する時に、他の人がもう登録している工事番号を入れると、名前をそろえるか聞きます" },
   { date: "2026-10-11", type: "fix", text: "名前の見分けで、同じ苗字の別の人（「木村 考宏」と「木村 太郎」）を同じ人にしないようにしました" },
   { date: "2026-10-11", type: "fix", text: "現場を切り替えた時の不具合を直しました（電話・LINEのやりとりの書きかけが切り替えた先の現場に保存される、工程タブで切り替えると前の現場で見ていた項目が開く、同期の取り込みと重なると別の現場のチェックが混ざることがある）。自分の別の現場と同じ工事番号を入れた時は確かめるようにしました" },
   { date: "2026-10-11", type: "fix", text: "ホームの「次に見る項目」が、今の現場ではなく別の現場で最後に見た項目になっていたのを直しました（今の現場で最後に見た項目から続きが出ます）" },
@@ -963,6 +964,84 @@ async function addSite() {
   await setCurrentSite(site.id);
 }
 
+/* ---------- 同じ現場の人同士で、現場の登録を共有する ----------
+   他の人が登録した現場の「担当者」に自分の苗字が入っていたら、ホームの「やること」に出す。
+   「追加する」で、現場名・工事番号・担当者・建物の種類・記録を始めた段階を写して自分の現場にする（工事番号が同じなので、チェックの「確認済み」もつながる）。
+   担当者に入っていない現場は、同じ班でも出さない（班の現場を全部見るのは上司の見守りだけ） */
+const SHARED_OFFERS_KEY = "genba-photo-shared-offers";
+const SHARED_DISMISS_KEY = "genba-photo-shared-dismissed";
+function lsList(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+async function fetchSharedOffers() {
+  const j = await gasCall({ action: "sharedSites" });
+  const now = JSON.stringify(j.sites || []);
+  const changed = (localStorage.getItem(SHARED_OFFERS_KEY) || "[]") !== now;
+  try {
+    localStorage.setItem(SHARED_OFFERS_KEY, now);
+  } catch (e) {
+    /* ignore */
+  }
+  return changed;
+}
+// まだ自分の現場に無く、「いらない」も押していないもの（同じ工事番号を何人かが登録していたら1つだけ）
+async function pendingSharedOffers() {
+  const mine = new Set((await getSites()).map((x) => normKoujiNo(x.koujiNo)).filter(Boolean));
+  const dismissed = new Set(lsList(SHARED_DISMISS_KEY));
+  const seen = new Set();
+  return lsList(SHARED_OFFERS_KEY).filter((o) => {
+    const k = normKoujiNo(o.kouji_no);
+    if (!k || mine.has(k) || dismissed.has(o.key) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+function sharedOfferFor(koujiNo) {
+  const k = normKoujiNo(koujiNo);
+  return k ? lsList(SHARED_OFFERS_KEY).find((o) => normKoujiNo(o.kouji_no) === k) || null : null;
+}
+function openSharedOffer(o) {
+  openSheet("担当している現場を追加", (body, close) => {
+    const info = document.createElement("div");
+    info.className = "mutedText";
+    info.innerHTML =
+      `<b>${esc(o.owner)}さん</b>が登録した現場に、あなたが担当者として入っています。<br>` +
+      `現場名：<b>${esc(o.name)}</b><br>工事番号：${esc(o.kouji_no)}<br>担当者：${esc((o.members || []).join("・"))}<br>` +
+      `記録を始めた段階：${esc((GROUPS[o.start_group || 0] || GROUPS[0]).name)}<br><br>` +
+      `追加すると、同じ現場として ${esc(o.owner)}さんのチェックが「確認済み」で見えます（写真は共有しません）。`;
+    body.appendChild(info);
+    body.appendChild(
+      sheetButton("自分の現場に追加する", "btnPrimary btnLarge", async () => {
+        close();
+        const site = { id: newId(), name: o.name, koujiNo: normKoujiNo(o.kouji_no), members: o.members || [], kind: o.kind || "", startGroup: o.start_group || 0, createdAt: new Date().toISOString(), archived: false, processes: [], lastReportEnd: null };
+        await dbPut("sites", site);
+        addMemberHistory(site.members);
+        toast(`「${site.name}」を追加しました`);
+        await setCurrentSite(site.id);
+        if (gasOn()) syncStates(); // 同じ現場の人のチェックをすぐ読む
+      })
+    );
+    body.appendChild(
+      sheetButton("いらない（自分では記録しない）", "btnSecondary", () => {
+        close();
+        const d = new Set(lsList(SHARED_DISMISS_KEY));
+        d.add(o.key);
+        try {
+          localStorage.setItem(SHARED_DISMISS_KEY, JSON.stringify([...d]));
+        } catch (e) {
+          /* ignore */
+        }
+        if (currentView === "dashView") renderDash();
+      })
+    );
+    body.appendChild(sheetButton("あとで", "btnGhost", close));
+  });
+}
+
 /* ---------- 現場の情報（現場名・工事番号・担当者） ---------- */
 // 工事番号は経理で使っている番号。同じ現場を二人で担当した時に、上司の画面（見守り）でまとめる鍵になる。
 // 担当者は社員番号が無いので苗字で持つ。表記ゆれを防ぐため、一度入れた苗字は候補として出す
@@ -1623,6 +1702,11 @@ function editSiteSheet(site) {
       drawSg();
       body.appendChild(
         sheetButton(site ? "変更する" : "登録する", "btnPrimary btnLarge", () => {
+          const offer = !site && sharedOfferFor(noIn.value);
+          if (offer && (nameIn.value.trim() !== offer.name || startGroup !== (offer.start_group || 0)) && confirm(`${offer.owner}さんが同じ工事番号を「${offer.name}」（${(GROUPS[offer.start_group || 0] || GROUPS[0]).name}から記録）で登録しています。\n現場名と記録を始めた段階をそろえますか？`)) {
+            nameIn.value = offer.name;
+            startGroup = offer.start_group || 0;
+          }
           const name = nameIn.value.trim();
           if (!name) {
             toast("現場名を入れてください");
@@ -5211,6 +5295,11 @@ async function syncStates(manual = false) {
     } else if (Object.keys(others).length && currentView === "groupView") {
       rerenderCurrentView();
     }
+    try {
+      if ((await fetchSharedOffers()) && currentView === "dashView") renderDash();
+    } catch (e) {
+      /* 共有の確認だけ失敗しても、同期は済んでいる */
+    }
     if (manual) toast(added ? `同期しました（別の端末の現場 ${added}件を追加）` : merged ? `同期しました（別の端末の記録を ${merged}項目 取り込み）` : sent ? "同期しました（この端末の記録を送りました）" : "同期しました（変わったところはありません）");
   } catch (e) {
     console.error(e);
@@ -5857,6 +5946,9 @@ async function renderDash() {
   // 行の頭に「どの現場の話か」を出す（site: 現場 / 現場名の文字 / "全体"）。1現場だけの人にも出す（全体の話と見分けるため）
   const todo = [];
   const siteNameOf = (id) => (sites.find((x) => x.id === id) || {}).name || "";
+  (await pendingSharedOffers()).forEach((o) =>
+    todo.push({ site: o.name, icon: ICONS.building, cls: "wood", html: `${esc(o.owner)}さんが登録した現場の担当者に入っています <b class="em">追加する</b>`, go: () => openSharedOffer(o) })
+  );
   if (unread.length) {
     const ids = [...new Set(unread.map((u) => u.rec.siteId))];
     todo.push({ site: ids.length === 1 ? siteNameOf(ids[0]) : `${ids.length}現場`, icon: ICONS.reply, cls: "green", html: `上司からの返信 <b class="em">${unread.length}件</b>`, go: () => openReplyItem(unread[0].rec) });
