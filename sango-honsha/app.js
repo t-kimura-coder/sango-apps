@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -13,7 +13,7 @@ const PROGRESS = [["", "未手配"], ["arranged", "手配済み"], ["scheduled",
 const progLabel = (v) => (PROGRESS.find((p) => p[0] === v) || PROGRESS[0])[1];
 const SANGO_STATUS = { "": "依頼中", doing: "対応中", done: "完了" };
 
-const S = { api: loadApi(), records: [], items: {}, syncedAt: 0, syncError: "", loaded: false, master: null };
+const S = { api: loadApi(), records: [], items: {}, syncedAt: 0, syncError: "", loaded: false, master: null, past: [] };
 function loadApi() { try { const j = JSON.parse(getLS("api", "")); return j && j.url && j.token ? j : null; } catch (e) { return null; } }
 
 /* ---------- 窓口 ---------- */
@@ -51,6 +51,7 @@ async function loadAll(manual) {
     const a = (j.honsha && j.honsha.items) || {}, b = S.items || {};
     for (const id of new Set([...Object.keys(a), ...Object.keys(b)])) { items[id] = !a[id] ? b[id] : !b[id] ? a[id] : ((Number(b[id].at) || 0) > (Number(a[id].at) || 0) ? b[id] : a[id]); } // 手元で保存したばかりの値を、古い読み込みで巻き戻さない
     S.items = items;
+    S.past = (j.past || []).filter((r) => r && r.id).map((r) => ({ ...r, id: String(r.id), t: Date.parse(r.created_at) || 0 })); // 過去の症例（読むだけ）
     S.syncedAt = Date.now(); S.syncError = ""; S.loaded = true;
     return true;
   } catch (e) {
@@ -125,10 +126,10 @@ function kpiHtml(counts) {
 function viewList(main) {
   if (!S.api) return viewEmptyApi(main);
   if (route().name === "list" && F.keepBld !== F.bld) { /* 建物画面から戻った時の絞り込みは、そのまま使う */ }
-  const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
+  const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0, past: S.past.length };
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
-  const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"]];
-  const blds = [...new Map(S.records.map((r) => [r.building_id, r.building])).entries()];
+  const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"], ["past", "過去の症例"]];
+  const blds = [...new Map([...S.records, ...S.past].map((r) => [r.building_id, r.building])).entries()];
   main.innerHTML = `<h2>山郷からの依頼</h2>${kpiHtml(counts)}
     <div class="chips">${chips.map(([k, l]) => `<button class="fchip${F.stage === k ? " on" : ""}" data-s="${k}">${l}<small>${counts[k]}</small></button>`).join("")}</div>
     <div class="searchRow"><input id="q" type="search" placeholder="建物・内容・業者で探す" value="${esc(F.q)}"> <select id="fb"><option value="">すべての建物</option>${blds.map(([id, n]) => `<option value="${esc(id)}"${F.bld === id ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
@@ -141,6 +142,12 @@ function viewList(main) {
 function renderListBody() {
   const box = $("listBody"); if (!box) return;
   const q = F.q.trim().toLowerCase(), seen = seenSet();
+  if (F.stage === "past") { // 過去の症例：読むだけ（手配・請求の対象ではない）。新しい順
+    const pl = S.past.filter((r) => (!F.bld || r.building_id === F.bld) && (!q || [r.building, r.category, r.what, r.how, r.vendor, r.cause, r.memo].join(" ").toLowerCase().includes(q))).sort((a, b) => b.t - a.t);
+    if (!pl.length) { box.innerHTML = `<div class="empty">該当する過去の症例はありません</div>`; return; }
+    box.innerHTML = pl.slice(0, 150).map((r) => `<div class="card past"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top"><span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip">過去</span></div><div class="what">${esc(r.what)}</div><div class="meta">${r.t ? fmtDate(r.t) : "日付なし"}${r.vendor ? "　業者：" + esc(r.vendor) : ""}${r.amount !== "" && r.amount != null ? "　金額：" + (isFinite(Number(r.amount)) ? yen(Number(r.amount)) : esc(r.amount)) : ""}${r.cause ? "　原因：" + esc(r.cause) : ""}</div>${r.how || r.memo ? `<div class="meta">${esc([r.how, r.memo].filter(Boolean).join(" ／ "))}</div>` : ""}</div></div>`).join("") + (pl.length > 150 ? `<div class="note" style="padding:8px 2px">新しい順に150件を表示しています（全${pl.length}件）。建物やキーワードで絞ってください</div>` : "");
+    return;
+  }
   const list = S.records.filter((r) => {
     const st = stage(r);
     if (F.stage === "open" ? st === "billed" : F.stage !== "all" && st !== F.stage) return false;
@@ -222,9 +229,9 @@ async function viewMap(main) {
 function viewBuilding(main, id) {
   const b = BLDS.find((x) => x.id === id) || { id, name: id }, st = bldStat(id);
   F.bld = id;
-  const counts = { all: 0, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
+  const counts = { all: 0, open: 0, todo: 0, work: 0, billing: 0, billed: 0, past: S.past.filter((r) => r.building_id === id).length };
   S.records.filter((r) => r.building_id === id).forEach((r) => { const s2 = stage(r); counts[s2]++; counts.all++; if (s2 !== "billed") counts.open++; });
-  const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"]];
+  const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"], ["past", "過去の症例"]];
   main.innerHTML = `<p><a href="#/map" class="note">← 敷地マップ</a></p>
     <div class="hero enter">${bldImg(id)}<div class="heroText"><div class="heroSub">${st.open ? `対応が必要な依頼 ${st.open}件` : "対応が必要な依頼はありません"}${st.nNew ? `　<span class="chip new">新着 ${st.nNew}</span>` : ""}</div><h2>${esc(b.name)}</h2></div></div>
     <div class="chips">${chips.map(([k, l]) => `<button class="fchip${F.stage === k ? " on" : ""}" data-s="${k}">${l}<small>${counts[k]}</small></button>`).join("")}</div>
