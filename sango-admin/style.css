@@ -290,3 +290,10 @@ body.mobileMode .settingBox { max-width: none; }
 .mapPrevNote { font-size: 13px; color: var(--muted); }
 .mapPanel .smWrap { max-width: 980px; margin: 0 auto; }
 @media (max-width: 720px) { .mapKpis { grid-template-columns: repeat(3, 1fr); gap: 6px; } .mapKpi { padding: 8px 10px; } .mapKpi b { font-size: 22px; } .mapKpi small { font-size: 11px; } .mapPrev > img { width: 38%; } }
+
+/* 点検：項目の管理 */
+.iaGrp2 { margin: 14px 0 6px; font-weight: 800; color: var(--green-deep); }
+.iaItemRow { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; } .iaItemRow.off { opacity: 0.6; background: #f1efe8; }
+.iaItemHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; } .iaItemHead small { color: var(--muted); }
+.iaBChips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; } .iaBChip { padding: 3px 10px; border-radius: 14px; border: 1px solid var(--green); background: #fff; color: var(--green-deep); cursor: pointer; font-size: 13px; } .iaBChip.off { border-color: var(--line); color: var(--muted); text-decoration: line-through; background: #f1efe8; }
+.iaItemAct { display: flex; gap: 8px; flex-wrap: wrap; } .iaItemTop { margin-bottom: 8px; }

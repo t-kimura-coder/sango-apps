@@ -74,6 +74,8 @@ function viewInsp(main) {
     if (!IA.err) inspLoad();
     return;
   }
+  if (IA.mode === "items" && !meAdmin()) IA.mode = "list";
+  if (IA.mode === "items") { main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}${iaItemsHtml()}`; iaWireMode(main, () => viewInsp(main)); iaWireItems(main); return; }
   if (IA.mode === "plan") { main.innerHTML = `<h2 class="pageTitle">点検</h2>${iaModeToggle("iaTabs")}${iaPlanMatrixHtml()}`; iaWireMode(main, () => viewInsp(main)); main.querySelectorAll("[data-pe]").forEach((b) => (b.onclick = () => iaPlanEditor(b.dataset.pe))); return; }
   const all = iaCells(), today = iaToday();
   const over = all.filter((c) => c.st === "over").length, soon = all.filter((c) => c.st === "soon").length, none = all.filter((c) => c.st === "none").length;
@@ -158,7 +160,7 @@ function iaPlanListHtml() {
   });
   return h;
 }
-const iaModeToggle = (cls) => `<div class="${cls}"><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "list" ? " on" : ""}" data-iamode="list">期限の一覧</button><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "plan" ? " on" : ""}" data-iamode="plan">年間予定</button></div>`;
+const iaModeToggle = (cls) => `<div class="${cls}"><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "list" ? " on" : ""}" data-iamode="list">期限の一覧</button><button class="${cls === "mChips" ? "mChip" : "iaTab"}${IA.mode === "plan" ? " on" : ""}" data-iamode="plan">年間予定</button>${cls !== "mChips" && meAdmin() ? `<button class="iaTab${IA.mode === "items" ? " on" : ""}" data-iamode="items">項目の管理</button>` : ""}</div>`;
 function iaWireMode(root, redraw) { root.querySelectorAll("[data-iamode]").forEach((b) => (b.onclick = () => { IA.mode = b.dataset.iamode; redraw(); })); }
 
 /** 予定月の変更（管理者）：12か月のチェック。窓口に保存され、リーダーにも・期限の計算にも反映される */
@@ -182,4 +184,51 @@ function iaPlanEditor(itemId) {
   root.querySelector("#peNo").onclick = () => root.remove();
   root.querySelector("#peSave").onclick = () => { const ms = [...root.querySelectorAll(".iaMonth input:checked")].map((x) => +x.value); if (!ms.length) { root.querySelector("#peMsg").textContent = "1か月以上、選んでください"; return; } done(ms); };
   const rs = root.querySelector("#peReset"); if (rs) rs.onclick = () => done(null);
+}
+
+/* ---------- 項目の管理（山郷の管理者）：使わない（無効）／この棟では不要（非表示）。それ以外の変更は、本社に依頼 ---------- */
+function iaItemsHtml() {
+  const bn = {}; (IA.data.meta.buildings || []).forEach((b) => { bn[b.id] = b.name; });
+  const groups = (IA.data.meta.groups || []);
+  const row = (it) => {
+    const off = !it.enabled;
+    const chips = (it.buildings_all || it.buildings || []).filter((b) => bn[b]).map((b) => { const hid = (it.hidden_buildings || []).indexOf(b) >= 0; return `<button class="iaBChip${hid ? " off" : ""}" data-ihide="${esc(it.id)}" data-b="${esc(b)}" title="${hid ? "押すと、この棟でも点検します" : "押すと、この棟では不要にします（非表示）"}">${esc(bn[b])}${hid ? "（不要）" : ""}</button>`; }).join("");
+    return `<div class="iaItemRow${off ? " off" : ""}"><div class="iaItemHead"><b>${esc(it.title)}</b>${it.legal ? `<small class="iaLegal">法定</small>` : ""}<small>${esc((it.cycle || {}).label || "")}${it.who ? "／" + esc(it.who) : ""}</small>${off ? `<span class="chip">使っていません</span>` : ""}</div>
+      <div class="iaBChips">${chips || `<span class="note">対象の棟がありません</span>`}</div>
+      <div class="iaItemAct">${it.disabled_custom || off ? `<button class="btn" data-ion="${esc(it.id)}">使う（有効に戻す）</button>` : `<button class="btn" data-ioff="${esc(it.id)}">この項目を使わない（無効）</button>`}<button class="btn" data-ireq="${esc(it.id)}">本社に修正を依頼</button></div></div>`;
+  };
+  return `<div class="panel"><div class="note" style="margin-bottom:8px">ここでできるのは、<b>使わない（無効）</b>と、<b>棟ごとの不要（非表示）</b>です。どちらも、リーダーの画面・期限・お知らせから外れます（記録は消えません。いつでも戻せます）。<br>項目の追加・周期・対象の棟・項目名の変更などは、「本社に修正を依頼」から送ってください（本社にメールが届きます）。</div>
+    <div class="iaItemTop"><button class="btn" data-ireq="">項目の追加・そのほかの修正を、本社に依頼する</button></div>
+    ${groups.map((g) => { const its = IA.data.items.filter((i) => i.group === g.id).sort((a, b) => a.no - b.no); return its.length ? `<div class="iaGrp2">${esc(g.name)}</div>${its.map(row).join("")}` : ""; }).join("")}</div>`;
+}
+async function iaItemSave(it, disabled, hidden) {
+  const j = await apiCall({ action: "inspectItemSave", item_id: it.id, disabled, hidden }, 30000);
+  const r = j.result;
+  it.hidden_buildings = r.hidden; it.disabled_custom = r.disabled; it.enabled = !r.disabled;
+  it.buildings = (it.buildings_all || []).filter((b) => r.hidden.indexOf(b) < 0);
+  iaBadge();
+}
+function iaWireItems(main) {
+  const redraw = () => viewInsp(main);
+  const run = async (it, disabled, hidden, msg) => { try { await iaItemSave(it, disabled, hidden); toast(msg); } catch (e) { toast("保存できませんでした：" + String((e && e.message) || e).slice(0, 50)); } redraw(); };
+  const find = (id) => IA.data.items.find((x) => x.id === id);
+  main.querySelectorAll("[data-ihide]").forEach((b) => (b.onclick = () => { const it = find(b.dataset.ihide); const h = new Set(it.hidden_buildings || []); h.has(b.dataset.b) ? h.delete(b.dataset.b) : h.add(b.dataset.b); run(it, !!it.disabled_custom, [...h], h.has(b.dataset.b) ? "この棟では不要にしました" : "この棟でも点検するようにしました"); }));
+  main.querySelectorAll("[data-ioff]").forEach((b) => (b.onclick = () => { const it = find(b.dataset.ioff); if (confirm(`「${it.title}」を使わない（無効）にします。\nリーダーの画面・期限・お知らせから外れます（記録は消えません。いつでも戻せます）。`)) run(it, true, it.hidden_buildings || [], "使わない項目にしました"); }));
+  main.querySelectorAll("[data-ion]").forEach((b) => (b.onclick = () => { const it = find(b.dataset.ion); run(it, false, it.hidden_buildings || [], "使う項目に戻しました"); }));
+  main.querySelectorAll("[data-ireq]").forEach((b) => (b.onclick = () => iaRequest(find(b.dataset.ireq))));
+}
+/** 本当の修正（追加・周期・棟割り当て・名前など）の依頼：窓口が、本社（木村）にメールで知らせる */
+function iaRequest(it) {
+  const root = document.createElement("div"); root.className = "fbBack";
+  root.innerHTML = `<div class="fbBox"><h3>点検の項目の修正を、本社に依頼する</h3><p>${it ? `<b>${esc(it.title)}</b>` : "（項目の追加・そのほか）"}</p>
+    <textarea id="rqText" maxlength="1000" placeholder="${it ? "例）周期を、毎月から3か月ごとに変えたい／春の対象から外したい／名前を直したい" : "例）「○○の点検」を、毎年4月に、全部の棟で追加したい"}"></textarea><p id="rqMsg" class="note" style="color:#b4531c"></p>
+    <p><button class="btn primary" id="rqSend">送る</button> <button class="btn" id="rqNo">やめる</button></p></div>`;
+  document.body.appendChild(root);
+  root.querySelector("#rqNo").onclick = () => root.remove();
+  root.querySelector("#rqSend").onclick = async () => {
+    const t = root.querySelector("#rqText").value.trim(); if (!t) { root.querySelector("#rqMsg").textContent = "内容を入れてください"; return; }
+    root.querySelector("#rqSend").disabled = true;
+    try { await apiCall({ action: "feedback", kind: "点検の修正依頼", text: `【点検の項目${it ? "：" + it.title + "（" + it.id + "）" : ""}】\n${t}`, app: "admin", app_version: APP_VERSION }, 30000); root.remove(); toast("本社に送りました"); }
+    catch (e) { root.querySelector("#rqMsg").textContent = "送れませんでした：" + String((e && e.message) || e).slice(0, 60); root.querySelector("#rqSend").disabled = false; }
+  };
 }
