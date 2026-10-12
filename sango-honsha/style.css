@@ -147,3 +147,12 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .mapWrap { position: relative; }
 #bPrev { position: absolute; z-index: 5; left: 8px; bottom: 8px; width: min(340px, calc(100% - 16px)); }
 #bPrev .bPrev { margin: 0; box-shadow: 0 4px 14px rgba(20, 30, 40, 0.35); }
+
+/* v8：スマホは、エリアを押して拡大 */
+.zoneBtn { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed var(--navy); border-radius: 12px; background: rgba(44, 74, 107, 0.14); color: var(--navy-deep); cursor: pointer; padding: 2px; text-align: center; }
+.zoneBtn b { font-size: 15px; } .zoneBtn small { font-size: 10px; line-height: 1.3; }
+.zoneBack { display: block; margin: 0 0 8px; padding: 8px 14px; border: 1px solid var(--navy); border-radius: 12px; background: #fff; color: var(--navy-deep); font-weight: 700; cursor: pointer; }
+.mapWrap.zoomed .spotName { opacity: 1; font-size: 12px; }
+.mapWrap.zoomed .spot { min-width: 44px; min-height: 44px; }
+.zoneBtn b { font-size: 12px; background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 1px 6px; }
+#bPrev.bPrevBelow { position: static; width: auto; margin-top: 8px; }

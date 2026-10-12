@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -169,7 +169,14 @@ const BLDS = [ // id、名前、マップ上の位置（無い建物は、下の
   { id: "kumajirushi", name: "熊印雑貨", at: [507, 368, 17, 10] }, { id: "larch", name: "店舗レストラン棟", at: [544, 327, 87, 40] }, { id: "botanical", name: "ボタニカル", at: [680, 329, 44, 45] },
   { id: "haruka", name: "HARUKA（カフェ）", at: [475, 396, 56, 33] }, { id: "larch-back", name: "店舗バックヤード", at: null }, { id: "gaiko", name: "外構・敷地全体", at: null },
 ];
-let mapSvg = null, selB = "";
+let mapSvg = null, selB = "", mapZone = "";
+// スマホ（縦）では、敷地全体は押しにくいので、3つのエリアに分け、エリアを押すと、そこだけが大きく出る（座標は viewBox）
+const ZONES = [
+  { id: "n", name: "北エリア", sub: "春・香・レセプション", r: [0, 80, 270, 170] },
+  { id: "c", name: "中央エリア", sub: "宇・地・和・熊印・HARUKA", r: [283, 285, 245, 160] },
+  { id: "e", name: "東エリア", sub: "店舗棟・ボタニカル", r: [532, 290, 218, 150] },
+];
+const isNarrow = () => window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
 async function loadMapSvg() { if (mapSvg === null) { try { mapSvg = await (await fetch("art/sitemap.svg")).text(); } catch (e) { mapSvg = ""; } } return mapSvg; }
 /** 建物ごとの状況：open＝請求済みでない依頼の数、tone＝いちばん急ぐ状態（todo 未手配／bill 請求待ち／work 進行中）、nNew＝新着 */
 function bldStat(id) {
@@ -181,16 +188,20 @@ async function viewMap(main) {
   if (!S.api) return viewEmptyApi(main);
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
-  const svg = await loadMapSvg();
-  const spots = BLDS.filter((b) => b.at).map((b) => {
-    const st = bldStat(b.id), [x, y, w, h] = b.at;
-    return `<button class="spot ${st.tone}${st.nNew ? " new" : ""}${st.urgent ? " urg" : ""}" data-b="${esc(b.id)}" title="${esc(b.name)}${st.open ? "：対応が必要 " + st.open + "件" : ""}" style="left:${(((x + w / 2) / MAP_W) * 100).toFixed(2)}%;top:${(((y + h / 2) / MAP_H) * 100).toFixed(2)}%;--w:${((w / MAP_W) * 100).toFixed(2)}%;--h:${((h / MAP_H) * 100).toFixed(2)}%">${st.open ? `<span class="spotN">${st.open}</span>` : ""}<span class="spotName">${esc(b.name)}</span></button>`;
-  }).join("");
+  const svg0 = await loadMapSvg();
+  const narrow = isNarrow(), zone = narrow ? ZONES.find((z) => z.id === mapZone) : null, [vx, vy, vw, vh] = zone ? zone.r : [0, 0, MAP_W, MAP_H];
+  const svg = svg0 && zone ? svg0.replace(/viewBox="[^"]*"/, `viewBox="${vx} ${vy} ${vw} ${vh}"`) : svg0;
+  const pc = (v, base, size) => (((v - base) / size) * 100).toFixed(2);
+  const spots = narrow && !zone ? ZONES.map((z) => `<button class="zoneBtn" data-z="${z.id}" style="left:${pc(z.r[0], 0, MAP_W)}%;top:${pc(z.r[1], 0, MAP_H)}%;width:${((z.r[2] / MAP_W) * 100).toFixed(2)}%;height:${((z.r[3] / MAP_H) * 100).toFixed(2)}%"><b>${z.name}</b></button>`).join("")
+    : BLDS.filter((b) => b.at && (!zone || (b.at[0] + b.at[2] / 2 >= vx && b.at[0] + b.at[2] / 2 <= vx + vw && b.at[1] + b.at[3] / 2 >= vy && b.at[1] + b.at[3] / 2 <= vy + vh))).map((b) => {
+      const st = bldStat(b.id), [x, y, w, h] = b.at;
+      return `<button class="spot ${st.tone}${st.nNew ? " new" : ""}${st.urgent ? " urg" : ""}" data-b="${esc(b.id)}" title="${esc(b.name)}${st.open ? "：対応が必要 " + st.open + "件" : ""}" style="left:${pc(x + w / 2, vx, vw)}%;top:${pc(y + h / 2, vy, vh)}%;--w:${((w / vw) * 100).toFixed(2)}%;--h:${((h / vh) * 100).toFixed(2)}%">${st.open ? `<span class="spotN">${st.open}</span>` : ""}<span class="spotName">${esc(b.name)}</span></button>`;
+    }).join("");
   const chips = BLDS.map((b) => { const st = bldStat(b.id); return `<button class="bchip ${st.tone}" data-b="${esc(b.id)}">${esc(b.name)}${st.open ? `<b>${st.open}</b>` : ""}${st.nNew ? `<i>新着</i>` : ""}</button>`; }).join("");
   const todo = S.records.filter((r) => stage(r) === "todo").sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t).slice(0, 5);
   main.innerHTML = `<h2>山郷の敷地</h2>${kpiHtml(counts)}
-    <div class="mapCard"><div class="mapWrap"><div id="bPrev"></div>${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
-      <div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">建物を押すと、画像と状況が出ます</span></div></div>
+    <div class="mapCard">${zone ? `<button class="zoneBack" id="zoneBack">← 敷地全体（${zone.name}を表示中）</button>` : ""}<div class="mapWrap${zone ? " zoomed" : ""}" style="aspect-ratio:${vw} / ${vh}">${narrow ? "" : `<div id="bPrev"></div>`}${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
+      ${narrow ? `<div id="bPrev" class="bPrevBelow"></div>` : ""}<div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">${narrow && !zone ? "エリアを押すと、拡大します" : "建物を押すと、画像と状況が出ます"}</span></div></div>
     <div class="bchips">${chips}</div>
     <h3 class="subH">いま手配が必要な依頼</h3>${todo.map((r) => `<a class="card urgentLine" href="#/r/${encodeURIComponent(r.id)}"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top">${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span></div><div class="what">${esc(r.what)}</div><div class="meta">${fmtDate(r.t)}　${esc(r.sender)}</div></div></a>`).join("") || `<div class="note" style="padding:6px 2px">未手配の依頼は、ありません</div>`}`;
   const prev = main.querySelector("#bPrev");
@@ -202,6 +213,8 @@ async function viewMap(main) {
     selB = id;
   };
   main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = () => showPrev(el.dataset.b)));
+  main.querySelectorAll(".zoneBtn").forEach((el) => (el.onclick = () => { mapZone = el.dataset.z; selB = ""; viewMap(main); }));
+  if ($("zoneBack")) $("zoneBack").onclick = () => { mapZone = ""; selB = ""; viewMap(main); };
   if (selB && prev) showPrev(selB); // 自動更新で描き直しても、選択を保つ
   main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; location.hash = "#/list"; }));
 }
