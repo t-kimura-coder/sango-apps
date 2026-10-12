@@ -1,8 +1,8 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 29;
+const CACHE_VERSION = 30;
 const CACHE_NAME = `sango-support-v${CACHE_VERSION}`;
 // 絵(art/)は無くても動くので、ここには入れず初回表示時に取得してキャッシュする
-const APP_SHELL = ['./', 'index.html', 'app.js?v=29', 'login.js?v=4', 'guide.js?v=3', 'inspect.js?v=5', 'style.css?v=11', 'icon-96.png?v=3', 'icon-180.png?v=3', 'icon-512.png'];
+const APP_SHELL = ['./', 'index.html', 'app.js?v=30', 'login.js?v=4', 'guide.js?v=3', 'inspect.js?v=5', 'style.css?v=12', 'icon-96.png?v=3', 'icon-180.png?v=3', 'icon-512.png'];
 // 業者データなどの社内データはアプリに含めず、JSONで取り込んでIndexedDBに保存する
 
 self.addEventListener('install', (event) => {

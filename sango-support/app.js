@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -896,7 +896,15 @@ const seen = () => parseInt(getSetting("ann-seen", "0"), 10) || 0;
 function refreshBell() { $("bellDot").hidden = ANNOUNCEMENTS.length <= seen(); }
 $("bellBtn").onclick = () => {
   openSheet("お知らせ", (body) => {
-    body.innerHTML = ANNOUNCEMENTS.map((a) => `<div class="annItem"><small>${esc(a.date)}${a.type === "fix" ? "　修正" : "　新機能"}</small>${esc(a.text)}</div>`).join("");
+    let tab = "feature"; // 新機能 と 修正 は、タブで分けて見せる
+    const draw = () => {
+      const n = (t) => ANNOUNCEMENTS.filter((a) => (a.type === "fix" ? "fix" : "feature") === t).length;
+      const list = ANNOUNCEMENTS.filter((a) => (a.type === "fix" ? "fix" : "feature") === tab);
+      body.innerHTML = `<div class="annTabs"><button class="segBtn annTab${tab === "feature" ? " on ok" : ""}" data-t="feature">新機能（${n("feature")}）</button><button class="segBtn annTab${tab === "fix" ? " on ok" : ""}" data-t="fix">修正・改善（${n("fix")}）</button></div>`
+        + (list.map((a) => `<div class="annItem"><small>${esc(a.date)}</small>${esc(a.text)}</div>`).join("") || `<div class="mutedText" style="padding:12px 0">まだありません</div>`);
+      body.querySelectorAll(".annTab").forEach((b) => (b.onclick = () => { tab = b.dataset.t; draw(); }));
+    };
+    draw();
   });
   setSetting("ann-seen", String(ANNOUNCEMENTS.length));
   refreshBell();

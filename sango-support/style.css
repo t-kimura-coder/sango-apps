@@ -299,3 +299,5 @@ textarea { min-height: 84px; }
 .planDot { width: 10px; height: 10px; border-radius: 5px; margin-top: 6px; flex: none; background: #8a8f84; }
 .planDot.fire { background: #a3322a; } .planDot.heat { background: #b4531c; } .planDot.air { background: #2b6577; } .planDot.elec { background: #8a5a12; } .planDot.season { background: #2f6b45; } .planDot.ext { background: #6b4a1c; }
 .planT { flex: 1; font-size: 14px; } .planSt { font-size: 12px; font-weight: 700; color: #2f6b45; white-space: nowrap; }
+
+.annTabs { display: flex; gap: 8px; margin-bottom: 6px; }
