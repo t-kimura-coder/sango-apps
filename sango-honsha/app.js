@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -80,7 +80,7 @@ const STAGE_CLS = { todo: "todo", work: "work", billing: "bill", billed: "ok" };
 const yen = (v) => (v === "" || v == null || isNaN(Number(v)) ? "—" : Number(v).toLocaleString("ja-JP") + "円");
 const fmtDate = (t) => { if (!t) return ""; const d = new Date(t); return d.getFullYear() + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"); };
 const gross = (it) => (it.bill_amount !== "" && it.bill_amount != null && !isNaN(Number(it.bill_amount)) && it.cost !== "" && it.cost != null && !isNaN(Number(it.cost)) ? Number(it.bill_amount) - Number(it.cost) : null);
-const route = () => { const h = location.hash.replace(/^#\/?/, ""); const [name, id] = h.split("/"); return { name: name || "list", id: id ? decodeURIComponent(id) : "" }; };
+const route = () => { const h = location.hash.replace(/^#\/?/, ""); const [name, id] = h.split("/"); return { name: name || "map", id: id ? decodeURIComponent(id) : "" }; };
 
 let toastTimer = null;
 function toast(msg) { const el = $("toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2800); }
@@ -124,6 +124,7 @@ function kpiHtml(counts) {
 }
 function viewList(main) {
   if (!S.api) return viewEmptyApi(main);
+  if (route().name === "list" && F.keepBld !== F.bld) { /* 建物画面から戻った時の絞り込みは、そのまま使う */ }
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
   const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"]];
@@ -158,6 +159,58 @@ function renderListBody() {
   }).join("");
 }
 
+
+/* ---------- 敷地マップ（メイン画面）：建物を押すと、その建物の依頼へ ---------- */
+// 公式サイトの敷地イラストマップ（art/sitemap.svg、viewBox 891.396×527.086）の上に、建物の位置（viewBox の座標）を重ねる。
+const MAP_W = 891.396, MAP_H = 527.086;
+const BLDS = [ // id、名前、マップ上の位置（無い建物は、下の一覧から選ぶ）
+  { id: "haru", name: "春", at: [26, 106, 34, 44] }, { id: "kou", name: "香", at: [15, 167, 34, 42] }, { id: "reception", name: "レセプション", at: [197, 164, 17, 30] },
+  { id: "u", name: "宇", at: [295, 312, 48, 68] }, { id: "chi", name: "地", at: [357, 297, 63, 59] }, { id: "wa", name: "和", at: [434, 329, 60, 32] },
+  { id: "kumajirushi", name: "熊印雑貨", at: [507, 368, 17, 10] }, { id: "larch", name: "店舗レストラン棟", at: [544, 327, 87, 40] }, { id: "botanical", name: "ボタニカル", at: [680, 329, 44, 45] },
+  { id: "haruka", name: "HARUKA（カフェ）", at: [475, 396, 56, 33] }, { id: "larch-back", name: "店舗バックヤード", at: null }, { id: "gaiko", name: "外構・敷地全体", at: null },
+];
+let mapSvg = null;
+async function loadMapSvg() { if (mapSvg === null) { try { mapSvg = await (await fetch("art/sitemap.svg")).text(); } catch (e) { mapSvg = ""; } } return mapSvg; }
+/** 建物ごとの状況：open＝請求済みでない依頼の数、tone＝いちばん急ぐ状態（todo 未手配／bill 請求待ち／work 進行中）、nNew＝新着 */
+function bldStat(id) {
+  const seen = seenSet(), list = S.records.filter((r) => r.building_id === id), open = list.filter((r) => stage(r) !== "billed");
+  const has = (st) => open.some((r) => stage(r) === st);
+  return { all: list.length, open: open.length, tone: has("todo") ? "todo" : has("billing") ? "bill" : has("work") ? "work" : "", nNew: list.filter((r) => !seen.has(r.id)).length, urgent: open.some((r) => r.urgent) };
+}
+async function viewMap(main) {
+  if (!S.api) return viewEmptyApi(main);
+  const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
+  S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
+  const svg = await loadMapSvg();
+  const spots = BLDS.filter((b) => b.at).map((b) => {
+    const st = bldStat(b.id), [x, y, w, h] = b.at;
+    return `<button class="spot ${st.tone}${st.nNew ? " new" : ""}${st.urgent ? " urg" : ""}" data-b="${esc(b.id)}" title="${esc(b.name)}${st.open ? "：対応が必要 " + st.open + "件" : ""}" style="left:${(((x + w / 2) / MAP_W) * 100).toFixed(2)}%;top:${(((y + h / 2) / MAP_H) * 100).toFixed(2)}%;--w:${((w / MAP_W) * 100).toFixed(2)}%;--h:${((h / MAP_H) * 100).toFixed(2)}%">${st.open ? `<span class="spotN">${st.open}</span>` : ""}<span class="spotName">${esc(b.name)}</span></button>`;
+  }).join("");
+  const chips = BLDS.map((b) => { const st = bldStat(b.id); return `<button class="bchip ${st.tone}" data-b="${esc(b.id)}">${esc(b.name)}${st.open ? `<b>${st.open}</b>` : ""}${st.nNew ? `<i>新着</i>` : ""}</button>`; }).join("");
+  const todo = S.records.filter((r) => stage(r) === "todo").sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t).slice(0, 5);
+  main.innerHTML = `<h2>山郷の敷地</h2>${kpiHtml(counts)}
+    <div class="mapCard"><div class="mapWrap">${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
+      <div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">建物を押すと、その建物の依頼が開きます</span></div></div>
+    <div class="bchips">${chips}</div>
+    <h3 class="subH">いま手配が必要な依頼</h3>${todo.map((r) => `<a class="card urgentLine" href="#/r/${encodeURIComponent(r.id)}"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top">${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span></div><div class="what">${esc(r.what)}</div><div class="meta">${fmtDate(r.t)}　${esc(r.sender)}</div></div></a>`).join("") || `<div class="note" style="padding:6px 2px">未手配の依頼は、ありません</div>`}`;
+  main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = () => { location.hash = "#/b/" + encodeURIComponent(el.dataset.b); }));
+  main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; location.hash = "#/list"; }));
+}
+/** 建物の画面：その建物の依頼だけ（マップに戻れる） */
+function viewBuilding(main, id) {
+  const b = BLDS.find((x) => x.id === id) || { id, name: id }, st = bldStat(id);
+  F.bld = id;
+  const counts = { all: 0, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
+  S.records.filter((r) => r.building_id === id).forEach((r) => { const s2 = stage(r); counts[s2]++; counts.all++; if (s2 !== "billed") counts.open++; });
+  const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"]];
+  main.innerHTML = `<p><a href="#/map" class="note">← 敷地マップ</a></p>
+    <div class="hero enter">${bldImg(id)}<div class="heroText"><div class="heroSub">${st.open ? `対応が必要な依頼 ${st.open}件` : "対応が必要な依頼はありません"}${st.nNew ? `　<span class="chip new">新着 ${st.nNew}</span>` : ""}</div><h2>${esc(b.name)}</h2></div></div>
+    <div class="chips">${chips.map(([k, l]) => `<button class="fchip${F.stage === k ? " on" : ""}" data-s="${k}">${l}<small>${counts[k]}</small></button>`).join("")}</div>
+    <div id="listBody"></div>`;
+  main.querySelectorAll(".fchip").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; viewBuilding(main, id); }));
+  renderListBody();
+}
+
 /* ---------- 詳細 ---------- */
 const photoCache = new Map();
 function photoUrl(name) {
@@ -174,7 +227,7 @@ function viewDetail(main, id) {
   const it = item(r), tok = ++viewTok, si = stepIdx(r);
   const vendors = [...new Set(Object.values(S.items).map((x) => x.vendor).filter(Boolean))];
   const en = entryOf(r), cands = en && !en.none ? (en.companies || []) : [];
-  main.innerHTML = `<p><a href="#/list" class="note">← 依頼の一覧</a></p>
+  main.innerHTML = `<p><a href="${F.bld ? "#/b/" + encodeURIComponent(F.bld) : "#/list"}" class="note">← ${F.bld ? "建物の画面" : "依頼の一覧"}</a></p>
     <div class="hero">${bldImg(r.building_id)}<div class="heroText"><div class="heroSub">${catImg(r.category_id)}${esc(r.category)}</div><h2>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}</h2></div></div>
     <ol class="steps">${STEPS.map((l, i) => `<li class="${i < si ? "done" : i === si ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
     <div class="panel"><h3>依頼の内容　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
@@ -285,11 +338,16 @@ function viewSettings(main) {
 }
 
 /* ---------- 画面の切り替え ---------- */
+let lastName = "";
 function render() {
   const r = route(), main = $("main");
-  document.querySelectorAll(".topNav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name)));
+  if (r.name === "map" || (r.name === "list" && lastName !== "r")) F.bld = ""; // 建物の絞り込みは、建物の画面から入った時だけ使う
+  lastName = r.name;
+  document.querySelectorAll(".topNav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name === "b" ? "map" : r.name)));
   window.scrollTo(0, 0);
   if (r.name === "r") viewDetail(main, r.id);
+  else if (r.name === "map") viewMap(main);
+  else if (r.name === "b") viewBuilding(main, r.id);
   else if (r.name === "bill") viewBill(main);
   else if (r.name === "help") viewHelp(main);
   else if (r.name === "settings") viewSettings(main);
@@ -300,6 +358,8 @@ function refreshView() { // 自動更新のあと。入力中の画面（詳細�
   const n = route().name;
   if (n === "list" && $("listBody")) { renderListBody(); const m = $("main"); if (!m.contains(document.activeElement) || !["INPUT", "SELECT"].includes(document.activeElement.tagName)) viewListChips(); }
   else if (n === "bill") viewBill($("main"));
+  else if (n === "map") viewMap($("main"));
+  else if (n === "b") { const m = $("main"); if (!m.contains(document.activeElement)) viewBuilding(m, route().id); }
   updateTitle();
 }
 function viewListChips() { // 件数の表示と、上の数字だけ更新する（検索欄の入力は消さない）
@@ -310,10 +370,10 @@ function viewListChips() { // 件数の表示と、上の数字だけ更新す�
 }
 async function autoRefresh() { if (S.api && !document.hidden && (await loadAll(false))) refreshView(); else renderSync(); }
 
-$("reloadBtn").onclick = async () => { if (S.api) { await loadAll(true); const n = route().name; if (n === "list" || n === "bill") render(); else if (n === "r" && !$("fSave")) render(); } };
+$("reloadBtn").onclick = async () => { if (S.api) { await loadAll(true); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b") render(); else if (n === "r" && !$("fSave")) render(); } };
 window.addEventListener("hashchange", render);
 render();
-if (S.api) { loadAll(false).then(() => { initSeen(); loadMaster().then(() => { if (route().name === "r") render(); }); const n = route().name; if (n === "list" || n === "bill" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); }); }
+if (S.api) { loadAll(false).then(() => { initSeen(); loadMaster().then(() => { if (route().name === "r") render(); }); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); }); }
 setInterval(autoRefresh, 45000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});

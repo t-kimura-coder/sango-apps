@@ -105,3 +105,24 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .emptyArt { width: min(360px, 80%); border-radius: 14px; margin-bottom: 8px; opacity: 0.9; }
 .helpList { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14px; } .helpList li { margin-bottom: 6px; }
 @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, 1fr); } .cardImg { width: 64px; } .barRow { grid-template-columns: 64px 1fr 110px; } }
+
+/* 敷地マップ */
+.subH { margin: 18px 0 8px; font-size: 16px; color: var(--navy-deep); }
+.mapCard { background: var(--card); border-radius: 16px; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.12); padding: 12px; margin-bottom: 12px; }
+.mapWrap { position: relative; width: 100%; aspect-ratio: 891.396 / 527.086; background: #f7f5ee; border-radius: 12px; overflow: hidden; }
+.mapWrap > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.spot { position: absolute; transform: translate(-50%, -50%); min-width: 34px; min-height: 34px; width: calc(var(--w) + 10px); height: calc(var(--h) + 10px); padding: 0; border: 2px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease; }
+.spot:hover, .spot:focus-visible { transform: translate(-50%, -50%) scale(1.18); background: rgba(44, 74, 107, 0.18); border-color: var(--navy); outline: 0; z-index: 3; }
+.spot.todo { background: rgba(180, 83, 28, 0.38); border-color: #b4531c; } .spot.bill { background: rgba(176, 122, 63, 0.38); border-color: #b07a3f; } .spot.work { background: rgba(44, 74, 107, 0.32); border-color: var(--navy); }
+.spot.new { animation: spotPulse 1.6s ease-in-out infinite; } .spot.urg { border-color: var(--red); }
+@keyframes spotPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(163, 50, 42, 0.55); } 50% { box-shadow: 0 0 0 8px rgba(163, 50, 42, 0); } }
+.spotN { position: absolute; top: -9px; right: -9px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font-size: 12px; font-weight: 800; line-height: 20px; text-align: center; }
+.spotName { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 2px; white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--navy-deep); background: rgba(255, 255, 255, 0.85); border-radius: 6px; padding: 0 4px; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.spot:hover .spotName, .spot.todo .spotName, .spot.bill .spotName { opacity: 1; }
+.mapLegend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; } .lg.todo { background: #b4531c; } .lg.bill { background: #b07a3f; } .lg.work { background: var(--navy); }
+.bchips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.bchip { padding: 6px 14px; border-radius: 16px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+.bchip b { background: var(--navy); color: #fff; border-radius: 9px; padding: 0 7px; font-size: 12px; } .bchip.todo b { background: #b4531c; } .bchip.bill b { background: #b07a3f; } .bchip i { font-style: normal; background: var(--red); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: 700; }
+.hero.enter { animation: heroIn 0.45s ease both; } @keyframes heroIn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
+.urgentLine { border-left-color: #b4531c; }
