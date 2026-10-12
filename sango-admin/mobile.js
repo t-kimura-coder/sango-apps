@@ -23,15 +23,16 @@ function mobileRender() {
   const r = route(), main = $("main");
   const tab = mTabOf(r.name);
   document.querySelectorAll("#mTabs a").forEach((a) => a.classList.toggle("on", a.dataset.nav === tab));
-  $("mTitle").textContent = { list: "症例", req: "依頼", insp: "点検", settings: "設定", r: "症例の確認", help: "使い方" }[r.name] || "山郷サポート";
+  $("mTitle").textContent = { map: "山郷の敷地", list: "症例", req: "依頼", insp: "点検", settings: "設定", r: "症例の確認", help: "使い方" }[r.name] || "山郷サポート";
   $("mBack").hidden = !(r.name === "r" || r.name === "help");
-  if (r.name === "list") mList(main);
+  if (r.name === "map") viewMap(main);
+  else if (r.name === "list") mList(main);
   else if (r.name === "req") mReq(main);
   else if (r.name === "r") mDetail(main, r.id);
   else if (r.name === "insp") viewInsp(main);
   else if (r.name === "settings") viewSettings(main);
   else if (r.name === "help") viewHelp(main);
-  else location.hash = "#/list";
+  else location.hash = "#/map";
   fillIcons(document.body);
 }
 

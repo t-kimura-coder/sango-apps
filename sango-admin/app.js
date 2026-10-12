@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -180,6 +180,7 @@ function refreshView() {
   const name = route().name;
   if (S.records.length && $("main").querySelector(".empty, .emptyBox") ) return render(); // 空表示のままだった画面を、症例が入ったら描き直す
   if (name === "list" && $("listBody")) { if (!$("sideExtra").contains(document.activeElement)) renderFilters(); renderListBody(); } // 左の選択欄を操作中は、作り直さない
+  else if (name === "map") { viewMap($("main")); fillIcons($("main")); }
   else if (name === "summary") { viewSummary($("main")); fillIcons($("main")); }
   // 設定画面は、入力中の文字が消えないよう描き直さない（上の自動更新の表示だけ変わる）
 }
@@ -358,7 +359,7 @@ function catImg(id) { return `<img src="art/${esc(catNo(id))}.webp" alt="" data-
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG" && t.dataset.fb) t.style.visibility = "hidden"; }, true);
 
 /* ---------- ルーティング ---------- */
-const route = () => { const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean); return { name: parts[0] || "list", id: parts[1] ? (() => { try { return decodeURIComponent(parts[1]); } catch (e) { return parts[1]; } })() : "" }; };
+const route = () => { const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean); return { name: parts[0] || "map", id: parts[1] ? (() => { try { return decodeURIComponent(parts[1]); } catch (e) { return parts[1]; } })() : "" }; };
 function boot() { renderHeader(); render(); }
 function renderHeader() {
   const b = $("modeBadge");
@@ -375,13 +376,14 @@ function render() {
   const main = $("main");
   window.scrollTo(0, 0);
   if (!S.records.length && r.name !== "settings" && r.name !== "insp" && r.name !== "help") return viewEmpty(main);
-  if (r.name === "list") { renderFilters(); viewList(main); }
+  if (r.name === "map") viewMap(main);
+  else if (r.name === "list") { renderFilters(); viewList(main); }
   else if (r.name === "r") viewDetail(main, r.id);
   else if (r.name === "summary") viewSummary(main);
   else if (r.name === "insp") viewInsp(main);
   else if (r.name === "help") viewHelp(main);
   else if (r.name === "settings") viewSettings(main);
-  else location.hash = "#/list";
+  else location.hash = "#/map";
   fillIcons(document.body);
 }
 
@@ -430,6 +432,29 @@ function renderFilters() {
   $("fReq").onchange = (e) => { F.req = e.target.checked; renderListBody(); };
   $("fTodo").onchange = (e) => { F.todo = e.target.checked; renderListBody(); };
   const fh = $("fHidden"); if (fh) fh.onchange = (e) => { F.showHidden = e.target.checked; renderListBody(); };
+}
+
+/* ---------- 敷地マップ（最初の画面）：建物を押すと、画像と状況が出る。「この建物の症例を見る」で、一覧へ ---------- */
+let mapSel = "";
+function viewMap(main) {
+  const live = S.records.filter((r) => !isHidden(r));
+  const st = (id) => { const l = live.filter((r) => r.buildingId === id); return { all: l.length, todo: l.filter(isTodo).length, req: l.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length, urgent: l.some((r) => r.req && r.urgent && adm(r).status !== "done") }; };
+  const nTodo = live.filter(isTodo).length, nReq = live.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length;
+  main.innerHTML = `<h2 class="mapH">山郷の敷地</h2>
+    <div class="mapKpis"><a class="mapKpi" href="#/list" data-todo="1"><small>未整理の症例</small><b>${nTodo}</b></a><a class="mapKpi" href="#/list" data-req="1"><small>依頼（対応中）</small><b>${nReq}</b></a><a class="mapKpi" href="#/list"><small>症例の合計</small><b>${live.length}</b></a></div>
+    <div class="panel mapPanel"><div id="siteMapMain"></div><div id="mapPrev"></div></div>`;
+  main.querySelectorAll(".mapKpi").forEach((a) => (a.onclick = () => { F.blds = new Set(); F.todo = !!a.dataset.todo; F.req = !!a.dataset.req; }));
+  const prev = () => {
+    if (!mapSel) { $("mapPrev").innerHTML = ""; return; }
+    const s = st(mapSel);
+    $("mapPrev").innerHTML = `<div class="mapPrev">${bldImg(mapSel)}<div class="mapPrevBody"><h3>${esc(typeof smName === "function" ? smName(mapSel) : mapSel)}</h3><div class="mapPrevNote">未整理 ${s.todo}件　／　依頼（対応中）${s.req}件　／　症例 ${s.all}件</div><button class="btn primary" id="mapGo">この建物の症例を見る →</button></div></div>`;
+    $("mapGo").onclick = () => { F.blds = new Set([mapSel]); F.todo = false; F.req = false; location.hash = "#/list"; };
+    fillIcons($("mapPrev"));
+  };
+  if (typeof smRender === "function") {
+    const narrow = (typeof MOBILE !== "undefined" && MOBILE) || innerWidth <= 720;
+    smRender($("siteMapMain"), { narrow, badge: (id) => { const s = st(id); return { n: s.todo, tone: id === mapSel ? "ok" : s.urgent ? "todo" : s.todo ? "warn" : "", urgent: s.urgent }; }, onPick: (id) => { mapSel = id; viewMap(main); fillIcons(main); } }).then(prev).catch(() => {});
+  }
 }
 
 /* ---------- 症例一覧 ---------- */

@@ -33,6 +33,7 @@
   function pc(v, base, size) { return (((v - base) / size) * 100).toFixed(2); }
   function load() { if (svgText !== null) return Promise.resolve(svgText); return fetch("art/sitemap.svg").then(function (r) { return r.text(); }).then(function (t) { svgText = t; return t; }, function () { svgText = ""; return ""; }); }
   function inside(b, r) { var cx = b.at[0] + b.at[2] / 2, cy = b.at[1] + b.at[3] / 2; return cx >= r[0] && cx <= r[0] + r[2] && cy >= r[1] && cy <= r[1] + r[3]; }
+  window.smName = function (id) { var b = BLDS.filter(function (x) { return x.id === id; })[0]; return b ? b.name : id; };
   window.smRender = function (box, o) {
     addCss();
     return load().then(function (svg0) {

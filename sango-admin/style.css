@@ -277,3 +277,16 @@ body.mobileMode .settingBox { max-width: none; }
 
 .iaEdit { display: block; margin-top: 4px; padding: 2px 8px; font-size: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--green-deep); cursor: pointer; }
 .iaMonths { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; } .iaMonth { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 14px; }
+
+/* v22：敷地マップ（最初の画面） */
+.mapH { margin: 0 0 12px; font-size: 20px; }
+.mapKpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.mapKpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--card); box-shadow: 0 1px 3px rgba(40, 50, 35, 0.12); border-top: 4px solid var(--green); color: inherit; text-decoration: none; }
+.mapKpi small { color: var(--muted); font-weight: 700; } .mapKpi b { font-size: 28px; font-weight: 800; line-height: 1.1; }
+.mapPanel { padding: 12px; }
+.mapPrev { display: flex; gap: 14px; margin-top: 12px; background: var(--bg, #f4f2ec); border-radius: 14px; padding: 8px; align-items: stretch; }
+.mapPrev > img { width: 40%; max-width: 260px; min-height: 110px; object-fit: cover; border-radius: 10px; flex: none; }
+.mapPrevBody { display: flex; flex-direction: column; gap: 6px; justify-content: center; min-width: 0; } .mapPrevBody h3 { margin: 0; font-size: 20px; }
+.mapPrevNote { font-size: 13px; color: var(--muted); }
+.mapPanel .smWrap { max-width: 980px; margin: 0 auto; }
+@media (max-width: 720px) { .mapKpis { grid-template-columns: repeat(3, 1fr); gap: 6px; } .mapKpi { padding: 8px 10px; } .mapKpi b { font-size: 22px; } .mapKpi small { font-size: 11px; } .mapPrev > img { width: 38%; } }
