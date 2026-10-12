@@ -303,3 +303,12 @@ textarea { min-height: 84px; }
 .annTabs { display: flex; gap: 8px; margin-bottom: 6px; }
 
 .siteMapCard { background: var(--card, #fff); border-radius: 16px; padding: 12px; margin: 12px 0; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.12); }
+
+/* 点検：いまやること（頻度ごと） */
+.nowItem { display: flex; gap: 12px; align-items: flex-start; background: var(--card, #fff); border-radius: 14px; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.12); padding: 10px 12px; margin-bottom: 8px; }
+.nowItem .inspIcon { flex: none; } .nowBody { flex: 1; min-width: 0; }
+.nowChips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.nowChip { display: inline-flex; flex-direction: column; align-items: center; min-width: 64px; padding: 6px 12px; border-radius: 12px; border: 2px solid var(--line); background: #fff; font-weight: 700; font-size: 15px; cursor: pointer; line-height: 1.25; }
+.nowChip small { font-weight: 600; font-size: 11px; }
+.nowChip.over { border-color: #a3322a; background: #f7e3df; color: #7a231c; } .nowChip.month { border-color: #b07a3f; background: #f8ecd9; color: #6b4a1e; } .nowChip.none { border-color: var(--line); color: var(--muted); }
+.nowNone { margin: 14px 0; } .nowNone summary { cursor: pointer; padding: 10px 12px; background: #ebe8dc; border-radius: 12px; font-size: 14px; }

@@ -12,7 +12,7 @@ let inspBld = "";         // 一覧の建物の絞り込み
 let inspBusy = false;
 let inspForm = null;
 let inspAllNone = false;
-let inspMode = "list";    // "list"＝期限の一覧／"plan"＝年間予定（何月に何をやるか）
+let inspMode = "now";     // "now"＝いまやること（頻度ごと）／"list"＝期限の一覧／"plan"＝年間予定（何月に何をやるか）
 let inspItemFilter = "";  // 年間予定から選んだ項目だけを一覧に出す
 /** 標準の予定月（項目マスターの plan。無ければ周期から） */
 const inspPlanOf = (it) => {
@@ -135,6 +135,31 @@ function inspRows() {
 const inspCount = (rows) => ({ over: rows.filter((r) => r.st === "over").length, month: rows.filter((r) => r.st === "month").length });
 const inspIconHtml = (item) => `<img src="art/insp-${esc(item.icon)}.webp?v=${ART_V}" alt="" loading="lazy" data-fb="cat" data-glyph="${esc(INSP_GLYPH[item.group] || "点")}">`;
 
+/* ---------- いまやること（頻度ごと・項目ごとに、建物のチップを並べる） ---------- */
+const INSP_FREQ = [["m1", "毎月のこと"], ["m3", "3か月ごとのこと"], ["m6", "半年ごとのこと"], ["y1", "年に1回のこと"], ["season", "季節のこと"]];
+function inspFreqOf(it) {
+  const c = it.cycle || {};
+  if (c.type === "season") return "season";
+  const n = c.n || 12;
+  return n <= 1 ? "m1" : n <= 3 ? "m3" : n <= 6 ? "m6" : "y1";
+}
+function inspNowHtml(rows) {
+  const todo = rows.filter((x) => x.st === "over" || x.st === "month"), none = rows.filter((x) => x.st === "none");
+  const chip = (x) => `<button class="nowChip ${x.st}" data-i="${esc(x.item.id)}" data-b="${esc(x.bid)}">${esc(x.bname)}<small>${x.st === "over" ? `${-x.days}日超過` : x.st === "month" ? `〜${inspMD(x.due)}` : "未実施"}</small></button>`;
+  const grp = (list, withNo) => INSP_FREQ.map(([k, label]) => {
+    const inF = list.filter((x) => inspFreqOf(x.item) === k); if (!inF.length) return "";
+    const items = [...new Map(inF.map((x) => [x.item.id, x.item])).values()].sort((a, b) => a.no - b.no);
+    return `<div class="sectionHead"><h3>${label}</h3><span class="rule"></span><span class="count">${items.length}項目</span></div>` + items.map((it) => {
+      const cs = inF.filter((x) => x.item.id === it.id).sort((a, b) => (a.st === b.st ? (a.due < b.due ? -1 : 1) : a.st === "over" ? -1 : 1));
+      return `<div class="nowItem"><div class="inspIcon">${inspIconHtml(it)}</div><div class="nowBody"><div class="inspTitle">${esc(it.title)}${it.legal ? ` <span class="tag warn">法定</span>` : ""}</div><div class="inspMeta">${esc((it.cycle || {}).label || "")}${it.who ? "／" + esc(it.who) : ""}</div><div class="nowChips">${cs.map(chip).join("")}</div></div></div>`;
+    }).join("");
+  }).join("");
+  const nOver = todo.filter((x) => x.st === "over").length;
+  return `<div class="inspSum"><span class="chipN over">期限超過 ${nOver}</span><span class="chipN month">今月 ${todo.length - nOver}</span></div>
+    ${todo.length ? `<div class="mutedText" style="margin:0 4px 8px">頻度ごとに、「どの建物を」が分かるように並べています。建物の名前を押すと、記録できます。</div>${grp(todo)}` : `<div class="empty">いま、やることはありません。</div>`}
+    ${none.length ? `<details class="nowNone"><summary>まだ記録がない点検（${none.length}件）。初めての記録をすると、次の期限が出ます</summary>${grp(none)}</details>` : ""}`;
+}
+
 /* ---------- 一覧 ---------- */
 function inspCard(r, cls) {
   const who = r.last ? `前回 ${inspMD(r.last.done_on)}${r.last.done_by ? " " + esc(r.last.done_by) + "さん" : ""}${r.last.result === "issue" ? "（要対応あり）" : ""}` : "まだ記録がありません";
@@ -171,14 +196,15 @@ async function viewInspect(main, r) {
       ${sec("期限が過ぎています", "over", over)}${sec("今月やること", "month", month)}${sec("最近済んだもの", "done", recent)}${sec("次の予定", "later", later.filter((x) => !recent.includes(x)))}${sec("まだ記録がありません", "none", inspAllNone ? none : none.slice(0, 6), "初めての記録をすると、次の期限が出ます。")}
       ${!inspAllNone && none.length > 6 ? `<button class="btn" id="inspMore" style="width:100%;margin:4px 0 12px">あと ${none.length - 6}件を表示する</button>` : ""}
       ${rows.length ? "" : `<div class="empty">この建物の点検の項目はありません。</div>`}`;
-    const tg = `<div class="segRow inspTg"><button class="segBtn${inspMode === "list" ? " on ok" : ""}" data-md="list">期限の一覧</button><button class="segBtn${inspMode === "plan" ? " on ok" : ""}" data-md="plan">年間予定</button></div>`;
+    const tg = `<div class="segRow inspTg"><button class="segBtn${inspMode === "now" ? " on ok" : ""}" data-md="now">いまやること</button><button class="segBtn${inspMode === "list" ? " on ok" : ""}" data-md="list">期限の一覧</button><button class="segBtn${inspMode === "plan" ? " on ok" : ""}" data-md="plan">年間予定</button></div>`;
     const flt = inspMode === "list" && inspItemFilter ? `<div class="inspFlt">${esc((inspItem(inspItemFilter) || {}).title || "")} だけを表示中　<button class="btn" id="inspFltOff" style="min-height:32px;padding:2px 10px">すべて見る</button></div>` : "";
-    main.innerHTML = tg + flt + (inspMode === "plan" ? inspPlanHtml() : listHtml);
+    main.innerHTML = tg + flt + (inspMode === "plan" ? inspPlanHtml() : inspMode === "now" ? inspNowHtml(all) : listHtml);
     main.querySelectorAll("[data-md]").forEach((b) => (b.onclick = () => { inspMode = b.dataset.md; if (inspMode === "plan") inspItemFilter = ""; draw(); window.scrollTo(0, 0); }));
     main.querySelectorAll(".planRow, .planChip").forEach((el) => (el.onclick = () => { inspItemFilter = el.dataset.i; inspMode = "list"; draw(); window.scrollTo(0, 0); }));
     const fo = $("inspFltOff"); if (fo) fo.onclick = () => { inspItemFilter = ""; draw(); };
     const more = $("inspMore"); if (more) more.onclick = () => { inspAllNone = true; draw(); };
     main.querySelectorAll("[data-bb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.bb; draw(); }));
+    main.querySelectorAll(".nowChip").forEach((el) => (el.onclick = () => go(`#/insp/rec/${encodeURIComponent(el.dataset.i)}/${encodeURIComponent(el.dataset.b)}`)));
     main.querySelectorAll(".inspCard").forEach((el) => (el.onclick = () => go(`#/insp/rec/${encodeURIComponent(el.dataset.i)}/${encodeURIComponent(el.dataset.b)}`)));
     fillIcons(main);
   }
