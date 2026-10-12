@@ -14,11 +14,11 @@
 <header class="appHeader">
   <a class="brand" href="#/map"><img class="brandLogo" src="art/logo.webp" alt="" onerror="this.remove()"><span class="brandName">山郷サポート</span><span class="brandTag">本社（依頼の進捗・請求）</span></a>
   <nav class="topNav">
-    <a href="#/map" data-nav="map">マップ</a>
-    <a href="#/list" data-nav="list">依頼</a>
-    <a href="#/bill" data-nav="bill">請求</a>
-    <a href="#/help" data-nav="help">使い方</a>
-    <a href="#/settings" data-nav="settings">設定</a>
+    <a href="#/map" data-nav="map"><img class="navIc" src="art/ic-map.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">マップ</a>
+    <a href="#/list" data-nav="list"><img class="navIc" src="art/ic-order.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">依頼</a>
+    <a href="#/bill" data-nav="bill"><img class="navIc" src="art/ic-invoice.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">請求</a>
+    <a href="#/help" data-nav="help"><img class="navIc" src="art/ic-help.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">使い方</a>
+    <a href="#/settings" data-nav="settings"><img class="navIc" src="art/ic-settings.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">設定</a>
   </nav>
   <span id="syncInfo" class="syncInfo"></span>
   <button id="reloadBtn" class="iconBtn" title="読み直す" aria-label="読み直す">↻</button>
@@ -26,6 +26,6 @@
 <main id="main"></main>
 <div id="lightbox" hidden></div>
 <div id="toast" hidden></div>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

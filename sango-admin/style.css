@@ -304,3 +304,10 @@ body.mobileMode .settingBox { max-width: none; }
 .reqSteps li span { display: block; width: 20px; height: 20px; line-height: 20px; margin: 0 auto 2px; border-radius: 10px; background: #fff; font-weight: 800; }
 .reqSteps li.done { background: #e1ece3; color: #2f6b45; } .reqSteps li.now { background: var(--green, #2f5d3a); color: #fff; font-weight: 700; } .reqSteps li.now span { color: var(--green, #2f5d3a); }
 .reqLine { margin: 6px 0; font-size: 15px; }
+
+/* サイドバーに、絵（絵が読み込めた時だけ、線のアイコンを隠す） */
+.sideNav > a .navIc { width: 36px; height: 36px; border-radius: 10px; object-fit: cover; flex: none; }
+.sideNav > a.hasIc > span[data-icon] { display: none; }
+
+.mTabs a .navIc { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
+.mTabs a.hasIc > span[data-icon] { display: none; }
