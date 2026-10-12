@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -72,11 +72,13 @@ const item = (r) => S.items[r.id] || {};
 function stage(r) { // todo 未手配／work 進行中／billing 請求待ち／billed 請求済み
   const it = item(r);
   if (it.billed) return "billed";
-  if (it.progress === "done") return "billing";
+  if (it.progress === "done") return it.bill_kind === "none" ? "billed" : "billing";
   if (it.progress === "arranged" || it.progress === "scheduled") return "work";
   return "todo";
 }
 const STAGE_LABEL = { todo: "未手配", work: "進行中", billing: "請求待ち", billed: "請求済み" };
+const stLabel = (r, st) => (st === "billed" && item(r).bill_kind === "none" && !item(r).billed ? "請求なし" : STAGE_LABEL[st]); // 請求区分「請求しない」は、施工完了で、請求待ちに出さず「請求なし」で終わり
+const BILL_KINDS = [["", "未選択"], ["charge", "請求する"], ["none", "請求しない（保証・サービス）"], ["tbd", "未定"]];
 const STAGE_CLS = { todo: "todo", work: "work", billing: "bill", billed: "ok" };
 const yen = (v) => (v === "" || v == null || isNaN(Number(v)) ? "—" : Number(v).toLocaleString("ja-JP") + "円");
 const fmtDate = (t) => { if (!t) return ""; const d = new Date(t); return d.getFullYear() + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"); };
@@ -111,7 +113,24 @@ async function loadMaster() {
 const entryOf = (r) => (S.master && S.master.entries ? S.master.entries.find((e) => e.b === r.building_id && e.c === r.category_id) : null);
 
 /* ---------- 一覧 ---------- */
-const F = { stage: "open", q: "", bld: "" };
+const F = { stage: "open", q: "", bld: "", late: "" };
+const LATE_ARRANGE_DAYS = 3, LATE_BILL_DAYS = 30; // 窓口の朝のメールと同じ基準
+/** 遅れ：手配（3日たっても未手配）／請求（施工完了から30日たっても未請求。「請求しない」は除く） */
+function lateInfo() {
+  const now = Date.now(), DAY = 86400000, arrange = [], bill = [];
+  S.records.forEach((r) => {
+    const st = stage(r), it = item(r);
+    if (st === "todo" && r.t && now - r.t > LATE_ARRANGE_DAYS * DAY) arrange.push(r);
+    if (st === "billing") { const dt = Date.parse(it.done_at) || Number(it.at) || 0; if (dt && now - dt > LATE_BILL_DAYS * DAY) bill.push(r); }
+  });
+  return { arrange, bill };
+}
+function lateBanner() {
+  if (!S.loaded) return "";
+  const l = lateInfo(); if (!l.arrange.length && !l.bill.length) return "";
+  return `<div class="lateBanner">${l.arrange.length ? `<span>手配が遅れている依頼が <b>${l.arrange.length}件</b></span><button class="lateBtn" data-late="arrange">見る</button>` : ""}${l.bill.length ? `<span>請求が漏れていそうな依頼が <b>${l.bill.length}件</b></span><button class="lateBtn" data-late="bill">見る</button>` : ""}</div>`;
+}
+function wireLate(main) { main.querySelectorAll(".lateBtn").forEach((b) => (b.onclick = () => { F.late = b.dataset.late; F.stage = b.dataset.late === "bill" ? "billing" : "todo"; F.bld = ""; location.hash = "#/list"; })); }
 function kpiHtml(counts) {
   const wait = S.records.filter((r) => stage(r) === "billing"), waitSum = wait.reduce((a, r) => a + (Number(item(r).bill_amount) || 0), 0);
   const ym = ymNow(), mon = S.records.filter((r) => item(r).bill_month === ym && (item(r).bill_amount || item(r).cost));
@@ -130,15 +149,18 @@ function viewList(main) {
   S.records.forEach((r) => { const st = stage(r); counts[st]++; if (st !== "billed") counts.open++; });
   const chips = [["open", "対応が必要"], ["todo", "未手配"], ["work", "進行中"], ["billing", "請求待ち"], ["billed", "請求済み"], ["all", "すべて"], ["past", "過去の症例"]];
   const blds = [...new Map([...S.records, ...S.past].map((r) => [r.building_id, r.building])).entries()];
-  main.innerHTML = `<h2>山郷からの依頼</h2>${kpiHtml(counts)}
+  const lateSet = F.late ? new Set(lateInfo()[F.late].map((r) => r.id)) : null;
+  main.innerHTML = `<h2>山郷からの依頼</h2>${lateBanner()}${F.late ? `<div class="lateNote">遅れている依頼だけを表示しています（${F.late === "bill" ? "請求漏れの疑い" : "手配の遅れ"}）<button class="lateBtn" id="lateOff">すべて表示</button></div>` : ""}${kpiHtml(counts)}
     <div class="chips">${chips.map(([k, l]) => `<button class="fchip${F.stage === k ? " on" : ""}" data-s="${k}">${l}<small>${counts[k]}</small></button>`).join("")}</div>
     <div class="searchRow"><input id="q" type="search" placeholder="建物・内容・業者で探す" value="${esc(F.q)}"> <select id="fb"><option value="">すべての建物</option>${blds.map(([id, n]) => `<option value="${esc(id)}"${F.bld === id ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
     <div id="listBody"></div>`;
-  main.querySelectorAll(".fchip, .kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; viewList(main); }));
+  main.querySelectorAll(".fchip, .kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.late = ""; viewList(main); }));
+  wireLate(main); if ($("lateOff")) $("lateOff").onclick = () => { F.late = ""; viewList(main); };
   $("q").oninput = (e) => { F.q = e.target.value; renderListBody(); };
   $("fb").onchange = (e) => { F.bld = e.target.value; renderListBody(); };
   renderListBody();
 }
+const lateIds = () => new Set(lateInfo()[F.late || "arrange"].map((r) => r.id));
 function renderListBody() {
   const box = $("listBody"); if (!box) return;
   const q = F.q.trim().toLowerCase(), seen = seenSet();
@@ -152,6 +174,7 @@ function renderListBody() {
     const st = stage(r);
     if (F.stage === "open" ? st === "billed" : F.stage !== "all" && st !== F.stage) return false;
     if (F.bld && r.building_id !== F.bld) return false;
+    if (F.late && !lateIds().has(r.id)) return false;
     if (q && ![r.building, r.category, r.what, r.how, r.sender, item(r).vendor, item(r).memo].join(" ").toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t);
@@ -160,7 +183,7 @@ function renderListBody() {
     const st = stage(r), it = item(r);
     return `<a class="card ${r.urgent ? "urgent " : ""}${st}" href="#/r/${encodeURIComponent(r.id)}">
       <div class="cardImg">${bldImg(r.building_id)}</div>
-      <div class="cardBody"><div class="top">${seen.has(r.id) ? "" : `<span class="chip new">新着</span>`}${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip ${STAGE_CLS[st]}">${STAGE_LABEL[st]}${st === "work" ? "（" + progLabel(it.progress) + "）" : ""}</span><span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></div>
+      <div class="cardBody"><div class="top">${seen.has(r.id) ? "" : `<span class="chip new">新着</span>`}${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip ${STAGE_CLS[st]}">${stLabel(r, st)}${st === "work" ? "（" + progLabel(it.progress) + "）" : ""}</span><span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></div>
       <div class="what">${esc(r.what)}</div>
       <div class="meta">${fmtDate(r.t)}　${esc(r.sender)}${it.vendor ? "　手配先：" + esc(it.vendor) : ""}${it.bill_amount ? "　請求 " + yen(it.bill_amount) : ""}</div></div></a>`;
   }).join("");
@@ -206,7 +229,7 @@ async function viewMap(main) {
     }).join("");
   const chips = BLDS.map((b) => { const st = bldStat(b.id); return `<button class="bchip ${st.tone}" data-b="${esc(b.id)}">${esc(b.name)}${st.open ? `<b>${st.open}</b>` : ""}${st.nNew ? `<i>新着</i>` : ""}</button>`; }).join("");
   const todo = S.records.filter((r) => stage(r) === "todo").sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t).slice(0, 5);
-  main.innerHTML = `<h2>山郷の敷地</h2>${kpiHtml(counts)}
+  main.innerHTML = `<h2>山郷の敷地</h2>${lateBanner()}${kpiHtml(counts)}
     <div class="mapCard">${zone ? `<button class="zoneBack" id="zoneBack">← 敷地全体（${zone.name}を表示中）</button>` : ""}<div class="mapWrap${zone ? " zoomed" : ""}" style="aspect-ratio:${vw} / ${vh}">${narrow ? "" : `<div id="bPrev"></div>`}${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
       ${narrow ? `<div id="bPrev" class="bPrevBelow"></div>` : ""}<div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">${narrow && !zone ? "エリアを押すと、拡大します" : "建物を押すと、画像と状況が出ます"}</span></div></div>
     <div class="bchips">${chips}</div>
@@ -223,7 +246,8 @@ async function viewMap(main) {
   main.querySelectorAll(".zoneBtn").forEach((el) => (el.onclick = () => { mapZone = el.dataset.z; selB = ""; viewMap(main); }));
   if ($("zoneBack")) $("zoneBack").onclick = () => { mapZone = ""; selB = ""; viewMap(main); };
   if (selB && prev) showPrev(selB); // 自動更新で描き直しても、選択を保つ
-  main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; location.hash = "#/list"; }));
+  main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; F.late = ""; location.hash = "#/list"; }));
+  wireLate(main);
 }
 /** 建物の画面：その建物の依頼だけ（マップに戻れる） */
 function viewBuilding(main, id) {
@@ -272,6 +296,7 @@ function viewDetail(main, id) {
         <div><label>手配した日</label><input type="date" id="fArr" value="${esc(it.arranged_at || "")}"></div>
         <div><label>見積番号</label><input type="text" id="fEst" maxlength="40" value="${esc(it.est_no || "")}"></div>
         <div><label>業者への支払い（円）</label><input type="number" id="fCost" min="0" step="1" value="${esc(it.cost == null ? "" : it.cost)}"></div>
+        <div><label>請求区分</label><select id="fKind">${BILL_KINDS.map(([k, l]) => `<option value="${k}"${(it.bill_kind || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select></div>
         <div><label>山郷への請求額（円）</label><input type="number" id="fBill" min="0" step="1" value="${esc(it.bill_amount == null ? "" : it.bill_amount)}"></div>
         <div><label>請求月</label><input type="month" id="fMonth" value="${esc(it.bill_month || "")}"></div>
         <div class="checkRow"><input type="checkbox" id="fBilled"${it.billed ? " checked" : ""}><label for="fBilled" style="margin:0;color:inherit">請求済み</label></div>
@@ -285,7 +310,7 @@ function viewDetail(main, id) {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
     try {
-      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
+      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
       if (patch.billed && !patch.bill_month) { toast("請求済みにするには、請求月を入れてください"); return; }
       const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
       if (!j.item) throw new Error("窓口の返事に保存結果がありません");

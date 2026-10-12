@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -304,7 +304,7 @@ async function viewHome(main) {
   recs.forEach((r) => { count[r.buildingId] = (count[r.buildingId] || 0) + 1; });
   const groups = [];
   master.buildings.forEach((b) => { let g = groups.find((x) => x.name === b.group); if (!g) groups.push((g = { name: b.group, list: [] })); g.list.push(b); });
-  main.innerHTML = hero + helpCard(false) + inspBannerHtml() + `<div class="siteMapCard"><div id="siteMap"></div></div>` + groups.map((g) => `
+  main.innerHTML = hero + `<div class="siteMapCard"><div id="siteMap"></div></div>` + inspBannerHtml() + helpCard(false) + `<div class="sectionHead"><h3>名前から選ぶ</h3><span class="rule"></span></div>` + groups.map((g) => `
     <div class="sectionHead"><h3>${esc(g.name)}</h3><span class="rule"></span><span class="count">${g.list.length}件</span></div>
     <div class="bldGrid">${g.list.map((b) => `
       <button class="bldCard" data-b="${esc(b.id)}">

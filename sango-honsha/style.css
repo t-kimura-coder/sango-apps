@@ -158,3 +158,8 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 #bPrev.bPrevBelow { position: static; width: auto; margin-top: 8px; }
 
 .hqNote { color: #7a3d12; background: #fbf0e4; border-radius: 6px; padding: 2px 8px; margin-top: 4px; }
+
+/* v12：遅れのお知らせ・請求区分 */
+.lateBanner, .lateNote { display: flex; gap: 10px 18px; align-items: center; flex-wrap: wrap; background: #f7e3df; border: 1px solid #a3322a; color: #7a231c; border-radius: 12px; padding: 8px 14px; margin-bottom: 10px; }
+.lateNote { background: #fbf0e4; border-color: #b4531c; color: #7a3d12; }
+.lateBtn { padding: 3px 14px; border: 1px solid #a3322a; border-radius: 14px; background: #fff; color: #a3322a; font-weight: 700; cursor: pointer; }
