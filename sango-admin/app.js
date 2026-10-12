@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -411,7 +411,7 @@ function renderFilters() {
   const bl = [...bs].sort((a, b) => bldRank(a[0]) - bldRank(b[0]) || a[1].name.localeCompare(b[1].name));
   const cl = [...cs].sort((a, b) => a[0].localeCompare(b[0]));
   $("sideExtra").innerHTML = `
-    <div class="fGroup"><div class="fTitle">${icon("home")}建物</div>${bl.map(([id, b]) => `<label class="fRow"><input type="checkbox" data-b="${esc(id)}" ${F.blds.has(id) ? "checked" : ""}>${bldImg(id)}<span class="fn">${esc(b.name)}</span><span class="fc">${b.n}</span></label>`).join("")}</div>
+    <div class="fGroup"><div class="fTitle">${icon("home")}建物（敷地マップ）</div><div id="sideMap"></div>${bl.map(([id, b]) => `<label class="fRow"><input type="checkbox" data-b="${esc(id)}" ${F.blds.has(id) ? "checked" : ""}>${bldImg(id)}<span class="fn">${esc(b.name)}</span><span class="fc">${b.n}</span></label>`).join("")}</div>
     <div class="fGroup"><div class="fTitle">${icon("tool")}分類</div><div class="fGrid">${cl.map(([id, c]) => `<label class="fRow"><input type="checkbox" data-c="${esc(id)}" ${F.cats.has(id) ? "checked" : ""}><span class="fn">${esc(c.name)}</span></label>`).join("")}</div></div>
     <div class="fGroup"><div class="fTitle">${icon("user")}担当リーダー</div><select class="fSelect" id="fLeader"><option value="">すべて</option>${[...leaders].sort().map((l) => `<option value="${esc(l)}" ${F.leader === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
     <div class="fGroup"><div class="fTitle">${icon("cal")}期間</div><select class="fSelect" id="fPeriod">${[["all", "すべての期間"], ["30", "過去30日"], ["90", "過去3か月"], ["365", "過去1年"]].map(([v, l]) => `<option value="${v}" ${F.period === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -419,6 +419,10 @@ function renderFilters() {
     <label class="fRow"><input type="checkbox" id="fTodo" ${F.todo ? "checked" : ""}><span class="fn"><b>未整理だけ</b></span></label>
     ${S.records.some(isHidden) ? `<label class="fRow"><input type="checkbox" id="fHidden" ${F.showHidden ? "checked" : ""}><span class="fn">非表示の症例も表示（${S.records.filter(isHidden).length}件）</span></label>` : ""}`;
   const side = $("sideExtra");
+  if (typeof smRender === "function" && $("sideMap")) { // 敷地マップ：建物を押すと、その建物で絞り込み（もう一度押すと外れる）。数字＝未整理の症例
+    const todoN = {}; shown.forEach((r) => { if (r.buildingId && r.src !== "past" && adm(r).status !== "done") todoN[r.buildingId] = (todoN[r.buildingId] || 0) + 1; });
+    smRender($("sideMap"), { narrow: true, only: (id) => bs.has(id) || F.blds.has(id), badge: (id) => ({ n: todoN[id] || 0, tone: F.blds.has(id) ? "ok" : todoN[id] ? "warn" : "" }), onPick: (id) => { F.blds.has(id) ? F.blds.delete(id) : F.blds.add(id); renderListBody(); } }).catch(() => {});
+  }
   side.querySelectorAll("[data-b]").forEach((el) => (el.onchange = () => { el.checked ? F.blds.add(el.dataset.b) : F.blds.delete(el.dataset.b); renderListBody(); }));
   side.querySelectorAll("[data-c]").forEach((el) => (el.onchange = () => { el.checked ? F.cats.add(el.dataset.c) : F.cats.delete(el.dataset.c); renderListBody(); }));
   $("fLeader").onchange = (e) => { F.leader = e.target.value; renderListBody(); };
