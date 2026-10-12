@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1849,7 +1849,8 @@ function personCard({ p, st }) {
 }
 
 /* ---------- 疑問・気づき一覧 ---------- */
-const noteFilter = { type: "all", status: "all", q: "", sort: "new" };
+// sort：new 新しい順／old 古い順／week 週ごと（週の報告と同じ「月〜土」の週。日曜はその前の週）→ 現場ごと。並べ方は次に開いた時も覚えておく
+const noteFilter = { type: "all", status: "all", q: "", sort: getLS("noteSort", "new") };
 function renderNotes(params) {
   const main = $("main");
   if (params.get("st")) noteFilter.status = params.get("st");
@@ -1869,7 +1870,7 @@ function renderNotes(params) {
       .map(([k, l]) => `<button class="chip${noteFilter.status === k ? " on" : ""}" data-fs="${k}">${l}</button>`)
       .join("")}</div>` +
     `<div class="filterRow"><label class="searchField">${icon("search", 18)}<input id="noteQ" type="search" placeholder="キーワードで検索（本文・現場名・監督名など）" value="${esc(noteFilter.q)}"></label>` +
-    `<select id="noteSort" class="select"><option value="new">新しい順</option><option value="old">古い順</option></select></div></div>`;
+    `<select id="noteSort" class="select"><option value="new">新しい順</option><option value="old">古い順</option><option value="week">週ごと・現場ごと</option></select></div></div>`;
   const q = noteFilter.q.trim().toLowerCase();
   const list = scopedNotes()
     .filter((n) => noteFilter.type === "all" || n.type === noteFilter.type)
@@ -1877,12 +1878,16 @@ function renderNotes(params) {
     .filter((n) => !q || [n.text, n.siteName, n.personName, n.item, n.process].some((f) => String(f || "").toLowerCase().includes(q)))
     .filter((n) => matchesQuery(n.siteName, n.personName))
     .sort((a, b) => (noteFilter.sort === "new" ? (a.at < b.at ? 1 : -1) : a.at < b.at ? -1 : 1));
-  html += list.length ? `<div class="noteList">${list.map(noteRow).join("")}</div>` : `<div class="emptyText pad">該当するメモはありません。</div>`;
+  html += !list.length ? `<div class="emptyText pad">該当するメモはありません。</div>` : noteFilter.sort === "week" ? notesByWeekHtml(list) : `<div class="noteList">${list.map(noteRow).join("")}</div>`;
   main.innerHTML = html;
   $("noteSort").value = noteFilter.sort;
   main.querySelectorAll("[data-ft]").forEach((b) => b.addEventListener("click", () => ((noteFilter.type = b.dataset.ft), renderNotes(new URLSearchParams()))));
   main.querySelectorAll("[data-fs]").forEach((b) => b.addEventListener("click", () => ((noteFilter.status = b.dataset.fs), renderNotes(new URLSearchParams()))));
-  $("noteSort").addEventListener("change", (e) => ((noteFilter.sort = e.target.value), renderNotes(new URLSearchParams())));
+  $("noteSort").addEventListener("change", (e) => {
+    noteFilter.sort = e.target.value;
+    setLS("noteSort", noteFilter.sort);
+    renderNotes(new URLSearchParams());
+  });
   $("noteQ").addEventListener("input", (e) => {
     noteFilter.q = e.target.value;
     clearTimeout(renderNotes.t);
@@ -1894,6 +1899,42 @@ function renderNotes(params) {
     }, 250);
   });
   bindCommon(main);
+}
+
+// 週ごと（新しい週が上）→ 現場ごと（未回答・未確認の多い順）→ 書いた順。現場の見出しに、まだのものの数を出す
+function notesByWeekHtml(list) {
+  const weeks = new Map();
+  list.forEach((n) => {
+    const w = weekMon(dayKey(n.at));
+    if (!weeks.has(w)) weeks.set(w, new Map());
+    const sites = weeks.get(w);
+    if (!sites.has(n.siteName)) sites.set(n.siteName, []);
+    sites.get(n.siteName).push(n);
+  });
+  const pending = (ns) => ns.filter((n) => ["open", "share"].includes(noteStatus(n))).length;
+  return [...weeks.keys()]
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((w) => {
+      const sites = [...weeks.get(w).entries()].sort((a, b) => pending(b[1]) - pending(a[1]) || (a[0] < b[0] ? -1 : 1));
+      const total = sites.reduce((t, [, ns]) => t + ns.length, 0);
+      const left = sites.reduce((t, [, ns]) => t + pending(ns), 0);
+      return (
+        `<section class="nwWeek"><div class="nwWeekHead"><b>${fmtMD(w)}〜${fmtMD(addDays(w, 5))}の週</b><span class="mutedText">${total}件${left ? `・まだ ${left}件` : "・すべて対応済み"}</span></div>` +
+        sites
+          .map(([name, ns]) => {
+            const open = ns.filter((n) => noteStatus(n) === "open").length;
+            const share = ns.filter((n) => noteStatus(n) === "share").length;
+            const tags = [open ? `<span class="nwTag open">未回答 ${open}</span>` : "", share ? `<span class="nwTag share">未確認 ${share}</span>` : ""].join("");
+            return (
+              `<div class="nwSite"><div class="nwSiteHead">${icon("building", 18)}<b>${esc(name)}</b>${tags}<span class="mutedText">${ns.length}件</span></div>` +
+              `<div class="noteList">${ns.sort((a, b) => (a.at < b.at ? -1 : 1)).map(noteRow).join("")}</div></div>`
+            );
+          })
+          .join("") +
+        `</section>`
+      );
+    })
+    .join("");
 }
 
 function noteRow(n) {
