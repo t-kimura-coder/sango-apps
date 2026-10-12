@@ -2,11 +2,13 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "ホームに「敷地マップ」を追加しました。エリア（北・中央・東）を押すと拡大して、建物を押すと、その建物のページに進めます。今までの「名前から選ぶ」一覧も、下にあります。" },
+  { date: "2026-10-12", type: "feature", text: "このお知らせを、「新機能」と「修正・改善」のタブに分けました。" },
   { date: "2026-10-12", type: "feature", text: "「使い方」ページと、初めて開いた時の画面の案内（吹き出しで場所を照らす）を追加しました。右上の「？」からいつでも見られます。案内は、使い方のページから、もう一度見られます。" },
   { date: "2026-10-12", type: "feature", text: "合言葉（人ごと）を入れるだけで、業者データが自動で入るようになりました。Boxのファイルを取り込む操作は不要です。業者データが新しくなった時も、アプリを開くと自動で入れ替わります。設定に「質問・要望・不具合を送る」も追加しました。" },
   { date: "2026-10-11", type: "feature", text: "「点検」タブを追加しました。設備の定期点検・メンテナンスの期限が一覧で分かり、点検表（○／要対応）を記録できます。誰かが記録すると、ほかのリーダーの画面にも出ます。要対応は、ボタン1つで症例・依頼にできます。" },
@@ -302,7 +304,7 @@ async function viewHome(main) {
   recs.forEach((r) => { count[r.buildingId] = (count[r.buildingId] || 0) + 1; });
   const groups = [];
   master.buildings.forEach((b) => { let g = groups.find((x) => x.name === b.group); if (!g) groups.push((g = { name: b.group, list: [] })); g.list.push(b); });
-  main.innerHTML = hero + helpCard(false) + inspBannerHtml() + groups.map((g) => `
+  main.innerHTML = hero + helpCard(false) + inspBannerHtml() + `<div class="siteMapCard"><div id="siteMap"></div></div>` + groups.map((g) => `
     <div class="sectionHead"><h3>${esc(g.name)}</h3><span class="rule"></span><span class="count">${g.list.length}件</span></div>
     <div class="bldGrid">${g.list.map((b) => `
       <button class="bldCard" data-b="${esc(b.id)}">
@@ -311,6 +313,10 @@ async function viewHome(main) {
         <div class="bldSub">${count[b.id] ? `あなたの症例 ${count[b.id]}件` : "連絡先を確認"}</div>
       </button>`).join("")}</div>`).join("");
   main.querySelectorAll(".bldCard").forEach((el) => (el.onclick = () => go("#/b/" + encodeURIComponent(el.dataset.b))));
+  if (typeof smRender === "function") { // 敷地マップ：エリアを押して拡大 → 建物を押すと、その建物のページへ
+    const ids = new Set(master.buildings.map((b) => b.id));
+    smRender($("siteMap"), { narrow: true, only: (id) => ids.has(id), onPick: (id) => go("#/b/" + encodeURIComponent(id)) }).catch(() => {});
+  }
 }
 
 /* ---------- 建物ページ ---------- */
