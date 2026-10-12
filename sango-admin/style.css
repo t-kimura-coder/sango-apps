@@ -297,3 +297,10 @@ body.mobileMode .settingBox { max-width: none; }
 .iaItemHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; } .iaItemHead small { color: var(--muted); }
 .iaBChips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; } .iaBChip { padding: 3px 10px; border-radius: 14px; border: 1px solid var(--green); background: #fff; color: var(--green-deep); cursor: pointer; font-size: 13px; } .iaBChip.off { border-color: var(--line); color: var(--muted); text-decoration: line-through; background: #f1efe8; }
 .iaItemAct { display: flex; gap: 8px; flex-wrap: wrap; } .iaItemTop { margin-bottom: 8px; }
+
+/* 手配の状況 */
+.reqSteps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 6px 0 10px; }
+.reqSteps li { flex: 1; text-align: center; font-size: 12px; color: var(--muted); padding: 6px 2px; border-radius: 10px; background: #ebe8dc; }
+.reqSteps li span { display: block; width: 20px; height: 20px; line-height: 20px; margin: 0 auto 2px; border-radius: 10px; background: #fff; font-weight: 800; }
+.reqSteps li.done { background: #e1ece3; color: #2f6b45; } .reqSteps li.now { background: var(--green, #2f5d3a); color: #fff; font-weight: 700; } .reqSteps li.now span { color: var(--green, #2f5d3a); }
+.reqLine { margin: 6px 0; font-size: 15px; }

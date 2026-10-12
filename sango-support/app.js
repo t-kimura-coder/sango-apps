@@ -2,11 +2,13 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-12", type: "feature", text: "「対応を依頼する」で送った症例の詳細に、「手配の状況」が出るようになりました。手配済み・施工待ち・施工完了の段階と、訪問予定日、本社からのひとこと、業者の金額の目安が見られます。" },
+  { date: "2026-10-12", type: "feature", text: "「点検」の最初の画面が「いまやること」になりました。頻度（毎月・3か月・半年・年1回）ごとに、点検の項目と、どの建物をやるかが並びます。" },
   { date: "2026-10-12", type: "feature", text: "ホームに「敷地マップ」を追加しました。エリア（北・中央・東）を押すと拡大して、建物を押すと、その建物のページに進めます。今までの「名前から選ぶ」一覧も、下にあります。" },
   { date: "2026-10-12", type: "feature", text: "このお知らせを、「新機能」と「修正・改善」のタブに分けました。" },
   { date: "2026-10-12", type: "feature", text: "「使い方」ページと、初めて開いた時の画面の案内（吹き出しで場所を照らす）を追加しました。右上の「？」からいつでも見られます。案内は、使い方のページから、もう一度見られます。" },
@@ -672,6 +674,21 @@ async function viewMine(main) {
   await draw();
 }
 
+/* ---------- 手配の状況（依頼の返事。本社が入れた内容のうち、山郷に見せてよいものだけ） ---------- */
+const REQ_STEPS = [["received", "依頼を送った"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
+function reqStatusHtml(st) {
+  const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
+  const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
+  return `<div class="fieldLabel">手配の状況</div><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${st && st.reply ? `<div class="reqLine"><b>本社から：</b>${esc(st.reply)}</div>` : ""}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
+    ${!st ? `<div class="mutedText">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
+}
+async function fillReqStatus(id) {
+  const box = $("reqBox"); if (!box || !hasApi()) return;
+  try { const j = await apiCall({ action: "requestStatus" }, 20000); if ($("reqBox") === box) box.innerHTML = reqStatusHtml((j.status || {})[id] || null); }
+  catch (e) { box.innerHTML = `<div class="mutedText">手配の状況は、電波のある所で見られます。</div>`; }
+}
+
 /* ---------- 症例の詳細 ---------- */
 async function viewDetail(main, id) {
   const r = await dbGet("records", id);
@@ -684,6 +701,7 @@ async function viewDetail(main, id) {
       <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
+    ${r.kind === "request" && r.sentAt && hasApi() ? `<div class="formCard" id="reqBox"><div class="mutedText">手配の状況を読んでいます…</div></div>` : ""}
     <div class="btnCol">
       ${r.draft ? "" : `<button class="btn btnPrimary twoLine" id="dSend"><span>${icon("send")}${r.kind === "request" ? "依頼を送る（本社に連絡）" : "管理者に報告する"}${r.sentAt ? "（もう一度）" : ""}</span><small>管理ページに載ります${hasApi() ? "（ボタン1つで送信）" : "（メールでBoxへ）"}</small></button>`}
       ${r.draft ? "" : `<button class="btn twoLine" id="dLine"><span>${icon("send")}LINEで連絡する${r.lineAt ? "（もう一度）" : ""}</span><small>管理ページには載りません</small></button>`}
@@ -692,6 +710,7 @@ async function viewDetail(main, id) {
       <button class="btn" id="dEdit">${icon("edit")}${r.draft ? "続きを書く" : "編集する"}</button>
       <button class="btn btnDanger" id="dDel">${icon("trash")}削除する</button>
     </div>`;
+  fillReqStatus(id);
   const box = $("dPhotos");
   if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => { const img = await dbGet("images", p.id); showLightbox(img ? img.blob : p.thumb); }; box.appendChild(im); });
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };

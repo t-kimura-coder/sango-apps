@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -288,6 +288,13 @@ function viewDetail(main, id) {
     <div class="panel"><h3>依頼の内容　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
       <dl class="kv"><dt>日付</dt><dd>${fmtDate(r.t)}</dd><dt>送った人</dt><dd>${esc(r.sender)}</dd><dt>何が起きたか</dt><dd>${esc(r.what)}</dd><dt>対応・希望</dt><dd>${esc(r.how || "—")}</dd><dt>山郷が見た業者</dt><dd>${esc(r.vendor || "—")}</dd></dl>
       <div class="photos" id="photos"></div></div>
+    <div class="panel replyPanel"><h3>山郷への返事（山郷に表示されます）</h3>
+      <div class="note" style="margin-bottom:8px">リーダー・管理者の画面に、「手配済み」の段階と、ここに書いた内容が出ます。<b>手配先の名前・粗利を乗せた請求額は、出ません。</b></div>
+      <div class="form">
+        <div><label>訪問予定日（業者が伺う日）</label><input type="date" id="fVisit" value="${esc(it.visit_at || "")}"></div>
+        <div><label>業者の金額の目安（円。山郷に表示）</label><input type="text" id="fEstm" maxlength="40" placeholder="例）100000（約10万円なら、そのまま）" value="${esc(it.estimate == null ? "" : it.estimate)}"></div>
+        <div class="wide"><label>山郷へのひとこと</label><input type="text" id="fReply" maxlength="120" placeholder="例）10/14 午前に業者が伺います" value="${esc(it.reply || "")}"></div>
+      </div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
       ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
       <div class="form">
@@ -310,7 +317,7 @@ function viewDetail(main, id) {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
     try {
-      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
+      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, visit_at: $("fVisit").value, reply: $("fReply").value.trim(), estimate: $("fEstm").value.trim(), billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
       if (patch.billed && !patch.bill_month) { toast("請求済みにするには、請求月を入れてください"); return; }
       const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
       if (!j.item) throw new Error("窓口の返事に保存結果がありません");

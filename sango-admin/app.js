@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -521,16 +521,32 @@ async function renderPreview() {
 function showLightbox(src) { if (!src) return; const lb = $("lightbox"); lb.innerHTML = `<img src="${src}" alt="">`; lb.hidden = false; lb.onclick = () => { lb.hidden = true; lb.innerHTML = ""; }; }
 
 /* ---------- 症例の詳細 ---------- */
+/** 手配の状況（本社が入れた内容のうち、山郷に見せてよいものだけ）。依頼の症例の詳細に出す */
+const REQ_STEPS = [["received", "依頼を受けた"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
+function reqStatusHtml(st) {
+  const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
+  const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
+  return `<h3>手配の状況</h3><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${st && st.reply ? `<div class="reqLine"><b>本社から：</b>${esc(st.reply)}</div>` : ""}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
+    ${!st ? `<div class="note">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
+}
+async function fillReqStatus(id) {
+  const box = $("reqBox"); if (!box || !S.api || S.demo) return;
+  try { const j = await apiCall({ action: "requestStatus" }, 20000); if ($("reqBox") === box) box.innerHTML = reqStatusHtml((j.status || {})[id] || null); }
+  catch (e) { box.innerHTML = `<h3>手配の状況</h3><div class="note">読み込めませんでした（電波・窓口を確認してください）</div>`; }
+}
 async function viewDetail(main, id) {
   const r = S.records.find((x) => x.id === id);
   if (!r) { location.hash = "#/list"; return; }
   const a = adm(r), edit = canEdit();
   const sim = S.records.filter((x) => !isHidden(x) && x.id !== r.id && x.buildingId === r.buildingId && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
   const sim2 = sim.length ? sim : S.records.filter((x) => !isHidden(x) && x.id !== r.id && x.categoryId === r.categoryId).sort((x, y) => y.t - x.t).slice(0, 6);
+  queueMicrotask(() => fillReqStatus(id)); // 下の main.innerHTML のあとに、手配の状況を読む
   main.innerHTML = `<div class="detailTop"><a class="backLink" href="#/list">← 一覧に戻る</a></div>
     <div class="detailLayout"><div>
       <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>
         <div class="dFacts"><div><span>分類</span>${esc(r.category)}</div><div><span>件名</span>${esc(titleOf(r))}</div><div><span>報告日</span>${fmtDate(r.t)} ${fmtTime(r.t)}</div><div><span>報告した人</span>${esc(r.reporter || "—")}</div><div><span>担当リーダー</span>${esc(r.sender || "—")}</div><div><span>対応した業者</span>${esc(r.vendor || "—")}</div><div><span>現場の状況</span>${esc(fieldState(r))}</div></div></div></div></div>
+      ${r.req && r.src === "new" && S.api && !S.demo ? `<div class="panel" id="reqBox" style="margin-bottom:12px"><h3>手配の状況</h3><div class="note">読み込んでいます…</div></div>` : ""}
       <div class="two"><div class="panel"><h3>何が起きたか</h3><div class="pvText">${esc(r.what)}</div></div><div class="panel"><h3>どう対応したか</h3><div class="pvText">${esc(r.how || "（まだ書かれていません）")}</div></div></div>
       ${r.photos.length ? `<div class="panel" style="margin-top:12px"><h3>写真 <span class="note">計 ${r.photos.length} 枚</span></h3><div class="photoGrid" id="dPhotos"></div></div>` : ""}
       <div class="panel" style="margin-top:12px"><h3>管理者による整理${edit ? "" : "　<span class=\"note\">（閲覧専用です。編集は山郷側の管理者のPCで行います）</span>"}</h3>

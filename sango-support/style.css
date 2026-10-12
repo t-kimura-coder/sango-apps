@@ -312,3 +312,10 @@ textarea { min-height: 84px; }
 .nowChip small { font-weight: 600; font-size: 11px; }
 .nowChip.over { border-color: #a3322a; background: #f7e3df; color: #7a231c; } .nowChip.month { border-color: #b07a3f; background: #f8ecd9; color: #6b4a1e; } .nowChip.none { border-color: var(--line); color: var(--muted); }
 .nowNone { margin: 14px 0; } .nowNone summary { cursor: pointer; padding: 10px 12px; background: #ebe8dc; border-radius: 12px; font-size: 14px; }
+
+/* 手配の状況 */
+.reqSteps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 6px 0 10px; }
+.reqSteps li { flex: 1; text-align: center; font-size: 12px; color: var(--muted); padding: 6px 2px; border-radius: 10px; background: #ebe8dc; }
+.reqSteps li span { display: block; width: 20px; height: 20px; line-height: 20px; margin: 0 auto 2px; border-radius: 10px; background: #fff; font-weight: 800; }
+.reqSteps li.done { background: #e1ece3; color: #2f6b45; } .reqSteps li.now { background: var(--green, #2f5d3a); color: #fff; font-weight: 700; } .reqSteps li.now span { color: var(--green, #2f5d3a); }
+.reqLine { margin: 6px 0; font-size: 15px; }
