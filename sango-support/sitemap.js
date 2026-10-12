@@ -7,7 +7,7 @@
 (function () {
   var W = 891.396, H = 527.086;
   var BLDS = [
-    { id: "haru", name: "春", at: [26, 106, 34, 44] }, { id: "kou", name: "香", at: [15, 167, 34, 42] }, { id: "reception", name: "レセプション", at: [197, 164, 17, 30] },
+    { id: "haru", name: "春", at: [15, 167, 34, 42] }, { id: "kou", name: "香", at: [26, 106, 34, 44] }, { id: "reception", name: "レセプション", at: [197, 164, 17, 30] },
     { id: "u", name: "宇", at: [295, 312, 48, 68] }, { id: "chi", name: "地", at: [357, 297, 63, 59] }, { id: "wa", name: "和", at: [434, 329, 60, 32] },
     { id: "kumajirushi", name: "熊印雑貨", at: [507, 368, 17, 10] }, { id: "larch", name: "店舗レストラン棟", at: [544, 327, 87, 40] }, { id: "botanical", name: "ボタニカル", at: [680, 329, 44, 45] },
     { id: "haruka", name: "HARUKA（カフェ）", at: [475, 396, 56, 33] },

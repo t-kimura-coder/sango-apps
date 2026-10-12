@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -171,7 +171,7 @@ function renderListBody() {
 // 公式サイトの敷地イラストマップ（art/sitemap.svg、viewBox 891.396×527.086）の上に、建物の位置（viewBox の座標）を重ねる。
 const MAP_W = 891.396, MAP_H = 527.086;
 const BLDS = [ // id、名前、マップ上の位置（無い建物は、下の一覧から選ぶ）
-  { id: "haru", name: "春", at: [26, 106, 34, 44] }, { id: "kou", name: "香", at: [15, 167, 34, 42] }, { id: "reception", name: "レセプション", at: [197, 164, 17, 30] },
+  { id: "haru", name: "春", at: [15, 167, 34, 42] }, { id: "kou", name: "香", at: [26, 106, 34, 44] }, { id: "reception", name: "レセプション", at: [197, 164, 17, 30] },
   { id: "u", name: "宇", at: [295, 312, 48, 68] }, { id: "chi", name: "地", at: [357, 297, 63, 59] }, { id: "wa", name: "和", at: [434, 329, 60, 32] },
   { id: "kumajirushi", name: "熊印雑貨", at: [507, 368, 17, 10] }, { id: "larch", name: "店舗レストラン棟", at: [544, 327, 87, 40] }, { id: "botanical", name: "ボタニカル", at: [680, 329, 44, 45] },
   { id: "haruka", name: "HARUKA（カフェ）", at: [475, 396, 56, 33] }, { id: "larch-back", name: "店舗バックヤード", at: null }, { id: "gaiko", name: "外構・敷地全体", at: null },
