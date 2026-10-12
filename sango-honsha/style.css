@@ -168,3 +168,19 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .topNav a { display: inline-flex; align-items: center; gap: 6px; }
 .navIc { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; flex: none; }
 @media (max-width: 720px) { .topNav a { padding: 4px 8px; } .navIc { width: 24px; height: 24px; } }
+
+/* 左のサイドバー（管理者ビューアと同じ形）。狭い画面では、上に横並び */
+.appBody { display: flex; align-items: flex-start; }
+.appBody > main { flex: 1; min-width: 0; margin: 0; max-width: 1100px; }
+.sideNav { position: sticky; top: 64px; flex: none; width: 190px; padding: 14px 10px 24px; display: flex; flex-direction: column; gap: 4px; }
+.sideNav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; font-weight: 700; color: var(--navy-deep); }
+.sideNav a:hover { background: var(--navy-soft); }
+.sideNav a.on { background: var(--navy-soft); box-shadow: inset 3px 0 0 var(--navy); }
+.sideNav a .navIc { width: 36px; height: 36px; }
+@media (max-width: 720px) {
+  .appBody { flex-direction: column; }
+  .sideNav { position: static; width: 100%; flex-direction: row; gap: 2px; padding: 6px 8px; overflow-x: auto; background: #fff; border-bottom: 1px solid var(--line); }
+  .sideNav a { flex-direction: column; gap: 2px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+  .sideNav a .navIc { width: 28px; height: 28px; }
+  .appBody > main { width: 100%; }
+}

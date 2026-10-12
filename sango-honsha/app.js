@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -406,7 +406,7 @@ function render() {
   const r = route(), main = $("main");
   if (r.name === "map" || (r.name === "list" && lastName !== "r")) F.bld = ""; // 建物の絞り込みは、建物の画面から入った時だけ使う
   lastName = r.name;
-  document.querySelectorAll(".topNav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name === "b" ? "map" : r.name)));
+  document.querySelectorAll(".sideNav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === (r.name === "r" ? "list" : r.name === "b" ? "map" : r.name)));
   window.scrollTo(0, 0);
   if (r.name === "r") viewDetail(main, r.id);
   else if (r.name === "map") viewMap(main);

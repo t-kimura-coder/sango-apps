@@ -8,24 +8,27 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=1">
 <link rel="apple-touch-icon" href="icon-180.png?v=1">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <header class="appHeader">
   <a class="brand" href="#/map"><img class="brandLogo" src="art/logo.webp" alt="" onerror="this.remove()"><span class="brandName">山郷サポート</span><span class="brandTag">本社（依頼の進捗・請求）</span></a>
-  <nav class="topNav">
+
+  <span id="syncInfo" class="syncInfo"></span>
+  <button id="reloadBtn" class="iconBtn" title="読み直す" aria-label="読み直す">↻</button>
+</header>
+<div class="appBody">
+<nav class="sideNav">
     <a href="#/map" data-nav="map"><img class="navIc" width="28" height="28" src="art/ic-map.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">マップ</a>
     <a href="#/list" data-nav="list"><img class="navIc" width="28" height="28" src="art/ic-order.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">依頼</a>
     <a href="#/bill" data-nav="bill"><img class="navIc" width="28" height="28" src="art/ic-invoice.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">請求</a>
     <a href="#/help" data-nav="help"><img class="navIc" width="28" height="28" src="art/ic-help.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">使い方</a>
     <a href="#/settings" data-nav="settings"><img class="navIc" width="28" height="28" src="art/ic-settings.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()">設定</a>
   </nav>
-  <span id="syncInfo" class="syncInfo"></span>
-  <button id="reloadBtn" class="iconBtn" title="読み直す" aria-label="読み直す">↻</button>
-</header>
 <main id="main"></main>
+</div>
 <div id="lightbox" hidden></div>
 <div id="toast" hidden></div>
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
