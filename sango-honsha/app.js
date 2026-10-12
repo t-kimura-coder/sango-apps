@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -143,9 +143,9 @@ function renderListBody() {
   const box = $("listBody"); if (!box) return;
   const q = F.q.trim().toLowerCase(), seen = seenSet();
   if (F.stage === "past") { // 過去の症例：読むだけ（手配・請求の対象ではない）。新しい順
-    const pl = S.past.filter((r) => (!F.bld || r.building_id === F.bld) && (!q || [r.building, r.category, r.what, r.how, r.vendor, r.cause, r.memo].join(" ").toLowerCase().includes(q))).sort((a, b) => b.t - a.t);
+    const pl = S.past.filter((r) => (!F.bld || r.building_id === F.bld) && (!q || [r.building, r.category, r.what, r.how, r.vendor, r.cause, r.memo, r.hq_note].join(" ").toLowerCase().includes(q))).sort((a, b) => b.t - a.t);
     if (!pl.length) { box.innerHTML = `<div class="empty">該当する過去の症例はありません</div>`; return; }
-    box.innerHTML = pl.slice(0, 150).map((r) => `<div class="card past"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top"><span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip">過去</span></div><div class="what">${esc(r.what)}</div><div class="meta">${r.t ? fmtDate(r.t) : "日付なし"}${r.vendor ? "　業者：" + esc(r.vendor) : ""}${r.amount !== "" && r.amount != null ? "　金額：" + (isFinite(Number(r.amount)) ? yen(Number(r.amount)) : esc(r.amount)) : ""}${r.cause ? "　原因：" + esc(r.cause) : ""}</div>${r.how || r.memo ? `<div class="meta">${esc([r.how, r.memo].filter(Boolean).join(" ／ "))}</div>` : ""}</div></div>`).join("") + (pl.length > 150 ? `<div class="note" style="padding:8px 2px">新しい順に150件を表示しています（全${pl.length}件）。建物やキーワードで絞ってください</div>` : "");
+    box.innerHTML = pl.slice(0, 150).map((r) => `<div class="card past"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top"><span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span><span class="chip">過去</span></div><div class="what">${esc(r.what)}</div><div class="meta">${r.t ? fmtDate(r.t) : "日付なし"}${r.vendor ? "　業者：" + esc(r.vendor) : ""}${r.amount !== "" && r.amount != null ? "　金額：" + (isFinite(Number(r.amount)) ? yen(Number(r.amount)) : esc(r.amount)) : ""}${r.cause ? "　原因：" + esc(r.cause) : ""}</div>${r.how || r.memo ? `<div class="meta">${esc([r.how, r.memo].filter(Boolean).join(" ／ "))}</div>` : ""}${r.hq_note ? `<div class="meta hqNote">本社用メモ（山郷には見えません）：${esc(r.hq_note)}</div>` : ""}</div></div>`).join("") + (pl.length > 150 ? `<div class="note" style="padding:8px 2px">新しい順に150件を表示しています（全${pl.length}件）。建物やキーワードで絞ってください</div>` : "");
     return;
   }
   const list = S.records.filter((r) => {

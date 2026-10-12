@@ -156,3 +156,5 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .mapWrap.zoomed .spot { min-width: 44px; min-height: 44px; }
 .zoneBtn b { font-size: 12px; background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 1px 6px; }
 #bPrev.bPrevBelow { position: static; width: auto; margin-top: 8px; }
+
+.hqNote { color: #7a3d12; background: #fbf0e4; border-radius: 6px; padding: 2px 8px; margin-top: 4px; }
