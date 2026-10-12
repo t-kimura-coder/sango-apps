@@ -134,3 +134,16 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .steps li.now .stepIc { mix-blend-mode: normal; }
 .steps li span { display: inline-block; margin: 0 4px 0 0; width: 18px; height: 18px; line-height: 18px; font-size: 11px; }
 @media (max-width: 720px) { .kIc { width: 32px; height: 32px; } .stepIc { width: 30px; height: 30px; } }
+
+/* v7：マップで建物を押すと、画像と状況が出る */
+.bPrev { display: flex; gap: 14px; background: var(--card); border-radius: 14px; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.12); padding: 8px; margin: 12px 0; align-items: stretch; }
+.bPrev.enter { animation: bPrevIn 0.25s ease-out; } @keyframes bPrevIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.bPrevImg { position: relative; width: 45%; min-height: 120px; flex: none; border-radius: 10px; overflow: hidden; background: var(--navy-soft); } .bPrevImg .bimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bPrevBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; justify-content: center; } .bPrevBody h3 { margin: 0; font-size: 20px; color: var(--navy-deep); }
+.bPrevGo { align-self: flex-start; margin-top: 6px; padding: 8px 16px; border: 0; border-radius: 10px; background: var(--navy); color: #fff; font-weight: 700; cursor: pointer; }
+.spot.sel, .bchip.sel { outline: 3px solid var(--navy); outline-offset: 1px; }
+@media (max-width: 720px) { .bPrevImg { width: 40%; min-height: 100px; } }
+
+.mapWrap { position: relative; }
+#bPrev { position: absolute; z-index: 5; left: 8px; bottom: 8px; width: min(340px, calc(100% - 16px)); }
+#bPrev .bPrev { margin: 0; box-shadow: 0 4px 14px rgba(20, 30, 40, 0.35); }

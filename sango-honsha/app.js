@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -169,7 +169,7 @@ const BLDS = [ // id、名前、マップ上の位置（無い建物は、下の
   { id: "kumajirushi", name: "熊印雑貨", at: [507, 368, 17, 10] }, { id: "larch", name: "店舗レストラン棟", at: [544, 327, 87, 40] }, { id: "botanical", name: "ボタニカル", at: [680, 329, 44, 45] },
   { id: "haruka", name: "HARUKA（カフェ）", at: [475, 396, 56, 33] }, { id: "larch-back", name: "店舗バックヤード", at: null }, { id: "gaiko", name: "外構・敷地全体", at: null },
 ];
-let mapSvg = null;
+let mapSvg = null, selB = "";
 async function loadMapSvg() { if (mapSvg === null) { try { mapSvg = await (await fetch("art/sitemap.svg")).text(); } catch (e) { mapSvg = ""; } } return mapSvg; }
 /** 建物ごとの状況：open＝請求済みでない依頼の数、tone＝いちばん急ぐ状態（todo 未手配／bill 請求待ち／work 進行中）、nNew＝新着 */
 function bldStat(id) {
@@ -189,11 +189,20 @@ async function viewMap(main) {
   const chips = BLDS.map((b) => { const st = bldStat(b.id); return `<button class="bchip ${st.tone}" data-b="${esc(b.id)}">${esc(b.name)}${st.open ? `<b>${st.open}</b>` : ""}${st.nNew ? `<i>新着</i>` : ""}</button>`; }).join("");
   const todo = S.records.filter((r) => stage(r) === "todo").sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t).slice(0, 5);
   main.innerHTML = `<h2>山郷の敷地</h2>${kpiHtml(counts)}
-    <div class="mapCard"><div class="mapWrap">${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
-      <div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">建物を押すと、その建物の依頼が開きます</span></div></div>
+    <div class="mapCard"><div class="mapWrap"><div id="bPrev"></div>${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
+      <div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">建物を押すと、画像と状況が出ます</span></div></div>
     <div class="bchips">${chips}</div>
     <h3 class="subH">いま手配が必要な依頼</h3>${todo.map((r) => `<a class="card urgentLine" href="#/r/${encodeURIComponent(r.id)}"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top">${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span></div><div class="what">${esc(r.what)}</div><div class="meta">${fmtDate(r.t)}　${esc(r.sender)}</div></div></a>`).join("") || `<div class="note" style="padding:6px 2px">未手配の依頼は、ありません</div>`}`;
-  main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = () => { location.hash = "#/b/" + encodeURIComponent(el.dataset.b); }));
+  const prev = main.querySelector("#bPrev");
+  const showPrev = (id) => { // 1回目の押し：建物の画像と状況を見せる。「この建物を開く」で、依頼の画面へ
+    const b = BLDS.find((x) => x.id === id) || { id, name: id }, st = bldStat(id);
+    main.querySelectorAll(".spot, .bchip").forEach((e) => e.classList.toggle("sel", e.dataset.b === id));
+    prev.innerHTML = `<div class="bPrev enter"><div class="bPrevImg">${bldImg(id)}</div><div class="bPrevBody"><h3>${esc(b.name)}</h3><div class="note">${st.open ? `対応が必要な依頼 ${st.open}件` : "対応が必要な依頼はありません"}${st.nNew ? `　<span class="chip new">新着 ${st.nNew}</span>` : ""}${st.urgent ? `　<span class="chip urgent">急ぎ</span>` : ""}</div><div class="note">これまでの依頼 ${st.all}件</div><button class="btn bPrevGo" data-go="${esc(id)}">この建物を開く →</button></div></div>`;
+    prev.querySelector(".bPrevGo").onclick = () => { location.hash = "#/b/" + encodeURIComponent(id); };
+    selB = id;
+  };
+  main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = () => showPrev(el.dataset.b)));
+  if (selB && prev) showPrev(selB); // 自動更新で描き直しても、選択を保つ
   main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; location.hash = "#/list"; }));
 }
 /** 建物の画面：その建物の依頼だけ（マップに戻れる） */
