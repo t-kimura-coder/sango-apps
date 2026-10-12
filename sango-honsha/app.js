@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -117,10 +117,10 @@ function kpiHtml(counts) {
   const monBill = mon.reduce((a, r) => a + (Number(item(r).bill_amount) || 0), 0), monCost = mon.reduce((a, r) => a + (Number(item(r).cost) || 0), 0);
   const s = seenSet(), nNew = S.records.filter((r) => !s.has(r.id)).length;
   return `<div class="kpis">
-    <button class="kpi todo" data-s="todo"><small>未手配</small><b>${counts.todo}</b>${nNew ? `<span class="kNew">新着 ${nNew}</span>` : ""}</button>
-    <button class="kpi work" data-s="work"><small>進行中</small><b>${counts.work}</b></button>
-    <button class="kpi bill" data-s="billing"><small>請求待ち</small><b>${counts.billing}</b><span>${waitSum ? yen(waitSum) : ""}</span></button>
-    <div class="kpi ok"><small>${Number(ym.slice(5))}月の請求</small><b class="yen">${monBill ? yen(monBill) : "—"}</b><span>${monBill ? "粗利 " + yen(monBill - monCost) : ""}</span></div></div>`;
+    <button class="kpi todo" data-s="todo">${icn("order", "kIc")}<small>未手配</small><b>${counts.todo}</b>${nNew ? `<span class="kNew">新着 ${nNew}</span>` : ""}</button>
+    <button class="kpi work" data-s="work">${icn("schedule", "kIc")}<small>進行中</small><b>${counts.work}</b></button>
+    <button class="kpi bill" data-s="billing">${icn("invoice", "kIc")}<small>請求待ち</small><b>${counts.billing}</b><span>${waitSum ? yen(waitSum) : ""}</span></button>
+    <div class="kpi ok">${icn("margin", "kIc")}<small>${Number(ym.slice(5))}月の請求</small><b class="yen">${monBill ? yen(monBill) : "—"}</b><span>${monBill ? "粗利 " + yen(monBill - monCost) : ""}</span></div></div>`;
 }
 function viewList(main) {
   if (!S.api) return viewEmptyApi(main);
@@ -218,6 +218,8 @@ function photoUrl(name) {
   return photoCache.get(name);
 }
 const STEPS = ["依頼を受けた", "手配済み", "施工待ち", "施工完了", "請求済み"];
+const STEP_ICONS = ["order", "arrange", "schedule", "done", "invoice"];
+const icn = (n, c) => `<img class="${c || "ic"}" src="art/ic-${n}.webp" alt="" onerror="this.remove()">`;
 const stepIdx = (r) => { const it = item(r); return it.billed ? 4 : it.progress === "done" ? 3 : it.progress === "scheduled" ? 2 : it.progress === "arranged" ? 1 : 0; };
 let viewTok = 0, saveBusy = false;
 function viewDetail(main, id) {
@@ -229,7 +231,7 @@ function viewDetail(main, id) {
   const en = entryOf(r), cands = en && !en.none ? (en.companies || []) : [];
   main.innerHTML = `<p><a href="${F.bld ? "#/b/" + encodeURIComponent(F.bld) : "#/list"}" class="note">← ${F.bld ? "建物の画面" : "依頼の一覧"}</a></p>
     <div class="hero">${bldImg(r.building_id)}<div class="heroText"><div class="heroSub">${catImg(r.category_id)}${esc(r.category)}</div><h2>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}</h2></div></div>
-    <ol class="steps">${STEPS.map((l, i) => `<li class="${i < si ? "done" : i === si ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
+    <ol class="steps">${STEPS.map((l, i) => `<li class="${i < si ? "done" : i === si ? "now" : ""}">${icn(STEP_ICONS[i], "stepIc")}<span>${i + 1}</span>${l}</li>`).join("")}</ol>
     <div class="panel"><h3>依頼の内容　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
       <dl class="kv"><dt>日付</dt><dd>${fmtDate(r.t)}</dd><dt>送った人</dt><dd>${esc(r.sender)}</dd><dt>何が起きたか</dt><dd>${esc(r.what)}</dd><dt>対応・希望</dt><dd>${esc(r.how || "—")}</dd><dt>山郷が見た業者</dt><dd>${esc(r.vendor || "—")}</dd></dl>
       <div class="photos" id="photos"></div></div>

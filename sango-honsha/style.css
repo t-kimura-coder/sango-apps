@@ -126,3 +126,11 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .bchip b { background: var(--navy); color: #fff; border-radius: 9px; padding: 0 7px; font-size: 12px; } .bchip.todo b { background: #b4531c; } .bchip.bill b { background: #b07a3f; } .bchip i { font-style: normal; background: var(--red); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: 700; }
 .hero.enter { animation: heroIn 0.45s ease both; } @keyframes heroIn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
 .urgentLine { border-left-color: #b4531c; }
+
+/* v6：GPTアイコン */
+.kIc { position: absolute; right: 8px; bottom: 6px; width: 44px; height: 44px; border-radius: 10px; opacity: 0.9; pointer-events: none; }
+.kNew { z-index: 1; }
+.stepIc { display: block; width: 40px; height: 40px; margin: 0 auto 2px; border-radius: 8px; mix-blend-mode: multiply; }
+.steps li.now .stepIc { mix-blend-mode: normal; }
+.steps li span { display: inline-block; margin: 0 4px 0 0; width: 18px; height: 18px; line-height: 18px; font-size: 11px; }
+@media (max-width: 720px) { .kIc { width: 32px; height: 32px; } .stepIc { width: 30px; height: 30px; } }
