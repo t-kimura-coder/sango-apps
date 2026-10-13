@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 119;
+const APP_VERSION = 120;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "feature", text: "週の報告で送る写真の名前に、マニュアルの項目名を入れるようにしました（項目ページから撮った報告写真と、品質写真。例：現場_基礎_鎮物の埋設_1005_01）。Box で名前から何の写真かを探せます。これまでに送った写真の名前は変わりません" },
   { date: "2026-10-13", type: "feature", text: "週の報告を送ったあとに、お客様メール用の写真をそのまま保存できるようにしました（iPhone は「\"ファイル\"に保存」を選ぶと「写真01_…」の名前が残ります）。報告の工程ページと「使い方」・案内の説明を、「お客様にも／上司だけ」に合わせて直しました" },
   { date: "2026-10-13", type: "fix", text: "「お客様メール用の写真を保存」で、送ったあとに工程を変えたり写真を消したりしても、下書きの「写真01」と同じ名前・番号で保存するようにしました。写真の下の「お客様にも」の札をなぞった時に、写真の選択が切り替わってしまうのを直しました" },
   { date: "2026-10-13", type: "feature", text: "報告で送る写真に「お客様にも／上司だけ」を付けられるようにしました（写真の下の札を押すと切り替わります。最初は「お客様にも」）。上司にだけ見せたい細かい写真も送れます。お客様への報告メールの下書きには「お客様にも」の写真だけを使います。過去の報告の画面に「お客様メール用の写真を保存」を付けました（下書きと同じ「写真01」からの順で保存します）" },
@@ -494,7 +495,7 @@ async function shareCustomerPhotos(site, photos) {
   const cust = photos.filter(isCustomerPhoto);
   if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
   // 名前は送った時と同じにする（番号は報告の写真全部で振っているので、全部から作ってお客様向けだけ残す）
-  const files = photoFiles(site, photos).filter((e) => isCustomerPhoto(e.photo)).map((e, i) => new File([e.file], `写真${pad2(i + 1)}_${e.file.name}`, { type: "image/jpeg" }));
+  const files = photoFiles(site, photos, { legacy: true }).filter((e) => isCustomerPhoto(e.photo)).map((e, i) => new File([e.file], `写真${pad2(i + 1)}_${e.file.name}`, { type: "image/jpeg" }));
   if (!files.length) return toast("お客様向けの写真は片付け済みのため、保存できません");
   return saveFiles(files);
 }
@@ -2134,14 +2135,21 @@ function safeFileName(s) {
   return s.replace(/[\\/:*?"<>|\s]/g, "");
 }
 
-// 写真を工程順・撮影順に並べ、書き出し用のファイル名を付ける
-function photoFiles(site, photos) {
+// 写真を工程順・撮影順に並べ、書き出し用のファイル名を付ける。
+// 項目が分かる写真（項目ページから撮った報告写真・品質写真）は、名前に項目名も入れる（Box で名前から何の写真か探せるように。20文字まで）。
+// legacy：v119 までの名前（項目名なし）。送った時の名前を写真に残していない古い報告を、Box と同じ名前で保存し直す時に使う
+function photoItemLabel(p) {
+  const it = p.itemId && manualMeta && manualMeta.items.find((x) => x.id === p.itemId);
+  return it ? safeFileName(String(it.name).replace(/_/g, "・")).slice(0, 20) : "";
+}
+function photoFiles(site, photos, opts = {}) {
   const sorted = photos.filter((p) => p.blob).sort((a, b) => processOf(a.processId).no - processOf(b.processId).no || (a.takenAt < b.takenAt ? -1 : 1));
   const counters = {};
   return sorted.map((p) => {
     const short = processOf(p.processId).short;
     counters[short] = (counters[short] || 0) + 1;
-    const name = safeFileName(`${site.name}_${short}_${fmtMMDD(p.dateKey)}_${pad2(counters[short])}_${p.id.slice(0, 6)}.jpg`);
+    const item = opts.legacy ? "" : photoItemLabel(p);
+    const name = safeFileName(`${site.name}_${short}_${item ? item + "_" : ""}${fmtMMDD(p.dateKey)}_${pad2(counters[short])}_${p.id.slice(0, 6)}.jpg`);
     return { photo: p, file: new File([p.blob], name, { type: "image/jpeg" }) };
   });
 }
@@ -2151,7 +2159,7 @@ async function sharePhotos(site, photos) {
     toast("保存する写真を選んでください");
     return;
   }
-  const files = photoFiles(site, photos).map((e) => e.file);
+  const files = photoFiles(site, photos).map((e) => (e.photo.sentName && e.photo.reportId ? new File([e.photo.blob], e.photo.sentName, { type: "image/jpeg" }) : e.file));
   if (!files.length) {
     toast("選んだ写真は片付け済みのため、保存できません");
     return;
