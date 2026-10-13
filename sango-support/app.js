@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）

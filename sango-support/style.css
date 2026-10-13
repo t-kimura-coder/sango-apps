@@ -319,3 +319,7 @@ textarea { min-height: 84px; }
 .reqSteps li span { display: block; width: 20px; height: 20px; line-height: 20px; margin: 0 auto 2px; border-radius: 10px; background: #fff; font-weight: 800; }
 .reqSteps li.done { background: #e1ece3; color: #2f6b45; } .reqSteps li.now { background: var(--green, #2f5d3a); color: #fff; font-weight: 700; } .reqSteps li.now span { color: var(--green, #2f5d3a); }
 .reqLine { margin: 6px 0; font-size: 15px; }
+
+/* 下のタブに、絵（絵が読めない時は、線のアイコンのまま） */
+#tabbar a .tabIc { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
+#tabbar a.hasIc > span[data-icon] { display: none; }

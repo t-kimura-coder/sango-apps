@@ -11,7 +11,7 @@
 <title>山郷サポート</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=3">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=3">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <div id="app">
@@ -27,9 +27,9 @@
   </header>
   <main id="main"></main>
   <nav id="tabbar">
-    <a href="#/home" data-tab="home"><span data-icon="home"></span>ホーム</a>
-    <a href="#/insp" data-tab="insp" id="tabInsp" hidden><span data-icon="check"></span>点検</a>
-    <a href="#/mine" data-tab="mine"><span data-icon="doc"></span>自分の症例</a>
+    <a href="#/home" data-tab="home"><img class="tabIc" width="30" height="30" src="art/ic-home.webp?v=4" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()"><span data-icon="home"></span>ホーム</a>
+    <a href="#/insp" data-tab="insp" id="tabInsp" hidden><img class="tabIc" width="30" height="30" src="art/ic-schedule.webp?v=4" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()"><span data-icon="check"></span>点検</a>
+    <a href="#/mine" data-tab="mine"><img class="tabIc" width="30" height="30" src="art/ic-mine.webp?v=4" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()"><span data-icon="doc"></span>自分の症例</a>
   </nav>
 </div>
 <div id="tour" class="tour" hidden><div id="tourSpot" class="tourSpot"></div><div id="tourBubble" class="tourBubble"><div id="tourStep" class="tourStep"></div><div id="tourText" class="tourText"></div><div class="tourBtns"><button id="tourSkip" class="tourSkip">やめる</button><button id="tourNext" class="btn btnPrimary tourNext">次へ</button></div></div></div>
@@ -40,7 +40,7 @@
 <input type="file" id="shootInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="pickInput" accept="image/*" multiple hidden>
 <script src="sitemap.js?v=3"></script>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=36"></script>
 <script src="login.js?v=4"></script>
 <script src="guide.js?v=4"></script>
 <script src="inspect.js?v=6"></script>
