@@ -311,3 +311,7 @@ body.mobileMode .settingBox { max-width: none; }
 
 .mTabs a .navIc { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
 .mTabs a.hasIc > span[data-icon] { display: none; }
+
+/* お知らせ（ベル） */
+.iconBtn.dot { position: relative; } .iconBtn.dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 5px; background: #e0792a; border: 1px solid #fff; }
+.annList { max-height: 50vh; overflow: auto; } .annItem { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.6; } .annItem small { display: block; color: var(--muted); }

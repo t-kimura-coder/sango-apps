@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -27,6 +27,7 @@ const ICONS = {
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   reload: '<path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/>',
+  bell: '<path d="M6 17V11a6 6 0 1 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
   photo: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
   tool: '<path d="M14 6a4 4 0 005 5l-8 8a2 2 0 01-3-3l8-8z"/>',
@@ -701,6 +702,32 @@ function viewSettings(main) {
 /* ---------- 起動 ---------- */
 $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (route().name !== "list") location.hash = "#/list"; else if ($("listBody")) renderListBody(); });
 $("reloadBtn").innerHTML = icon("reload");
+/* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
+const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-13", type: "feature", text: "ベルの「お知らせ」を追加しました。新しい機能や直しを、ここでお知らせします。" },
+  { date: "2026-10-13", type: "feature", text: "スマホ表示の症例の詳細にも、依頼の「手配の状況」が出るようになりました。" },
+  { date: "2026-10-12", type: "feature", text: "依頼の症例の詳細に「手配の状況」が出ます（手配済み・施工待ち・施工完了、訪問予定日、本社からのひとこと、業者の金額の目安）。" },
+  { date: "2026-10-12", type: "feature", text: "点検に「項目の管理」を追加しました。使わない項目や、この棟では不要な項目を選べます。項目の追加・周期の変更は「本社に修正を依頼」から。" },
+  { date: "2026-10-12", type: "feature", text: "最初の画面が「敷地マップ」になりました。建物を押すと、画像と状況が出て、その建物の症例の一覧へ進めます。" },
+  { date: "2026-10-12", type: "feature", text: "点検の「年間予定」で、項目ごとに予定月を変えられるようになりました（リーダーの画面・期限・メールに反映されます）。" },
+];
+const annSeen = () => parseInt(getLS("ann-seen", "0"), 10) || 0;
+function refreshBell() { ["bellBtn", "mBell"].forEach((id) => { const b = $(id); if (b) b.classList.toggle("dot", ANNOUNCEMENTS.length > annSeen()); }); }
+function openAnnouncements() {
+  let tab = "feature";
+  const root = document.createElement("div"); root.className = "fbBack";
+  const draw = () => {
+    const list = ANNOUNCEMENTS.filter((x) => (x.type === "fix" ? "fix" : "feature") === tab), n = (t) => ANNOUNCEMENTS.filter((x) => (x.type === "fix" ? "fix" : "feature") === t).length;
+    root.innerHTML = `<div class="fbBox"><h3>お知らせ</h3><div class="iaTabs" style="margin-bottom:8px"><button class="iaTab${tab === "feature" ? " on" : ""}" data-t="feature">新機能（${n("feature")}）</button><button class="iaTab${tab === "fix" ? " on" : ""}" data-t="fix">修正・改善（${n("fix")}）</button></div>
+      <div class="annList">${list.map((x) => `<div class="annItem"><small>${esc(x.date)}</small>${esc(x.text)}</div>`).join("") || `<div class="note">まだありません</div>`}</div><p><button class="btn" id="annClose">閉じる</button></p></div>`;
+    root.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; draw(); }));
+    root.querySelector("#annClose").onclick = () => root.remove();
+  };
+  draw(); document.body.appendChild(root);
+  setLS("ann-seen", String(ANNOUNCEMENTS.length)); refreshBell();
+}
+$("bellBtn").innerHTML = icon("bell"); $("bellBtn").onclick = openAnnouncements;
+$("mBell").onclick = openAnnouncements; refreshBell();
 $("reloadBtn").onclick = async () => { if (S.api && !S.demo) { await loadApiRecords(true); refreshView(); } if (S.dirHandle || S.demo) await reopenFolder(); };
 window.addEventListener("hashchange", render);
 fillIcons(document.body);

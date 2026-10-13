@@ -80,11 +80,13 @@ async function mDetail(main, id) {
     <div class="mBox"><div class="mH">何が起きたか</div><div class="mText">${esc(r.what)}</div></div>
     <div class="mBox"><div class="mH">どう対応したか</div><div class="mText">${esc(r.how || "（まだ書かれていません）")}</div>${r.vendor ? `<div class="mH" style="margin-top:8px">業者</div><div class="mText">${esc(r.vendor)}</div>` : ""}</div>
     ${r.photos.length ? `<div class="mBox"><div class="mH">写真 ${r.photos.length}枚</div><div class="photoGrid" id="mPhotos"></div></div>` : ""}
+    ${r.req && r.src === "new" && S.api && !S.demo ? `<div class="mBox" id="reqBox"><div class="mH">手配の状況</div><div class="note">読み込んでいます…</div></div>` : ""}
     <div class="mBox"><div class="mH">管理者の整理</div><div class="mMeta"><span>状態：${esc(STATE[a.status] || "")}</span>${a.cause ? `<span>原因：${esc(a.cause)}</span>` : ""}${a.amount !== "" && a.amount != null ? `<span>金額：${esc(yen(a.amount))}</span>` : ""}</div>
       <div class="mH" style="margin-top:10px">メモ</div><textarea id="mMemo" class="mMemo" maxlength="500" ${edit ? "" : "disabled"} placeholder="${edit ? "気づいたこと・伝えること" : ""}">${esc(a.memo)}</textarea>
       ${edit ? `<button class="btn primary" id="mSave" style="width:100%;margin-top:8px">メモを保存</button>` : `<div class="note">メモを書くには、管理者の合言葉でつないでください。</div>`}
       <div class="note" style="margin-top:6px">${a.at ? `最終更新 ${fmtDate(a.at)} ${fmtTime(a.at)}${a.by ? "　" + esc(a.by) : ""}` : ""}</div>
       <div class="note">金額・原因・「整理済み」は、PC表示で行います。</div></div>`;
+  fillReqStatus(id);
   const save = $("mSave");
   if (save) save.onclick = async () => {
     save.disabled = true;

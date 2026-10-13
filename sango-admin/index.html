@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <header class="appHeader">
@@ -21,9 +21,10 @@
   <label class="headerSearch"><span data-icon="search"></span><input id="globalSearch" type="search" placeholder="症例を検索（キーワード・内容・建物名など）" autocomplete="off"></label>
   <span id="syncInfo" class="syncInfo"></span>
   <span id="modeBadge" class="modeBadge"></span>
+  <button id="bellBtn" class="iconBtn" title="お知らせ" aria-label="お知らせ"></button>
   <button id="reloadBtn" class="iconBtn" title="フォルダを読み直す" aria-label="読み直す"></button>
 </header>
-<header id="mHeader" class="mHeader" hidden><button id="mBack" class="iconBtn mBackBtn" hidden aria-label="戻る">‹</button><span id="mTitle" class="mTitle">症例</span><span id="mSync" class="syncInfo"></span><button id="mReload" class="iconBtn" aria-label="読み直す"><span data-icon="reload"></span></button></header>
+<header id="mHeader" class="mHeader" hidden><button id="mBack" class="iconBtn mBackBtn" hidden aria-label="戻る">‹</button><span id="mTitle" class="mTitle">症例</span><span id="mSync" class="syncInfo"></span><button id="mBell" class="iconBtn" aria-label="お知らせ"><span data-icon="bell"></span></button><button id="mReload" class="iconBtn" aria-label="読み直す"><span data-icon="reload"></span></button></header>
 <div class="appBody">
   <nav class="sideNav">
     <a href="#/map" data-nav="map"><img class="navIc" width="36" height="36" src="art/ic-map.webp" alt="" onload="this.parentNode.classList.add('hasIc')" onerror="this.remove()"><span data-icon="home"></span>マップ</a>
@@ -49,9 +50,9 @@
 <input type="file" id="folderInput" webkitdirectory multiple hidden>
 <script src="demo.js?v=1"></script>
 <script src="sitemap.js?v=3"></script>
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 <script src="inspect.js?v=6"></script>
-<script src="guide.js?v=4"></script>
-<script src="mobile.js?v=3"></script>
+<script src="guide.js?v=5"></script>
+<script src="mobile.js?v=4"></script>
 </body>
 </html>
