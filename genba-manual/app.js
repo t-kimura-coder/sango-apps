@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 121;
+const APP_VERSION = 122;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "feature", text: "報告の「今週のこの工程」の入力例に、検査の種類（社内検査・JIO検査）と、写真が何の状態か（例：塗った後）の書き方を足しました。書いておくと、お客様への報告メールの下書きが正確になります" },
   { date: "2026-10-13", type: "fix", text: "過去の報告の写真を保存した時の名前が、Box に送った名前と違うことがあるのを直しました（前の版で送った報告・送るのを取りやめたあとに報告済みにした時）" },
   { date: "2026-10-13", type: "feature", text: "週の報告で送る写真の名前に、マニュアルの項目名を入れるようにしました（項目ページから撮った報告写真と、品質写真。例：現場_基礎_鎮物の埋設_1005_01）。Box で名前から何の写真かを探せます。これまでに送った写真の名前は変わりません" },
   { date: "2026-10-13", type: "feature", text: "週の報告を送ったあとに、お客様メール用の写真をそのまま保存できるようにしました（iPhone は「\"ファイル\"に保存」を選ぶと「写真01_…」の名前が残ります）。報告の工程ページと「使い方」・案内の説明を、「お客様にも／上司だけ」に合わせて直しました" },
@@ -2872,7 +2873,7 @@ function renderProcStatusCard(site, pid) {
     `<div class="psHead">今週のこの工程<span class="psSub">お客様への報告メールの材料（任意）</span></div>` +
     `<div class="segRow">${PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("")}</div>` +
     `<div class="psHint">この工程で来週以降に残りの作業があれば「一部完了」。一言は「何を・いつ・どうなった」を1行に1つ。</div>` +
-    `<textarea class="sheetTextarea psText" rows="3" maxlength="400" placeholder="例：&#10;埋め戻し 10/8 完了&#10;土間打設 10/9 完了（仕上がり写真はまだ）&#10;お風呂の基礎は来週">${esc(note.text || "")}</textarea>`;
+    `<textarea class="sheetTextarea psText" rows="3" maxlength="400" placeholder="例：&#10;埋め戻し 10/8 完了&#10;土間配筋 JIO検査 10/7 合格&#10;基礎断熱 メッシュの上にモルタル塗り（写真は塗った後）&#10;お風呂の基礎は来週">${esc(note.text || "")}</textarea>`;
   box.querySelectorAll(".segBtn").forEach((b) =>
     b.addEventListener("click", () => {
       const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
