@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 118;
+const APP_VERSION = 119;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "feature", text: "週の報告を送ったあとに、お客様メール用の写真をそのまま保存できるようにしました（iPhone は「\"ファイル\"に保存」を選ぶと「写真01_…」の名前が残ります）。報告の工程ページと「使い方」・案内の説明を、「お客様にも／上司だけ」に合わせて直しました" },
   { date: "2026-10-13", type: "fix", text: "「お客様メール用の写真を保存」で、送ったあとに工程を変えたり写真を消したりしても、下書きの「写真01」と同じ名前・番号で保存するようにしました。写真の下の「お客様にも」の札をなぞった時に、写真の選択が切り替わってしまうのを直しました" },
   { date: "2026-10-13", type: "feature", text: "報告で送る写真に「お客様にも／上司だけ」を付けられるようにしました（写真の下の札を押すと切り替わります。最初は「お客様にも」）。上司にだけ見せたい細かい写真も送れます。お客様への報告メールの下書きには「お客様にも」の写真だけを使います。過去の報告の画面に「お客様メール用の写真を保存」を付けました（下書きと同じ「写真01」からの順で保存します）" },
   { date: "2026-10-12", type: "fix", text: "PC で、ホームの右上の「使い方」「お知らせ」「設定」のボタンが押しにくかったのを直しました" },
@@ -2924,7 +2925,8 @@ async function renderReportProc() {
   $("reportProcGuide").innerHTML =
     `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
     `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
-    `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
+    `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>` +
+    `<div class="memoSub">上司にだけ見せたい細かい写真も送れます。写真の下の札を「上司だけ」にすると、お客様への報告メールには使いません（最初は「お客様にも」）。</div>`;
   const grid = $("reportProcGrid");
   grid.innerHTML = "";
   const picked = new Set(list.filter((ph) => ph.sendPick).map((ph) => ph.id));
@@ -3551,6 +3553,22 @@ async function markReported(memo = "", opts = null) {
   toast(`報告済みにしました（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の週・写真${targets.length}枚）`);
   scheduleStatePush(); // 報告の要約を、上司のスマホの見守りに届ける
   goReport();
+  // アプリから送った時は、そのままお客様メール用の写真を保存できるように案内する（後からでも「過去の報告」から保存できる）
+  if (opts && opts.photoIds && targets.some(isCustomerPhoto)) offerCustomerPhotos(site, targets);
+}
+function offerCustomerPhotos(site, photos) {
+  const n = photos.filter((p) => (p.sentName ? p.sentCustNo : isCustomerPhoto(p))).length;
+  openSheet("お客様メール用の写真", (body, close) => {
+    const p = document.createElement("p");
+    p.className = "sheetText";
+    p.textContent = `お客様への報告メールに入れる写真（${n}枚）を、AI の下書きと同じ「写真01」からの名前で保存できます。iPhone では共有画面の「"ファイル"に保存」を選ぶと、名前が残ります（写真アプリに保存すると名前が消えます）。後からでも「過去の報告」から保存できます。`;
+    body.appendChild(p);
+    body.appendChild(sheetButton("保存する", "btnPrimary", () => {
+      close();
+      shareCustomerPhotos(site, photos);
+    }));
+    body.appendChild(sheetButton("あとで", "btnOutline", close));
+  });
 }
 
 /* ---------- マニュアル ---------- */
@@ -6807,7 +6825,7 @@ const TOUR_STEPS = [
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="manual"]'),
-    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。お客様向けの報告写真は、工程マニュアルの右上の「報告写真」から撮れます。",
+    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。週の報告で送る報告写真は、工程マニュアルの右上の「報告写真」から撮れます（お客様メールにも使う写真と、上司だけに見せる写真を分けられます）。",
     next: true,
   },
   {
@@ -7207,7 +7225,7 @@ function init() {
   $("dashSitesMore").addEventListener("click", openSiteManage);
   $("sendBoxBtn").addEventListener("click", sendToBox);
   $("shareSelectedBtn").addEventListener("click", shareSelected);
-  $("groupShootBtn").innerHTML = `${icon(ICONS.camera, 18)}<span class="hsb"><b>報告写真</b><small>お客様向け</small></span>`;
+  $("groupShootBtn").innerHTML = `${icon(ICONS.camera, 18)}<span class="hsb"><b>報告写真</b><small>週の報告用</small></span>`;
   document.querySelectorAll(".openSearchBtn").forEach((b) => b.addEventListener("click", openSearch));
   $("searchInput").addEventListener("input", renderSearch);
   $("searchInput").addEventListener("keydown", (e) => {

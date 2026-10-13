@@ -1236,3 +1236,6 @@ img.imgBroken { visibility: hidden; }
 .custPill { align-self: flex-start; margin-top: 3px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface-sub); color: var(--color-text-sub); }
 .custPill.on { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-primary); }
 .custCount { margin-left: 4px; font-size: 12px; color: var(--color-text-sub); }
+
+/* 報告ページの注意書きの補足（お客様にも／上司だけ） */
+.memoSub { margin-top: 6px; font-size: var(--fs-sm); color: var(--color-text-sub); line-height: 1.5; }
