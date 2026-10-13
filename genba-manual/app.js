@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 116;
+const APP_VERSION = 117;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "feature", text: "報告で送る写真に「お客様にも／上司だけ」を付けられるようにしました（写真の下の札を押すと切り替わります。最初は「お客様にも」）。上司にだけ見せたい細かい写真も送れます。お客様への報告メールの下書きには「お客様にも」の写真だけを使います。過去の報告の画面に「お客様メール用の写真を保存」を付けました（下書きと同じ「写真01」からの順で保存します）" },
   { date: "2026-10-12", type: "fix", text: "PC で、ホームの右上の「使い方」「お知らせ」「設定」のボタンが押しにくかったのを直しました" },
   { date: "2026-10-12", type: "feature", text: "PC で、工程の並びなど横に並んだ欄を動かしやすくしました。欄の上でマウスのホイールを回すと横に動きます。工程の並びと写真の工程の欄には、左右に ◀ ▶ も出ます（まだ続きがある方だけ）" },
   { date: "2026-10-12", type: "fix", text: "細かい点を直しました（古いバックアップを戻した時に「該当なし」にしたチェックが付き直ることがある、「済み」にした工程を該当なしにする時の確認の文、マニュアル改訂でチェックが足された工程に「済み」の印が残る）" },
@@ -472,6 +473,33 @@ async function getSitePhotos(siteId) {
 // 写真の種別：kind = "report"（お客様向けの報告写真。種別なしの古い写真もこちら）/ "record"（マニュアルが求める品質写真）
 function isRecordPhoto(p) {
   return p.kind === "record";
+}
+// お客様への報告メールにも使う写真か。報告写真は最初から「お客様にも」。上司にだけ見せたい細かい写真は custOff で外す。品質写真は使わない
+function isCustomerPhoto(p) {
+  return !isRecordPhoto(p) && !p.custOff;
+}
+// お客様向けの写真を、AI の下書きと同じ順（工程の順 → 撮った順）に「写真01_…」の名前で保存する
+async function shareCustomerPhotos(site, photos) {
+  const cust = photos.filter(isCustomerPhoto);
+  if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
+  // 名前は送った時と同じにする（番号は報告の写真全部で振っているので、全部から作ってお客様向けだけ残す）
+  const files = photoFiles(site, photos).filter((e) => isCustomerPhoto(e.photo)).map((e, i) => new File([e.file], `写真${pad2(i + 1)}_${e.file.name}`, { type: "image/jpeg" }));
+  if (!files.length) return toast("お客様向けの写真は片付け済みのため、保存できません");
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try {
+      await navigator.share({ files });
+    } catch (e) {
+      /* キャンセル */
+    }
+    return;
+  }
+  files.forEach((f) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(f);
+    a.download = f.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
 }
 // 今回の報告に入る写真（報告写真と「報告に使う」を付けた品質写真のうち、まだ報告済みにしていないもの）
 function unreported(photos) {
@@ -1966,12 +1994,24 @@ function photoCard(ph, opts) {
       ? ""
       : `<span class="photoCardTags">${opts.showKind ? kind : ""}<span class="procPill">${esc(processOf(ph.processId).short)}</span>${mark}</span>` +
         `<span class="photoCardTitle">${esc(photoTitle(ph))}</span>`) +
-    `<span class="photoCardDate">${esc(fmtDateTime(ph.takenAt))}</span></span>` +
+    `<span class="photoCardDate">${esc(fmtDateTime(ph.takenAt))}</span>` +
+    (opts.custToggle && !isRecordPhoto(ph) ? `<span class="custPill${ph.custOff ? "" : " on"}" role="button">${ph.custOff ? "上司だけ" : "お客様にも"}</span>` : "") +
+    `</span>` +
     `<span class="photoMenu" role="button" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</span>`;
   card.querySelector(".photoMenu").addEventListener("click", (e) => {
     e.stopPropagation();
     openPhotoViewer(ph.blob, opts.actions ? opts.actions(ph) : []);
   });
+  const cp = card.querySelector(".custPill");
+  if (cp)
+    cp.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      ph.custOff = !ph.custOff;
+      cp.classList.toggle("on", !ph.custOff);
+      cp.textContent = ph.custOff ? "上司だけ" : "お客様にも";
+      await dbPut("photos", ph);
+      if (opts.onCustToggle) opts.onCustToggle(ph);
+    });
   card.addEventListener("contextmenu", (e) => e.preventDefault());
   card.addEventListener("click", () => opts.onTap(ph, card));
   return card;
@@ -2876,7 +2916,8 @@ async function renderReportProc() {
   grid.innerHTML = "";
   const picked = new Set(list.filter((ph) => ph.sendPick).map((ph) => ph.id));
   const updateCounts = () => {
-    $("reportProcCount").innerHTML = `選択数 <b>${picked.size}</b>/${list.length}`;
+    const custN = list.filter((ph) => picked.has(ph.id) && isCustomerPhoto(ph)).length;
+    $("reportProcCount").innerHTML = `選択数 <b>${picked.size}</b>/${list.length}` + (picked.size ? `<span class="custCount">（お客様にも ${custN}）</span>` : "");
     $("procBarCount").textContent = picked.size;
     const thumbs = $("procBarThumbs");
     thumbs.innerHTML = "";
@@ -2897,6 +2938,8 @@ async function renderReportProc() {
         bucket: "reportProc",
         selected: picked,
         compact: true,
+        custToggle: true,
+        onCustToggle: () => updateCounts(),
         actions: (x) => photoActions(x, renderReportProc),
         onTap: async (x, cell) => {
           x.sendPick = !x.sendPick;
@@ -2963,6 +3006,7 @@ async function renderReportPast() {
   );
   $("reportPastEmpty").hidden = list.length > 0;
   $("pastShareBtn").hidden = !list.length;
+  $("pastCustShareBtn").hidden = !list.some(isCustomerPhoto);
   $("deleteReportPhotosBtn").hidden = !list.length;
   const latestRep = (await dbGetAll("reports", "siteId", site.id)).filter((x) => !x.kind).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
   $("undoReportBtn").hidden = !list.length || !!r.kind || !latestRep || latestRep.id !== r.id;
@@ -3235,7 +3279,7 @@ async function sendToBox() {
         const payload = {
           kind: "genba-photo-report",
           report_id: site.draftReportId,
-          schema: 7, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start、7: processes[].status/note・customer（お客様への報告メールの材料。memo は上司向け）
+          schema: 8, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start、7: processes[].status/note・customer（お客様への報告メールの材料。memo は上司向け）、8: photos[].customer（お客様への報告メールにも使う写真。false は上司だけ）
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -3260,6 +3304,7 @@ async function sendToBox() {
             id: e.photo.id,
             file: e.file.name,
             kind: isRecordPhoto(e.photo) ? "record" : "report",
+            customer: isCustomerPhoto(e.photo),
             process_no: processOf(e.photo.processId).no,
             process: processOf(e.photo.processId).name,
             date: e.photo.dateKey,
@@ -7115,6 +7160,7 @@ function init() {
   });
   $("reportImportBtn").addEventListener("click", () => startLibrary(reportProcId));
   $("pastShareBtn").addEventListener("click", () => sharePhotos(currentSite(), pastPhotos));
+  $("pastCustShareBtn").addEventListener("click", () => shareCustomerPhotos(currentSite(), pastPhotos));
   $("recordLibraryInput").addEventListener("change", onRecordLibraryPicked);
   $("cameraInput").addEventListener("change", onCameraPicked);
   $("libraryInput").addEventListener("change", onLibraryPicked);
