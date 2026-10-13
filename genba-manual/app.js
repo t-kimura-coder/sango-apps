@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 120;
+const APP_VERSION = 121;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "fix", text: "過去の報告の写真を保存した時の名前が、Box に送った名前と違うことがあるのを直しました（前の版で送った報告・送るのを取りやめたあとに報告済みにした時）" },
   { date: "2026-10-13", type: "feature", text: "週の報告で送る写真の名前に、マニュアルの項目名を入れるようにしました（項目ページから撮った報告写真と、品質写真。例：現場_基礎_鎮物の埋設_1005_01）。Box で名前から何の写真かを探せます。これまでに送った写真の名前は変わりません" },
   { date: "2026-10-13", type: "feature", text: "週の報告を送ったあとに、お客様メール用の写真をそのまま保存できるようにしました（iPhone は「\"ファイル\"に保存」を選ぶと「写真01_…」の名前が残ります）。報告の工程ページと「使い方」・案内の説明を、「お客様にも／上司だけ」に合わせて直しました" },
   { date: "2026-10-13", type: "fix", text: "「お客様メール用の写真を保存」で、送ったあとに工程を変えたり写真を消したりしても、下書きの「写真01」と同じ名前・番号で保存するようにしました。写真の下の「お客様にも」の札をなぞった時に、写真の選択が切り替わってしまうのを直しました" },
@@ -484,7 +485,7 @@ function isCustomerPhoto(p) {
 // お客様向けの写真を、AI の下書きと同じ順（工程の順 → 撮った順）に「写真01_…」の名前で保存する
 async function shareCustomerPhotos(site, photos) {
   // 送った時に残した名前と番号があれば、それを使う（送ったあとに工程を変えた・1枚消した・片付けた時も、下書きの番号とずれないように）
-  if (photos.some((p) => p.sentName)) {
+  if (photos.length && photos.every((p) => p.sentName)) {
     const cust = photos.filter((p) => p.sentCustNo).sort((a, b) => a.sentCustNo - b.sentCustNo);
     if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
     const have = cust.filter((p) => p.blob);
@@ -495,6 +496,7 @@ async function shareCustomerPhotos(site, photos) {
   const cust = photos.filter(isCustomerPhoto);
   if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
   // 名前は送った時と同じにする（番号は報告の写真全部で振っているので、全部から作ってお客様向けだけ残す）
+  toast("前の版で送った報告なので、名前と番号を作り直しています（送ったあとに工程を変えた・片付けた写真があると、Box とずれることがあります）");
   const files = photoFiles(site, photos, { legacy: true }).filter((e) => isCustomerPhoto(e.photo)).map((e, i) => new File([e.file], `写真${pad2(i + 1)}_${e.file.name}`, { type: "image/jpeg" }));
   if (!files.length) return toast("お客様向けの写真は片付け済みのため、保存できません");
   return saveFiles(files);
@@ -2159,7 +2161,10 @@ async function sharePhotos(site, photos) {
     toast("保存する写真を選んでください");
     return;
   }
-  const files = photoFiles(site, photos).map((e) => (e.photo.sentName && e.photo.reportId ? new File([e.photo.blob], e.photo.sentName, { type: "image/jpeg" }) : e.file));
+  const legacy = new Map(photoFiles(site, photos.filter((p) => p.reportId && !p.sentName), { legacy: true }).map((e) => [e.photo.id, e.file]));
+  const files = photoFiles(site, photos).map((e) =>
+    e.photo.reportId && e.photo.sentName ? new File([e.photo.blob], e.photo.sentName, { type: "image/jpeg" }) : legacy.get(e.photo.id) || e.file
+  );
   if (!files.length) {
     toast("選んだ写真は片付け済みのため、保存できません");
     return;
@@ -3398,6 +3403,8 @@ function markWeekOther(site, wk, kind, cands) {
           photosLeft.forEach((p) => {
             p.reportId = report.id;
             p.sendPick = false;
+            delete p.sentName; // アプリから送っていないので、送った時の名前は無い
+            delete p.sentCustNo;
           });
           await dbPutMany("photos", photosLeft);
           site.lastReportEnd = wk.sat < todayKey() ? wk.sat : todayKey();
@@ -3547,9 +3554,15 @@ async function markReported(memo = "", opts = null) {
   if (end > todayKey()) end = todayKey();
   const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon, sentReportId: site.draftReportId || "" };
   moveDraftToReport(site, report);
+  // 「アプリから送った」で報告済みにした時も、送った写真が全部そろっていれば送った時の名前を残す（取りやめた送信の名前が混ざる時は消す）
+  const sentNow = !!(opts && opts.photoIds) || targets.every((p) => p.sentName);
   targets.forEach((p) => {
     p.reportId = report.id;
     p.sendPick = false;
+    if (!sentNow) {
+      delete p.sentName;
+      delete p.sentCustNo;
+    }
   });
   await dbPut("reports", report);
   await dbPutMany("photos", targets);
