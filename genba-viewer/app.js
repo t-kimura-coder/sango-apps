@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1425,7 +1425,7 @@ async function reopenFolder() {
 async function* walk(dir, path = "", depth = 0) {
   for await (const [name, h] of dir.entries()) {
     if (h.kind === "file") yield { name, path: path + name, handle: h };
-    else if (depth < 4) yield* walk(h, path + name + "/", depth + 1);
+    else if (depth < 4 && name !== "お客様向け") yield* walk(h, path + name + "/", depth + 1); // お客様向け＝PC が作るお客様メール用の写し（同じ写真なので読まない）
   }
 }
 

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 117;
+const APP_VERSION = 118;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-13", type: "fix", text: "「お客様メール用の写真を保存」で、送ったあとに工程を変えたり写真を消したりしても、下書きの「写真01」と同じ名前・番号で保存するようにしました。写真の下の「お客様にも」の札をなぞった時に、写真の選択が切り替わってしまうのを直しました" },
   { date: "2026-10-13", type: "feature", text: "報告で送る写真に「お客様にも／上司だけ」を付けられるようにしました（写真の下の札を押すと切り替わります。最初は「お客様にも」）。上司にだけ見せたい細かい写真も送れます。お客様への報告メールの下書きには「お客様にも」の写真だけを使います。過去の報告の画面に「お客様メール用の写真を保存」を付けました（下書きと同じ「写真01」からの順で保存します）" },
   { date: "2026-10-12", type: "fix", text: "PC で、ホームの右上の「使い方」「お知らせ」「設定」のボタンが押しにくかったのを直しました" },
   { date: "2026-10-12", type: "feature", text: "PC で、工程の並びなど横に並んだ欄を動かしやすくしました。欄の上でマウスのホイールを回すと横に動きます。工程の並びと写真の工程の欄には、左右に ◀ ▶ も出ます（まだ続きがある方だけ）" },
@@ -480,11 +481,23 @@ function isCustomerPhoto(p) {
 }
 // お客様向けの写真を、AI の下書きと同じ順（工程の順 → 撮った順）に「写真01_…」の名前で保存する
 async function shareCustomerPhotos(site, photos) {
+  // 送った時に残した名前と番号があれば、それを使う（送ったあとに工程を変えた・1枚消した・片付けた時も、下書きの番号とずれないように）
+  if (photos.some((p) => p.sentName)) {
+    const cust = photos.filter((p) => p.sentCustNo).sort((a, b) => a.sentCustNo - b.sentCustNo);
+    if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
+    const have = cust.filter((p) => p.blob);
+    if (!have.length) return toast("お客様向けの写真は片付け済みのため、保存できません");
+    if (have.length < cust.length) toast(`片付け・削除した写真 ${cust.length - have.length}枚は除きます（番号はそのまま）`);
+    return saveFiles(have.map((p) => new File([p.blob], `写真${pad2(p.sentCustNo)}_${p.sentName}`, { type: "image/jpeg" })));
+  }
   const cust = photos.filter(isCustomerPhoto);
   if (!cust.length) return toast("この報告に、お客様向けの写真がありません");
   // 名前は送った時と同じにする（番号は報告の写真全部で振っているので、全部から作ってお客様向けだけ残す）
   const files = photoFiles(site, photos).filter((e) => isCustomerPhoto(e.photo)).map((e, i) => new File([e.file], `写真${pad2(i + 1)}_${e.file.name}`, { type: "image/jpeg" }));
   if (!files.length) return toast("お客様向けの写真は片付け済みのため、保存できません");
+  return saveFiles(files);
+}
+async function saveFiles(files) {
   if (navigator.canShare && navigator.canShare({ files })) {
     try {
       await navigator.share({ files });
@@ -1945,7 +1958,7 @@ function attachDragSelect(grid, isOn, setOn) {
     "touchstart",
     (e) => {
       const c = e.target.closest("[data-id]");
-      if (!c || e.target.closest(".photoMenu")) return;
+      if (!c || e.target.closest(".photoMenu, .custPill")) return;
       start = { x: e.touches[0].clientX, y: e.touches[0].clientY, id: c.dataset.id };
       mode = null;
       touched = new Set();
@@ -3322,6 +3335,12 @@ async function sendToBox() {
         const files = [jsonFile, ...entries.map((e) => e.file)];
         const res = await deliverToBox(files, jsonName, email);
         if (!res) return; // キャンセル時はシートを開いたまま
+        // 送った時の名前と、お客様向けの番号（下書きの「写真01」）を写真に残す（過去の報告から同じ名前・番号で保存できるように）
+        let custNo = 0;
+        const custOrder = payload.photos.filter((x) => x.customer).sort((a, b) => a.process_no - b.process_no || (a.taken_at < b.taken_at ? -1 : a.taken_at > b.taken_at ? 1 : 0));
+        const noOf = new Map(custOrder.map((x) => [x.id, ++custNo]));
+        const sentPhotos = entries.map((e) => Object.assign(e.photo, { sentName: e.file.name, sentCustNo: noOf.get(e.photo.id) || null }));
+        await dbPutMany("photos", sentPhotos);
         close();
         const memoText = memo.value.trim();
         if (confirmDelivered(res, "OK で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon });
