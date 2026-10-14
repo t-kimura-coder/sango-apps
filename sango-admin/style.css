@@ -42,7 +42,8 @@ svg.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-wid
 .fRow img { width: 38px; height: 26px; object-fit: contain; border-radius: 4px; background: #eef3e8; }
 .fRow .fn { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fRow .fc { font-size: 12px; color: var(--muted); }
-.fGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.fGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+.fGrid .fRow .fn { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
 .fSelect { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 
 main { padding: 16px 18px 40px; min-width: 0; }
@@ -136,7 +137,7 @@ main { padding: 16px 18px 40px; min-width: 0; }
 .heat td.name img { width: 36px; height: 24px; object-fit: contain; vertical-align: middle; margin-right: 6px; }
 .heat th img { width: 22px; height: 22px; object-fit: contain; display: block; margin: 0 auto 2px; }
 .h0 { background: #eef1e8; color: #a3a99f; } .h1 { background: #d8e7d0; } .h2 { background: #b9d6ae; } .h3 { background: #8fbd84; } .h4 { background: #3f7d56; color: #fff; }
-.charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+.charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .barRow { display: grid; grid-template-columns: 110px 1fr 46px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
 .bar { height: 14px; border-radius: 7px; background: #e6eadf; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--green); border-radius: 7px; }
@@ -211,7 +212,7 @@ main { padding: 16px 18px 40px; min-width: 0; }
 .navBadge { margin-left: 8px; background: #a3322a; color: #fff; border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 700; }
 .iaBanner { background: #f8e6d6; color: #a3322a; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: 15px; }
 .iaK.over .v { color: #a3322a; } .iaK.soon .v { color: #8a5a12; } .iaK.none .v { color: var(--muted); }
-.iaWrap { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+.iaWrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
 .iaTabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
 .iaTab { padding: 6px 14px; border-radius: 16px; border: 1px solid var(--line); background: #fff; cursor: pointer; font-weight: 700; }
 .iaTab.on { background: var(--green); border-color: var(--green); color: #fff; }
@@ -315,3 +316,13 @@ body.mobileMode .settingBox { max-width: none; }
 /* お知らせ（ベル） */
 .iconBtn.dot { position: relative; } .iconBtn.dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 5px; background: #e0792a; border: 1px solid #fff; }
 .annList { max-height: 50vh; overflow: auto; } .annItem { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.6; } .annItem small { display: block; color: var(--muted); }
+
+/* はみ出し対策：横に長い表は、その枠の中だけで横にスクロールする */
+.iaMain, .iaSide, .charts > .panel { min-width: 0; }
+.iaScroll { max-width: 100%; overflow-x: auto; }
+.vbars { gap: 3px; } .vbars .vb { flex: 1 1 0; min-width: 0; font-size: 10px; letter-spacing: -0.02em; } .vbars .vb b { font-size: 10px; }
+.fGrid .fRow { padding: 4px 3px; gap: 5px; font-size: 13px; } .fGrid .fRow input { flex: none; }
+#sideExtra .fRow .fn { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; overflow-wrap: anywhere; }
+/* 症例一覧：何が起きたか（件名・本文）は、1行で切らずに、2行まで折り返す */
+.cWhat b, .cWhat span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+.cWhat span { -webkit-line-clamp: 1; line-clamp: 1; }

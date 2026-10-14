@@ -184,3 +184,5 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
   .sideNav a .navIc { width: 28px; height: 28px; }
   .appBody > main { width: 100%; }
 }
+/* 依頼のカード：内容は、1行で切らずに、2行まで折り返す */
+.card .what { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }

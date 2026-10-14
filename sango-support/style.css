@@ -323,3 +323,5 @@ textarea { min-height: 84px; }
 /* 下のタブに、絵（絵が読めない時は、線のアイコンのまま） */
 #tabbar a .tabIc { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
 #tabbar a.hasIc > span[data-icon] { display: none; }
+/* 小さいスマホ（360px前後）：画面の見出しが切れないように、少し小さくする */
+@media (max-width: 380px) { #topTitle { font-size: 17px; } }
