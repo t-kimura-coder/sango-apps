@@ -325,3 +325,8 @@ textarea { min-height: 84px; }
 #tabbar a.hasIc > span[data-icon] { display: none; }
 /* 小さいスマホ（360px前後）：画面の見出しが切れないように、少し小さくする */
 @media (max-width: 380px) { #topTitle { font-size: 17px; } }
+
+/* 建物の中（平面図）への入口 */
+.fpEntry { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--card, #fff); text-align: left; cursor: pointer; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.1); }
+.fpEntry img { border-radius: 10px; flex: none; } .fpEntry .fpT { flex: 1; display: flex; flex-direction: column; } .fpEntry small { color: var(--muted); }
+.fpEntry svg { width: 20px; height: 20px; flex: none; color: var(--muted); } .fpEntry .fpT b { font-size: 16px; }

@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -321,6 +321,33 @@ async function viewHome(main) {
   }
 }
 
+/* ---------- 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） ---------- */
+const FP = { info: null };
+async function fpInfo() {
+  if (FP.info) return FP.info;
+  if (!hasApi()) return null;
+  try { FP.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FP.info = null; }
+  return FP.info;
+}
+async function fpLoad(bid) { // 版が同じなら、端末の控えを使う。電波がなくても、控えがあれば見られる
+  const key = "fp_" + bid, info = await fpInfo();
+  let cached = null; try { cached = await dbGet("meta", key); } catch (e) { cached = null; }
+  if (cached && cached.data && (!info || info.version === cached.version)) return cached.data;
+  const j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
+  const data = { note: j.note, floors: j.floors };
+  try { await dbPut("meta", { key, version: j.version, data }); } catch (e) { /* 控えられなくても、見られる */ }
+  return data;
+}
+async function fpEntry(bid, name) {
+  const slot = $("fpSlot"); if (!slot || typeof fpOpen !== "function") return;
+  const info = await fpInfo();
+  let has = !!(info && info.buildings && info.buildings[bid]);
+  if (!has) { try { const c = await dbGet("meta", "fp_" + bid); has = !!(c && c.data); } catch (e) { has = false; } }
+  if (!has || $("fpSlot") !== slot) return;
+  slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
+  $("fpBtn").onclick = () => fpOpen({ title: name + "の中", load: () => fpLoad(bid) });
+}
+
 /* ---------- 建物ページ ---------- */
 function catSummary(e) {
   if (e.none) return { text: "設置なし", cls: "muted2" };
@@ -337,6 +364,7 @@ async function viewBuilding(main, bid) {
     <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>連絡先と症例</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
     ${helpCard(true)}
     ${inspBuildingCard(bid)}
+    <div id="fpSlot"></div>
     <div class="sectionHead"><h3>分類から探す</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
@@ -352,6 +380,7 @@ async function viewBuilding(main, bid) {
     <button class="fab" id="fabAdd">${icon("plus")}症例を追加</button>`;
   main.querySelectorAll(".catCard").forEach((el) => (el.onclick = (ev) => { if (ev.target.closest("[data-stop]")) return; go(`#/b/${encodeURIComponent(bid)}/c/${encodeURIComponent(el.dataset.c)}`); }));
   $("fabAdd").onclick = () => go(`#/new?b=${encodeURIComponent(bid)}`);
+  fpEntry(bid, b.name);
   await fillRecList($("bRecs"), recs, "この建物で、あなたが残した症例はまだありません。");
 }
 function contactHtml(bid, cid) {
