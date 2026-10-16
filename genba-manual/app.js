@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 122;
+const APP_VERSION = 123;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-16", type: "feature", text: "同じ現場（同じ工事番号）の人がチェックを付けたり品質写真を撮ったりしていたら、自分の画面でも「済み」として数えるようにしました（工程の✓完了・ホームの進み具合と次の項目・撮り忘れ・写真要の一覧）。相手のチェックは薄い✓で「○○さんが確認済み」と出ます。自分でも確かめたい時は、今までどおり自分で付けられます。チェックの記録は付けた本人のものだけで、上司の見守りの人ごとの進み具合も本人の分だけです" },
   { date: "2026-10-13", type: "feature", text: "報告の「今週のこの工程」の入力例に、検査の種類（社内検査・JIO検査）と、写真が何の状態か（例：塗った後）の書き方を足しました。書いておくと、お客様への報告メールの下書きが正確になります" },
   { date: "2026-10-13", type: "fix", text: "過去の報告の写真を保存した時の名前が、Box に送った名前と違うことがあるのを直しました（前の版で送った報告・送るのを取りやめたあとに報告済みにした時）" },
   { date: "2026-10-13", type: "feature", text: "週の報告で送る写真の名前に、マニュアルの項目名を入れるようにしました（項目ページから撮った報告写真と、品質写真。例：現場_基礎_鎮物の埋設_1005_01）。Box で名前から何の写真かを探せます。これまでに送った写真の名前は変わりません" },
@@ -2236,7 +2237,7 @@ async function recordCoverage(siteId) {
     ((it.text && it.text.checks) || []).forEach((c) => {
       if (c.photo !== "要" || photoSkipped(recs[it.id], checkKey("checks", c)) || isNaCheck(recs[it.id], checkKey("checks", c))) return;
       total++;
-      if (photos.some((p) => p.itemId === it.id && p.checkKey === checkKey("checks", c))) done++;
+      if (photos.some((p) => p.itemId === it.id && p.checkKey === checkKey("checks", c)) || othersWithPhoto(site, it.id, checkKey("checks", c)).length) done++;
     });
   });
   return { total, done };
@@ -3216,7 +3217,7 @@ async function sendToBox() {
   if (site.id !== currentSiteId) await setCurrentSite(site.id);
   await loadSiteChecks();
   const progress = GROUPS.map((g, i) => {
-    const pr = groupProgress(g, siteCheckRecs, siteRecordPhotos);
+    const pr = groupProgress(g, siteCheckRecs, siteRecordPhotos, { ownOnly: true });
     return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
   });
 
@@ -3647,11 +3648,13 @@ function guideHtml(p, opts = { report: true, record: true }) {
 }
 
 // 大分類ごとの進み具合（今の現場のチェックと品質写真。該当なしにした項目は数えない）
-function groupProgress(g, recs, recPhotos) {
+// opts.site：数える現場（無ければ今の現場）。opts.ownOnly：自分のチェック・写真だけで数える（上司に送る進み具合）
+function groupProgress(g, recs, recPhotos, opts = {}) {
   const out = { checks: 0, checksDone: 0, checksNa: 0, photos: 0, photosDone: 0 };
   if (!manualMeta || (!recs && !currentSiteId)) return out;
   recs = recs || siteCheckRecs;
   recPhotos = recPhotos || siteRecordPhotos;
+  const site = opts.ownOnly ? null : opts.site || currentSite();
   manualMeta.items
     .filter((it) => g.cats.includes(it.cat))
     .forEach((it) => {
@@ -3661,10 +3664,10 @@ function groupProgress(g, recs, recPhotos) {
         const key = checkKey("checks", c);
         if (isNaCheck(rec, key)) return void out.checksNa++;
         out.checks++;
-        if (rec && rec.marks[key]) out.checksDone++;
+        if ((rec && rec.marks[key]) || (site && otherHasMark(site, it.id, key))) out.checksDone++;
         if (c.photo === "要" && !photoSkipped(rec, key)) {
           out.photos++;
-          if (recPhotos[`${it.id}|${key}`]) out.photosDone++;
+          if (recPhotos[`${it.id}|${key}`] || (site && othersWithPhoto(site, it.id, key).length)) out.photosDone++;
         }
       });
     });
@@ -3786,7 +3789,7 @@ function itemProgress(it) {
   const rec = checkRecOf(it.id);
   const all = (it.text && it.text.checks) || [];
   const checks = all.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
-  const done = checks.filter((c) => rec.marks[checkKey("checks", c)]).length;
+  const done = checks.filter((c) => isMarkedHere(rec, it.id, checkKey("checks", c))).length;
   // チェックを全部「なし」にした項目は、項目ごと該当なしと同じ扱い（完了とは分ける）
   return { done, total: checks.length, na: rec.na || (all.length > 0 && checks.length === 0) };
 }
@@ -3800,7 +3803,7 @@ function noCheckItem(it) {
 function itemDone(it) {
   if (noCheckItem(it)) {
     const rec = checkRecOf(it.id);
-    return !rec.na && !!(rec.marks && rec.marks[ITEM_DONE_KEY]);
+    return !rec.na && isMarkedHere(rec, it.id, ITEM_DONE_KEY);
   }
   const pr = itemProgress(it);
   return !pr.na && pr.total > 0 && pr.done >= pr.total;
@@ -4199,9 +4202,12 @@ function checkRowHtml(sec, c, rec, it) {
     mark ? `<span class="checkBy">${esc(fmtDateTime(mark.at))}${mark.by ? " " + esc(mark.by) : ""}</span>` : "",
     !mark && !naC ? othersHtml(it.id, key) : "",
     c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && (rec.remotePhotos || []).includes(key) ? `<span class="remotePhoto">${icon(ICONS.camera, 12)}品質写真は別の端末にあります</span>` : "",
+    c.photo === "要" && !siteRecordPhotos[`${it.id}|${key}`] && !(rec.remotePhotos || []).includes(key) && othersWithPhoto(currentSite(), it.id, key).length
+      ? `<span class="remotePhoto">${icon(ICONS.camera, 12)}${esc(othersWithPhoto(currentSite(), it.id, key).slice(0, 2).join("・"))}さんが撮影済み</span>`
+      : "",
   ].join("");
   return (
-    `<div class="checkRow${mark ? " on" : ""}${naC ? " naC" : ""}" data-key="${esc(key)}">` +
+    `<div class="checkRow${mark ? " on" : !naC && sec === "checks" && otherHasMark(currentSite(), it.id, key) ? " byOther" : ""}${naC ? " naC" : ""}" data-key="${esc(key)}">` +
     `<button class="checkMain"${disabled ? " disabled" : ""}><span class="checkBox">${icon(ICONS.check, 16, 3)}</span>` +
     `<span class="checkText">${esc(c.text)}${naC ? `<span class="checkMeta"><span class="naCLabel">この現場では該当なし</span></span>` : meta ? `<span class="checkMeta">${meta}</span>` : ""}</span></button>` +
     // その現場に無いチェックを外すボタン（項目ごと無い時は、項目名の右の「該当なし」）
@@ -5419,7 +5425,7 @@ async function buildSiteState(site) {
     const phMap = {};
     Object.entries(photoKeys).forEach(([itemId, ks]) => Object.keys(ks).forEach((k) => (phMap[`${itemId}|${k}`] = true)));
     progress = GROUPS.map((g, i) => {
-      const pr = groupProgress(g, recMap, phMap);
+      const pr = groupProgress(g, recMap, phMap, { ownOnly: true });
       return { group: g.name, checks_done: pr.checksDone, checks_total: pr.checks, checks_na: pr.checksNa, photos_done: pr.photosDone, photos_total: pr.photos, before_start: i < (site.startGroup || 0) };
     });
   }
@@ -5544,8 +5550,12 @@ async function syncStates(manual = false) {
         if (site) merged += await mergeMine(site, st);
       } else {
         const at = {};
-        Object.entries(st.items || {}).forEach(([itemId, it]) => (at[itemId] = it.m || {}));
-        (others[x.key] = others[x.key] || []).push({ person: x.person, at });
+        const ph = {};
+        Object.entries(st.items || {}).forEach(([itemId, it]) => {
+          at[itemId] = it.m || {};
+          if (Array.isArray(it.ph) && it.ph.length) ph[itemId] = it.ph;
+        });
+        (others[x.key] = others[x.key] || []).push({ person: x.person, at, ph });
       }
     }
     othersByKey = others;
@@ -5588,6 +5598,21 @@ function scheduleStatePush() {
     statePushTimer = null;
     syncStates(); // 受け取ってから送る（別の端末の新しい分を先に取り込む）
   }, 6000);
+}
+// 同じ現場（同じ工事番号）の他の人の記録。工程の進み具合・完了・次の項目・撮り忘れは「誰かが確認・撮影すれば済み」で数える（現場単位）。
+// 記録（marks）は付けた本人のものだけで、相手のチェックを自分の記録にはしない。上司に送る進み具合（同期の progress・週の報告の progress）は本人の分だけで数える（ownOnly）
+function othersOf(site) {
+  return (site && othersByKey[stateKeyOf(site)]) || [];
+}
+function otherHasMark(site, itemId, key) {
+  return othersOf(site).some((o) => Object.keys(o.at[itemId] || {}).some((k) => upgradeKey(itemId, k) === key));
+}
+function othersWithPhoto(site, itemId, key) {
+  return othersOf(site).filter((o) => ((o.ph && o.ph[itemId]) || []).some((k) => upgradeKey(itemId, k) === key)).map((o) => o.person);
+}
+// 自分か、同じ現場の誰かが付けたか
+function isMarkedHere(rec, itemId, key, site = currentSite()) {
+  return !!(rec && rec.marks && rec.marks[key]) || otherHasMark(site, itemId, key);
 }
 // 同じ現場の他の人が付けたチェック（新しい順）
 function othersMarked(itemId, key) {
@@ -6129,7 +6154,7 @@ async function siteSummary(site) {
     .sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1))
     .forEach((p) => (recPhotos[`${p.itemId}|${p.checkKey}`] = p));
   const start = site.startGroup || 0; // 記録を始めた工程。これより前は「導入前」
-  const groups = GROUPS.map((g, i) => Object.assign(groupProgress(g, recs, recPhotos), { pre: i < start }));
+  const groups = GROUPS.map((g, i) => Object.assign(groupProgress(g, recs, recPhotos, { site }), { pre: i < start }));
   let cur = start;
   groups.forEach((x, i) => {
     if (x.checksDone > 0 && i > cur) cur = i;
@@ -6144,7 +6169,7 @@ async function siteSummary(site) {
       if (preCats.has(it.cat) || !rec || rec.na || !checksStarted(rec)) return;
       ((it.text && it.text.checks) || []).forEach((c) => {
         const k = checkKey("checks", c);
-        if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !photoSkipped(rec, k) && !isNaCheck(rec, k)) missing.push(it);
+        if (c.photo === "要" && !recPhotos[`${it.id}|${k}`] && !othersWithPhoto(site, it.id, k).length && !photoSkipped(rec, k) && !isNaCheck(rec, k)) missing.push(it);
       });
     });
   const week = reportWeek(site, await dbGetAll("reports", "siteId", site.id));
@@ -6361,10 +6386,10 @@ async function renderDash() {
   const isDone = (it) => {
     const rec = siteCheckRecs[it.id];
     if (rec && rec.na) return true;
-    if (noCheckItem(it)) return !!(rec && rec.marks && rec.marks[ITEM_DONE_KEY]);
+    if (noCheckItem(it)) return isMarkedHere(rec, it.id, ITEM_DONE_KEY);
     const all = (it.text && it.text.checks) || [];
     const cs = all.filter((c) => !isNaCheck(rec, checkKey("checks", c)));
-    return !!rec && all.length > 0 && cs.every((c) => rec.marks[checkKey("checks", c)]);
+    return all.length > 0 && cs.every((c) => isMarkedHere(rec, it.id, checkKey("checks", c)));
   };
   const preCats = new Set(GROUPS.slice(0, (current && current.startGroup) || 0).flatMap((g) => g.cats));
   const next = all.slice(from).find((it) => !preCats.has(it.cat) && !isDone(it));
@@ -6992,9 +7017,10 @@ async function renderRequired(keepScroll) {
             const key = checkKey("checks", c);
             const rec = siteCheckRecs[it.id];
             const ph = siteRecordPhotos[`${it.id}|${key}`];
+            const by = ph ? [] : othersWithPhoto(site, it.id, key); // 同じ現場の人が撮っている（写真はその人の端末）
             const started = checksStarted(rec);
-            const status = gi < start ? "pre" : (rec && rec.na) || isNaCheck(rec, key) ? "na" : ph ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
-            rows.push({ g, it, c, key, ph, status, started });
+            const status = gi < start ? "pre" : (rec && rec.na) || isNaCheck(rec, key) ? "na" : ph || by.length ? "done" : photoSkipped(rec, key) ? "skip" : "todo";
+            rows.push({ g, it, c, key, ph, by, status, started });
           })
         )
     )
@@ -7072,12 +7098,14 @@ async function renderRequired(keepScroll) {
     const row = document.createElement("div");
     row.className = "reqRow " + r.status;
     const camHtml =
-      r.status === "done"
+      r.status === "done" && r.ph
         ? `<img src="${blobUrl("required", r.ph.thumb)}" alt="">`
+        : r.status === "done"
+        ? icon(ICONS.camera, 22)
         : r.status === "todo"
         ? icon(ICONS.camera, 22)
         : "";
-    const label = { pre: "導入前", na: "該当なし", skip: "不要", todo: r.started ? "撮り忘れ" : "", done: "" }[r.status];
+    const label = { pre: "導入前", na: "該当なし", skip: "不要", todo: r.started ? "撮り忘れ" : "", done: r.ph ? "" : `${r.by.slice(0, 2).join("・")}さんが撮影済み` }[r.status];
     row.innerHTML =
       `<button class="reqCam ${r.status}" ${r.status === "done" || r.status === "todo" ? "" : "disabled"} aria-label="品質写真">${camHtml}</button>` +
       `<span class="reqText">${esc(r.c.text)}${label ? `<span class="reqLabel ${r.status}${r.status === "todo" ? " miss" : ""}">${label}</span>` : ""}</span>` +

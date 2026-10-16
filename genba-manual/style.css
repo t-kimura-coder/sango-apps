@@ -1239,3 +1239,7 @@ img.imgBroken { visibility: hidden; }
 
 /* 報告ページの注意書きの補足（お客様にも／上司だけ） */
 .memoSub { margin-top: 6px; font-size: var(--fs-sm); color: var(--color-text-sub); line-height: 1.5; }
+
+/* 同じ現場の人が付けたチェック（自分の記録ではないが、現場としては済み） */
+.checkRow.byOther .checkBox { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-primary); }
+.checkRow.byOther .checkBox svg { display: block; }
