@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 123;
+const APP_VERSION = 124;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-17", type: "feature", text: "週の報告を送ったあとの「お客様メール用の写真」の案内を分かりやすくしました（上司への報告はそこで済み、PC でメールを作るなら保存は不要）。慣れたら「次から出さない」で出さないようにできます（設定の「週の報告」で戻せます）" },
   { date: "2026-10-16", type: "feature", text: "同じ現場（同じ工事番号）の人がチェックを付けたり品質写真を撮ったりしていたら、自分の画面でも「済み」として数えるようにしました（工程の✓完了・ホームの進み具合と次の項目・撮り忘れ・写真要の一覧）。相手のチェックは薄い✓で「○○さんが確認済み」と出ます。自分でも確かめたい時は、今までどおり自分で付けられます。チェックの記録は付けた本人のものだけで、上司の見守りの人ごとの進み具合も本人の分だけです" },
   { date: "2026-10-13", type: "feature", text: "報告の「今週のこの工程」の入力例に、検査の種類（社内検査・JIO検査）と、写真が何の状態か（例：塗った後）の書き方を足しました。書いておくと、お客様への報告メールの下書きが正確になります" },
   { date: "2026-10-13", type: "fix", text: "過去の報告の写真を保存した時の名前が、Box に送った名前と違うことがあるのを直しました（前の版で送った報告・送るのを取りやめたあとに報告済みにした時）" },
@@ -3577,20 +3578,31 @@ async function markReported(memo = "", opts = null) {
   scheduleStatePush(); // 報告の要約を、上司のスマホの見守りに届ける
   goReport();
   // アプリから送った時は、そのままお客様メール用の写真を保存できるように案内する（後からでも「過去の報告」から保存できる）
-  if (opts && opts.photoIds && targets.some(isCustomerPhoto)) offerCustomerPhotos(site, targets);
+  if (opts && opts.photoIds && targets.some(isCustomerPhoto) && getSetting(CUST_OFFER_KEY) !== "0") offerCustomerPhotos(site, targets);
 }
+// 送ったあとの「お客様メール用の写真」の案内。慣れた人は設定（またはこの案内）で出さないようにできる
+const CUST_OFFER_KEY = "genba-photo-cust-offer";
 function offerCustomerPhotos(site, photos) {
   const n = photos.filter((p) => (p.sentName ? p.sentCustNo : isCustomerPhoto(p))).length;
   openSheet("お客様メール用の写真", (body, close) => {
     const p = document.createElement("p");
     p.className = "sheetText";
-    p.textContent = `お客様への報告メールに入れる写真（${n}枚）を、AI の下書きと同じ「写真01」からの名前で保存できます。iPhone では共有画面の「"ファイル"に保存」を選ぶと、名前が残ります（写真アプリに保存すると名前が消えます）。後からでも「過去の報告」から保存できます。`;
+    p.textContent =
+      `上司への報告は、これで済みです。` +
+      `iPhone でお客様へのメールを作る時は、お客様向けの写真（${n}枚）をここで手元に保存できます（どこにも送りません）。` +
+      `PC で作る時は不要です。会社の PC が、Box の報告のフォルダの中に「お客様向け」フォルダとして自動で用意します。` +
+      `保存する時は共有画面の「"ファイル"に保存」を選ぶと、AI の下書きと同じ「写真01_…」の名前が残ります。後からでも「過去の報告」から保存できます。`;
     body.appendChild(p);
-    body.appendChild(sheetButton("保存する", "btnPrimary", () => {
+    body.appendChild(sheetButton("iPhone に保存する", "btnPrimary", () => {
       close();
       shareCustomerPhotos(site, photos);
     }));
-    body.appendChild(sheetButton("あとで", "btnOutline", close));
+    body.appendChild(sheetButton("閉じる", "btnOutline", close));
+    body.appendChild(sheetButton("次から出さない（設定で戻せます）", "btnText", () => {
+      setSetting(CUST_OFFER_KEY, "0");
+      close();
+      toast("次から出しません（設定の「週の報告」で戻せます）");
+    }));
   });
 }
 
@@ -6070,6 +6082,7 @@ async function renderSettings() {
   $("bkPhotos").checked = bk.photos;
   updateBackupNote();
   $("tourAlwaysChk").checked = getSetting(TOUR_ALWAYS_KEY) === "1";
+  $("custOfferChk").checked = getSetting(CUST_OFFER_KEY) !== "0";
   $("userNameInput").value = getSetting(USER_NAME_KEY);
   $("userGivenInput").value = getSetting(USER_GIVEN_KEY);
   $("boxEmailInput").value = getBoxEmail();
@@ -7308,6 +7321,7 @@ function init() {
   $("settingsReplyBtn").addEventListener("click", () => $("replyInput").click());
   initGas();
   $("tourAlwaysChk").addEventListener("change", (e) => setSetting(TOUR_ALWAYS_KEY, e.target.checked ? "1" : "0"));
+  $("custOfferChk").addEventListener("change", (e) => setSetting(CUST_OFFER_KEY, e.target.checked ? "1" : "0"));
   $("tourAgainBtn").addEventListener("click", startTour);
   $("helpTourBtn").addEventListener("click", startTour);
   $("helpFeedbackBtn").addEventListener("click", openFeedback);

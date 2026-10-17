@@ -1243,3 +1243,6 @@ img.imgBroken { visibility: hidden; }
 /* 同じ現場の人が付けたチェック（自分の記録ではないが、現場としては済み） */
 .checkRow.byOther .checkBox { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-primary); }
 .checkRow.byOther .checkBox svg { display: block; }
+
+/* 文字だけのボタン（シートの「次から出さない」など） */
+.btn.btnText { background: none; border: none; box-shadow: none; color: var(--color-text-sub); font-size: var(--fs-sm); text-decoration: underline; }
