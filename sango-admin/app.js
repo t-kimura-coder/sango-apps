@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -435,7 +435,7 @@ function renderFilters() {
   const fh = $("fHidden"); if (fh) fh.onchange = (e) => { F.showHidden = e.target.checked; renderListBody(); };
 }
 
-/* ---------- 敷地マップ（最初の画面）：建物を押すと、画像と状況が出る。「この建物の症例を見る」で、一覧へ ---------- */
+/* ---------- 敷地マップ（最初の画面）：建物を押すと、その建物の近くに吹き出し。「症例」で一覧へ、「図面・点検」で建物の中の図 ---------- */
 let mapSel = "";
 /* 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） */
 const FPA = { info: null, cache: new Map() };
@@ -457,15 +457,29 @@ function viewMap(main) {
   const nTodo = live.filter(isTodo).length, nReq = live.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length;
   main.innerHTML = `<h2 class="mapH">山郷の敷地</h2>
     <div class="mapKpis"><a class="mapKpi" href="#/list" data-todo="1"><small>未整理の症例</small><b>${nTodo}</b></a><a class="mapKpi" href="#/list" data-req="1"><small>依頼（対応中）</small><b>${nReq}</b></a><a class="mapKpi" href="#/list"><small>症例の合計</small><b>${live.length}</b></a></div>
-    <div class="panel mapPanel"><div id="siteMapMain"></div><div id="mapPrev"></div></div>`;
+    <div class="panel mapPanel"><div id="siteMapMain"></div></div>`;
   main.querySelectorAll(".mapKpi").forEach((a) => (a.onclick = () => { F.blds = new Set(); F.todo = !!a.dataset.todo; F.req = !!a.dataset.req; }));
-  const prev = () => {
-    if (!mapSel) { $("mapPrev").innerHTML = ""; return; }
-    const s = st(mapSel);
-    $("mapPrev").innerHTML = `<div class="mapPrev">${bldImg(mapSel)}<div class="mapPrevBody"><h3>${esc(typeof smName === "function" ? smName(mapSel) : mapSel)}</h3><div class="mapPrevNote">未整理 ${s.todo}件　／　依頼（対応中）${s.req}件　／　症例 ${s.all}件</div><button class="btn primary" id="mapGo">この建物の症例を見る →</button><div id="mapFp"></div></div></div>`;
-    fpaInfo().then((info) => { const slot = $("mapFp"); if (slot && info && info.buildings && info.buildings[mapSel] && typeof fpOpen === "function") { slot.innerHTML = `<button class="btn" id="mapFpBtn" style="margin-top:6px">建物の中（平面図）を見る</button>`; $("mapFpBtn").onclick = () => fpOpen({ title: (typeof smName === "function" ? smName(mapSel) : mapSel), load: () => fpaLoad(mapSel) }); } });
-    $("mapGo").onclick = () => { F.blds = new Set([mapSel]); F.todo = false; F.req = false; location.hash = "#/list"; };
-    fillIcons($("mapPrev"));
+  const prev = () => { // 建物を押すと、その建物の近くに吹き出し（この建物ですか？ → 症例／図面・点検）
+    const wrap = $("siteMapMain") && $("siteMapMain").querySelector(".smWrap");
+    if (!wrap) return;
+    wrap.onclick = (e) => { if (!e.target.closest(".smSpot") && !e.target.closest(".mpPop")) { mapSel = ""; if (typeof mpHide === "function") mpHide(wrap); wrap.querySelectorAll(".smSpot.ok").forEach((el) => el.classList.remove("ok")); } };
+    const spot = mapSel && wrap.querySelector(`.smSpot[data-b="${CSS.escape(mapSel)}"]`);
+    if (!spot || typeof mpShow !== "function") return;
+    const s = st(mapSel), name = typeof smName === "function" ? smName(mapSel) : mapSel, bid = mapSel;
+    mpShow(wrap, spot, {
+      img: bldImg(bid), name,
+      stat: `未整理 <b>${s.todo}</b>件　依頼（対応中）<b>${s.req}</b>件<br>症例 ${s.all}件${s.urgent ? `　<span style="color:#a3322a;font-weight:800">急ぎあり</span>` : ""}`,
+      buttons: [
+        { label: "症例", sub: "この建物の一覧", primary: true, onClick: () => { F.blds = new Set([bid]); F.todo = false; F.req = false; location.hash = "#/list"; } },
+        { label: "図面・点検", sub: "建物の中の図", onClick: async () => {
+          const info = await fpaInfo();
+          if (!(info && info.buildings && info.buildings[bid]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
+          fpOpen({ title: name, load: () => fpaLoad(bid) });
+        } },
+      ],
+      onClose: () => { mapSel = ""; },
+    });
+    fpaInfo(); // 図面の有無を、先に聞いておく（押した時に待たない）
   };
   if (typeof smRender === "function") {
     const narrow = (typeof MOBILE !== "undefined" && MOBILE) || innerWidth <= 720;

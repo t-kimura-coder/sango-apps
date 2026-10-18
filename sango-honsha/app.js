@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -214,6 +214,20 @@ function bldStat(id) {
   const has = (st) => open.some((r) => stage(r) === st);
   return { all: list.length, open: open.length, tone: has("todo") ? "todo" : has("billing") ? "bill" : has("work") ? "work" : "", nNew: list.filter((r) => !seen.has(r.id)).length, urgent: open.some((r) => r.urgent) };
 }
+/* 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） */
+const FPH = { info: null, cache: new Map() };
+async function fphInfo() { if (FPH.info) return FPH.info; if (!S.api) return null; try { FPH.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPH.info = null; } return FPH.info; }
+async function fphLoad(bid) {
+  if (FPH.cache.has(bid)) return FPH.cache.get(bid);
+  let j = null;
+  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
+    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
+    if (j && Array.isArray(j.floors) && j.floors.length) break;
+    j = null; await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (!j) throw new Error("平面図を受け取れませんでした");
+  const d = { note: j.note, floors: j.floors }; FPH.cache.set(bid, d); return d;
+}
 async function viewMap(main) {
   if (!S.api) return viewEmptyApi(main);
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
@@ -230,22 +244,36 @@ async function viewMap(main) {
   const chips = BLDS.map((b) => { const st = bldStat(b.id); return `<button class="bchip ${st.tone}" data-b="${esc(b.id)}">${esc(b.name)}${st.open ? `<b>${st.open}</b>` : ""}${st.nNew ? `<i>新着</i>` : ""}</button>`; }).join("");
   const todo = S.records.filter((r) => stage(r) === "todo").sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.t - a.t).slice(0, 5);
   main.innerHTML = `<h2>山郷の敷地</h2>${lateBanner()}${kpiHtml(counts)}
-    <div class="mapCard">${zone ? `<button class="zoneBack" id="zoneBack">← 敷地全体（${zone.name}を表示中）</button>` : ""}<div class="mapWrap${zone ? " zoomed" : ""}" style="aspect-ratio:${vw} / ${vh}">${narrow ? "" : `<div id="bPrev"></div>`}${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
-      ${narrow ? `<div id="bPrev" class="bPrevBelow"></div>` : ""}<div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">${narrow && !zone ? "エリアを押すと、拡大します" : "建物を押すと、画像と状況が出ます"}</span></div></div>
+    <div class="mapCard">${zone ? `<button class="zoneBack" id="zoneBack">← 敷地全体（${zone.name}を表示中）</button>` : ""}<div class="mapWrap${zone ? " zoomed" : ""}" style="aspect-ratio:${vw} / ${vh}">${svg || `<div class="empty">マップを読み込めませんでした。下の一覧から選んでください。</div>`}${svg ? spots : ""}</div>
+      <div class="mapLegend"><span><i class="lg todo"></i>未手配あり</span><span><i class="lg bill"></i>請求待ちあり</span><span><i class="lg work"></i>進行中</span><span class="note">${narrow && !zone ? "エリアを押すと、拡大します" : "建物を押すと、その建物の吹き出しが出ます"}</span></div></div>
     <div class="bchips">${chips}</div>
     <h3 class="subH">いま手配が必要な依頼</h3>${todo.map((r) => `<a class="card urgentLine" href="#/r/${encodeURIComponent(r.id)}"><div class="cardImg">${bldImg(r.building_id)}</div><div class="cardBody"><div class="top">${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}<span class="ttl">${catImg(r.category_id)}${esc(r.building)}｜${esc(r.category)}</span></div><div class="what">${esc(r.what)}</div><div class="meta">${fmtDate(r.t)}　${esc(r.sender)}</div></div></a>`).join("") || `<div class="note" style="padding:6px 2px">未手配の依頼は、ありません</div>`}`;
-  const prev = main.querySelector("#bPrev");
-  const showPrev = (id) => { // 1回目の押し：建物の画像と状況を見せる。「この建物を開く」で、依頼の画面へ
+  const wrap = main.querySelector(".mapWrap");
+  const showPrev = (id) => { // 建物を押すと、その建物の近くに吹き出し（この建物ですか？ → 依頼／図面・点検）
     const b = BLDS.find((x) => x.id === id) || { id, name: id }, st = bldStat(id);
+    const spot = wrap && wrap.querySelector(`.spot[data-b="${CSS.escape(id)}"]`);
+    if (!spot || typeof mpShow !== "function") { location.hash = "#/b/" + encodeURIComponent(id); return; }   // マップに出ていない建物は、すぐ建物の画面へ
     main.querySelectorAll(".spot, .bchip").forEach((e) => e.classList.toggle("sel", e.dataset.b === id));
-    prev.innerHTML = `<div class="bPrev enter"><div class="bPrevImg">${bldImg(id)}</div><div class="bPrevBody"><h3>${esc(b.name)}</h3><div class="note">${st.open ? `対応が必要な依頼 ${st.open}件` : "対応が必要な依頼はありません"}${st.nNew ? `　<span class="chip new">新着 ${st.nNew}</span>` : ""}${st.urgent ? `　<span class="chip urgent">急ぎ</span>` : ""}</div><div class="note">これまでの依頼 ${st.all}件</div><button class="btn bPrevGo" data-go="${esc(id)}">この建物を開く →</button></div></div>`;
-    prev.querySelector(".bPrevGo").onclick = () => { location.hash = "#/b/" + encodeURIComponent(id); };
-    selB = id;
+    mpShow(wrap, spot, {
+      img: bldImg(id), name: b.name,
+      stat: `${st.open ? `対応が必要な依頼 <b>${st.open}</b>件` : "対応が必要な依頼はありません"}${st.nNew ? `　<span class="chip new">新着 ${st.nNew}</span>` : ""}${st.urgent ? `　<span class="chip urgent">急ぎ</span>` : ""}<br>これまでの依頼 ${st.all}件`,
+      buttons: [
+        { label: "依頼", sub: "この建物の依頼", primary: true, onClick: () => { location.hash = "#/b/" + encodeURIComponent(id); } },
+        { label: "図面・点検", sub: "建物の中の図", onClick: async () => {
+          const info = await fphInfo();
+          if (!(info && info.buildings && info.buildings[id]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
+          fpOpen({ title: b.name, load: () => fphLoad(id) });
+        } },
+      ],
+      onClose: () => { selB = ""; main.querySelectorAll(".spot.sel, .bchip.sel").forEach((e) => e.classList.remove("sel")); },
+    });
+    selB = id; fphInfo();
   };
-  main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = () => showPrev(el.dataset.b)));
+  if (wrap) wrap.onclick = (e) => { if (!e.target.closest(".spot") && !e.target.closest(".mpPop") && !e.target.closest(".zoneBtn")) { selB = ""; mpHide(wrap); main.querySelectorAll(".spot.sel, .bchip.sel").forEach((x) => x.classList.remove("sel")); } };
+  main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = (e) => { e.stopPropagation(); showPrev(el.dataset.b); }));
   main.querySelectorAll(".zoneBtn").forEach((el) => (el.onclick = () => { mapZone = el.dataset.z; selB = ""; viewMap(main); }));
   if ($("zoneBack")) $("zoneBack").onclick = () => { mapZone = ""; selB = ""; viewMap(main); };
-  if (selB && prev) showPrev(selB); // 自動更新で描き直しても、選択を保つ
+  if (selB && wrap && wrap.querySelector(`.spot[data-b="${CSS.escape(selB)}"]`)) showPrev(selB); // 自動更新で描き直しても、選択を保つ
   main.querySelectorAll(".kpi[data-s]").forEach((el) => (el.onclick = () => { F.stage = el.dataset.s; F.bld = ""; F.late = ""; location.hash = "#/list"; }));
   wireLate(main);
 }
