@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -440,7 +440,17 @@ let mapSel = "";
 /* 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） */
 const FPA = { info: null, cache: new Map() };
 async function fpaInfo() { if (FPA.info) return FPA.info; if (!S.api || S.demo) return null; try { FPA.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPA.info = null; } return FPA.info; }
-async function fpaLoad(bid) { if (FPA.cache.has(bid)) return FPA.cache.get(bid); const j = await apiCall({ action: "floorPlanGet", building: bid }, 90000); const d = { note: j.note, floors: j.floors }; FPA.cache.set(bid, d); return d; }
+async function fpaLoad(bid) {
+  if (FPA.cache.has(bid)) return FPA.cache.get(bid);
+  let j = null;
+  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
+    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
+    if (j && Array.isArray(j.floors) && j.floors.length) break;
+    j = null; await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (!j) throw new Error("平面図を受け取れませんでした");
+  const d = { note: j.note, floors: j.floors }; FPA.cache.set(bid, d); return d;
+}
 function viewMap(main) {
   const live = S.records.filter((r) => !isHidden(r));
   const st = (id) => { const l = live.filter((r) => r.buildingId === id); return { all: l.length, todo: l.filter(isTodo).length, req: l.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length, urgent: l.some((r) => r.req && r.urgent && adm(r).status !== "done") }; };
@@ -453,7 +463,7 @@ function viewMap(main) {
     if (!mapSel) { $("mapPrev").innerHTML = ""; return; }
     const s = st(mapSel);
     $("mapPrev").innerHTML = `<div class="mapPrev">${bldImg(mapSel)}<div class="mapPrevBody"><h3>${esc(typeof smName === "function" ? smName(mapSel) : mapSel)}</h3><div class="mapPrevNote">未整理 ${s.todo}件　／　依頼（対応中）${s.req}件　／　症例 ${s.all}件</div><button class="btn primary" id="mapGo">この建物の症例を見る →</button><div id="mapFp"></div></div></div>`;
-    fpaInfo().then((info) => { const slot = $("mapFp"); if (slot && info && info.buildings && info.buildings[mapSel] && typeof fpOpen === "function") { slot.innerHTML = `<button class="btn" id="mapFpBtn" style="margin-top:6px">建物の中（平面図）を見る</button>`; $("mapFpBtn").onclick = () => fpOpen({ title: (typeof smName === "function" ? smName(mapSel) : mapSel) + "の中", load: () => fpaLoad(mapSel) }); } });
+    fpaInfo().then((info) => { const slot = $("mapFp"); if (slot && info && info.buildings && info.buildings[mapSel] && typeof fpOpen === "function") { slot.innerHTML = `<button class="btn" id="mapFpBtn" style="margin-top:6px">建物の中（平面図）を見る</button>`; $("mapFpBtn").onclick = () => fpOpen({ title: (typeof smName === "function" ? smName(mapSel) : mapSel), load: () => fpaLoad(mapSel) }); } });
     $("mapGo").onclick = () => { F.blds = new Set([mapSel]); F.todo = false; F.req = false; location.hash = "#/list"; };
     fillIcons($("mapPrev"));
   };

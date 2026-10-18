@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -333,7 +333,13 @@ async function fpLoad(bid) { // 版が同じなら、端末の控えを使う。
   const key = "fp_" + bid, info = await fpInfo();
   let cached = null; try { cached = await dbGet("meta", key); } catch (e) { cached = null; }
   if (cached && cached.data && (!info || info.version === cached.version)) return cached.data;
-  const j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
+  let j = null;
+  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
+    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
+    if (j && Array.isArray(j.floors) && j.floors.length) break;
+    j = null; await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (!j) throw new Error("平面図を受け取れませんでした");
   const data = { note: j.note, floors: j.floors };
   try { await dbPut("meta", { key, version: j.version, data }); } catch (e) { /* 控えられなくても、見られる */ }
   return data;
@@ -345,7 +351,7 @@ async function fpEntry(bid, name) {
   if (!has) { try { const c = await dbGet("meta", "fp_" + bid); has = !!(c && c.data); } catch (e) { has = false; } }
   if (!has || $("fpSlot") !== slot) return;
   slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
-  $("fpBtn").onclick = () => fpOpen({ title: name + "の中", load: () => fpLoad(bid) });
+  $("fpBtn").onclick = () => fpOpen({ title: name, load: () => fpLoad(bid) });
 }
 
 /* ---------- 建物ページ ---------- */
