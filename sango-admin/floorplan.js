@@ -17,6 +17,7 @@
     + ".fpPins{position:absolute;inset:0}.fpPin{position:absolute;transform:translate(-50%,-100%) scale(var(--inv,1));transform-origin:50% 100%;min-width:26px;height:26px;border-radius:13px 13px 13px 2px;border:2px solid #fff;background:#2f6b45;color:#fff;font-size:12px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer;padding:0 6px}"
     + ".fpPin.over{background:#a3322a}.fpPin.soon{background:#b07a3f}.fpPin.none{background:#8a8f84}"
     + ".fpCtl{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}.fpCtl button{width:42px;height:42px;border-radius:21px;border:1px solid #244f37;background:#fff;color:#244f37;font-size:20px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
+    + ".fpSw{position:absolute;left:10px;top:10px;display:flex;border:1px solid #244f37;border-radius:18px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.25)}.fpSw button{border:0;background:#fff;color:#244f37;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer}.fpSw button.on{background:#244f37;color:#fff}"
     + ".fpNote{padding:8px 14px calc(8px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid #d9d4c5;font-size:12.5px;color:#5a645d;line-height:1.5}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
@@ -54,7 +55,11 @@
 
     function show(floor) {
       st.floor = floor; st.w = floor.w; st.h = floor.h;
-      stage.innerHTML = '<div class="fpInner"><img alt="" src="' + floor.img + '"><div class="fpPins"></div></div><div class="fpCtl"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="fit" style="font-size:13px">全体</button></div>';
+      var useGuide = !!floor.guide && st.view !== "plan";
+      var src = useGuide ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(floor.guide) : floor.img;
+      var sw = floor.guide ? '<div class="fpSw"><button data-v="guide"' + (useGuide ? ' class="on"' : "") + '>案内図</button><button data-v="plan"' + (useGuide ? "" : ' class="on"') + '>元の図面</button></div>' : "";
+      stage.innerHTML = '<div class="fpInner"><img alt="" src="' + src + '"><div class="fpPins"></div></div>' + sw + '<div class="fpCtl"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="fit" style="font-size:13px">全体</button></div>';
+      stage.querySelectorAll(".fpSw button").forEach(function (b) { b.onclick = function () { st.view = b.dataset.v; show(floor); }; b.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); });
       st.inner = stage.querySelector(".fpInner"); st.pins = stage.querySelector(".fpPins");
       st.inner.style.width = st.w + "px"; st.inner.style.height = st.h + "px";
       var list = (o.pins && o.pins(floor.id)) || [];
