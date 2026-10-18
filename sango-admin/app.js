@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -733,6 +733,9 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-18", type: "feature", text: "敷地マップで建物を押すと、その建物の横に吹き出しが出るようになりました。「症例」でその建物の一覧へ、「図面・点検」で建物の中の図を開けます。" },
+  { date: "2026-10-18", type: "feature", text: "建物の中の図に「案内図」を追加しました（店舗・春・香から。ほかの棟も順に足します）。「案内図／元の図面」で切り替えられます。店舗はイラストです。" },
+  { date: "2026-10-18", type: "fix", text: "建物の中の図が、開くまでに時間がかかったり「図がない」と出たりするのを直しました。" },
   { date: "2026-10-13", type: "feature", text: "ベルの「お知らせ」を追加しました。新しい機能や直しを、ここでお知らせします。" },
   { date: "2026-10-13", type: "feature", text: "スマホ表示の症例の詳細にも、依頼の「手配の状況」が出るようになりました。" },
   { date: "2026-10-12", type: "feature", text: "依頼の症例の詳細に「手配の状況」が出ます（手配済み・施工待ち・施工完了、訪問予定日、本社からのひとこと、業者の金額の目安）。" },
