@@ -55,10 +55,13 @@
 
     function show(floor) {
       st.floor = floor; st.w = floor.w; st.h = floor.h;
-      var useGuide = !!floor.guide && st.view !== "plan";
-      var src = useGuide ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(floor.guide) : floor.img;
-      var sw = floor.guide ? '<div class="fpSw"><button data-v="guide"' + (useGuide ? ' class="on"' : "") + '>案内図</button><button data-v="plan"' + (useGuide ? "" : ' class="on"') + '>元の図面</button></div>' : "";
-      stage.innerHTML = '<div class="fpInner"><img alt="" src="' + src + '"><div class="fpPins"></div></div>' + sw + '<div class="fpCtl"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="fit" style="font-size:13px">全体</button></div>';
+      var hasPins = !!(o.pins && (o.pins(floor.id) || []).length), v = st.view;
+      var base = floor.illust || (floor.guide ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(floor.guide) : "");
+      if (!base || v === "plan") v = "plan"; else if (v === "fade" && !(floor.illust && hasPins)) v = "base"; else if (v !== "fade") v = "base";
+      var src = v === "plan" ? floor.img : base;
+      var btn = function (key, label) { return '<button data-v="' + key + '"' + (v === key ? ' class="on"' : "") + ">" + label + "</button>"; };
+      var sw = base ? '<div class="fpSw">' + btn("base", floor.illust ? "イラスト" : "案内図") + (floor.illust && hasPins ? btn("fade", "点検用") : "") + btn("plan", "元の図面") + "</div>" : "";
+      stage.innerHTML = '<div class="fpInner"><img alt="" style="width:100%;height:100%' + (v === "fade" ? ";filter:saturate(.35) brightness(1.12) contrast(.85)" : "") + '" src="' + src + '"><div class="fpPins"></div></div>' + sw + '<div class="fpCtl"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="fit" style="font-size:13px">全体</button></div>';
       stage.querySelectorAll(".fpSw button").forEach(function (b) { b.onclick = function () { st.view = b.dataset.v; show(floor); }; b.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); });
       st.inner = stage.querySelector(".fpInner"); st.pins = stage.querySelector(".fpPins");
       st.inner.style.width = st.w + "px"; st.inner.style.height = st.h + "px";
