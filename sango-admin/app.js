@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -474,7 +474,7 @@ function viewMap(main) {
         { label: "図面・点検", sub: "建物の中の図", onClick: async () => {
           const info = await fpaInfo();
           if (!(info && info.buildings && info.buildings[bid]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
-          fpOpen({ title: name, load: () => fpaLoad(bid) });
+          fpOpen({ title: name, load: () => fpaLoad(bid), noPlan: true });   // 元の図面は、管理者には出さない（本社だけ）
         } },
       ],
       onClose: () => { mapSel = ""; },
@@ -733,6 +733,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-18", type: "feature", text: "建物の中の図：和の案内図を追加しました。開いた時や「全体」を押した時に、建物が画面の真ん中に来るようにしました。管理者の画面では「元の図面」の切替をなくし、案内図だけにしました（案内図がまだない棟は、元の図面が出ます）。" },
   { date: "2026-10-18", type: "feature", text: "敷地マップで建物を押すと、その建物の横に吹き出しが出るようになりました。「症例」でその建物の一覧へ、「図面・点検」で建物の中の図を開けます。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図に「案内図」を追加しました（店舗・春・香から。ほかの棟も順に足します）。「案内図／元の図面」で切り替えられます。店舗はイラストです。" },
   { date: "2026-10-18", type: "fix", text: "建物の中の図が、開くまでに時間がかかったり「図がない」と出たりするのを直しました。" },
