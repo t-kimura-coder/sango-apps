@@ -17,6 +17,7 @@
  *     mount           … 要素を渡すと、画面いっぱいではなく、その中に図を埋め込む（点検のタブ）。上の帯（戻る）は出さない
  *     filter(eq, s)   … 渡すと、絞り込みはアプリ側で決める（false のピンはうすく）。図の中の頻度のボタンは出さない
  *     hint            … 図の下の説明（凡例のあとの文）を差し替える
+ *     onExpand()      … mount の時に、右上に「大きく見る」を出す。押した時に呼ぶ（アプリが、画面いっぱいの図を開く）
  *   戻り値 { close, redraw(), focusItem(no) } … redraw＝ピンを描き直す（絞り込み・記録が変わった時）
  *                                             focusItem＝その点検の機器だけを濃く（null で戻す）。その機器がある階に切り替える
  * 「全体」は、図の白い余白を除いた、建物の部分が画面の中央に来るように合わせる（階を切り替えても、真ん中がそろう）
@@ -54,6 +55,7 @@
     + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
     + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
     + ".fpBack.fpInline{position:relative;inset:auto;z-index:auto;height:min(56vh,520px);border:1px solid #d9d4c5;border-radius:14px;overflow:hidden;margin:0 0 12px}.fpInline .fpHead{display:none}.fpInline .fpTabs{padding:6px 10px}.fpInline .fpNote{padding:6px 10px;font-size:12px}.fpInline .fpCard{bottom:8px;max-height:calc(100% - 16px);overflow:auto}"
+    + ".fpBig{position:absolute;right:10px;top:10px;border:1px solid #244f37;background:#244f37;color:#fff;border-radius:18px;padding:7px 14px;font-size:14px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -194,6 +196,11 @@
       if (im.complete && im.naturalWidth) setTimeout(onImg, 0); else im.addEventListener("load", onImg);
       st.inner.style.width = st.w + "px"; st.inner.style.height = st.h + "px";
       drawEquip(floor);
+      if (o.mount && o.onExpand) {   // 埋め込みの図：画面いっぱいで見る
+        var big = document.createElement("button"); big.className = "fpBig"; big.textContent = "⤢ 大きく見る";
+        big.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); big.onclick = function () { o.onExpand(); };
+        stage.appendChild(big);
+      }
       stage.querySelectorAll(".fpCtl button").forEach(function (b) { b.onclick = function () { var z = b.dataset.z, cx = stage.clientWidth / 2, cy = stage.clientHeight / 2; if (z === "fit") fit(); else zoomAt(z === "in" ? 1.5 : 1 / 1.5, cx, cy); }; b.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); });
       fit();
       Array.prototype.forEach.call(tabs.querySelectorAll(".fpTab"), function (t) { t.classList.toggle("on", t.dataset.f === floor.id); });

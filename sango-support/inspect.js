@@ -229,17 +229,22 @@ function inspMountMap(host, bid, redraw) {
   if (!inspMapV || inspMapV.bid !== bid) {
     if (inspMapV) inspMapV.api.close();
     const el = document.createElement("div"), b = ((inspData.meta && inspData.meta.buildings) || []).find((x) => x.id === bid) || { name: bid };
+    const recUrl = (eq) => `#/insp/rec/${encodeURIComponent(fpItemId(eq.insp))}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`;
+    const filter = (eq, st) => (st.item ? inspOk(st.item) : !inspFiltered());
+    const hint = "ピンを押すと、点検の状態が出ます。上の「種類」「頻度」で絞ると、図のピンも同じように絞れます。";
     const api = fpOpen({ mount: el, title: b.name, noPlan: true, ...fpPinOpts(bid),
+      onExpand: () => {   // 「大きく見る」：同じ絞り込み・同じ「図」の選択のまま、画面いっぱいで開く（ホームの建物のページと同じ図）
+        const big = fpOpen({ title: b.name, load: () => fpLoad(bid), noPlan: true, ...fpPinOpts(bid), filter, hint: "ピンを押すと、点検の状態が出ます。点検のタブで選んだ「種類」「頻度」の絞り込みのまま出ています。",
+          equipAction: "点検を記録する", onEquip: (eq, close) => { close(); go(recUrl(eq)); } });
+        if (inspFocusNo) big.focusItem(inspFocusNo);
+      },
       load: () => fpLoad(bid).then((d) => {   // 図にピンがある点検を覚える（一覧の「図」「図なし」）
         const had = !!inspPinNos[bid];
         inspPinNos[bid] = new Set(((d && d.floors) || []).flatMap((f) => (f.equip || []).map((e) => e.insp)));
         if (!had && location.hash.startsWith("#/insp") && !route().id && inspBld === bid) setTimeout(redraw, 0);
         return d;
       }),
-      filter: (eq, st) => (st.item ? inspOk(st.item) : !inspFiltered()),
-      hint: "ピンを押すと、点検の状態が出ます。上の「種類」「頻度」で絞ると、図のピンも同じように絞れます。",
-      equipAction: "点検を記録する",
-      onEquip: (eq) => go(`#/insp/rec/${encodeURIComponent(fpItemId(eq.insp))}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`) });
+      filter, hint, equipAction: "点検を記録する", onEquip: (eq) => go(recUrl(eq)) });
     inspMapV = { bid, el, api, f: 0 };
   }
   host.appendChild(inspMapV.el);
