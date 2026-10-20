@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-20", type: "fix", text: "建物の中の図で「元の図面」の切替をなくし、案内図だけにしました。" },
   { date: "2026-10-20", type: "feature", text: "建物の中の図に、点検する機器のピンが出るようになりました（試し：図面から読んだ下書きで、現地確認のあと直します）。ピンの色で点検の状態（期限超過・期限が近い・済・まだ記録なし）、ピンの下に次の期限が出ます。下のボタンで毎月・年1回などに絞れます。ピンを押すと、そのまま点検を記録できます。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図：和の案内図を追加しました。開いた時や「全体」を押した時に、建物が画面の真ん中に来るようにしました。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図に「案内図」を追加しました（店舗・春・香から。ほかの棟も順に足します）。「案内図／元の図面」で切り替えられます。" },
@@ -357,7 +358,8 @@ async function fpEntry(bid, name) {
   slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
   $("fpBtn").onclick = async () => {
     try { await inspEnsure(); } catch (e) { /* 点検のデータが無くても、図は見られる */ }
-    fpOpen({ title: name, load: () => fpLoad(bid), status: (eq) => fpEquipStatus(bid, eq), equipAction: "点検を記録する", art: "art/insp-",
+    fpOpen({ title: name, load: () => fpLoad(bid), noPlan: true,   // 元の図面は本社だけ（リーダー・管理者は案内図）
+      status: (eq) => fpEquipStatus(bid, eq), equipAction: "点検を記録する", art: "art/insp-",
       onEquip: (eq, close) => { const id = fpItemId(eq.insp); close(); go(`#/insp/rec/${encodeURIComponent(id)}/${encodeURIComponent(bid)}`); } });
   };
 }
