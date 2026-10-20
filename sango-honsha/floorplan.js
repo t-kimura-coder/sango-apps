@@ -118,7 +118,7 @@
       + '<div class="fpStage"><div class="fpMsg">読み込んでいます…<br><small>初めて開く時・図が新しくなった時は、30秒ほどかかることがあります</small></div></div><div class="fpNote"></div>';
     if (o.mount) { o.mount.innerHTML = ""; o.mount.appendChild(root); } else document.body.appendChild(root);
     var prevOverflow = document.body.style.overflow; if (!o.mount) document.body.style.overflow = "hidden";
-    var close = function () { if (!root.parentNode) return; if (!o.mount) document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); root.remove(); if (o.onClose) o.onClose(); };
+    var close = function () { if (!root.parentNode) return; if (!o.mount) document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); window.removeEventListener("resize", onResize); root.remove(); if (o.onClose) o.onClose(); };   // 閉じたら、図のデータを持ち続けないように、見張りも外す
     var onKey = function (e) { if (e.key === "Escape" && !o.mount) close(); };
     document.addEventListener("keydown", onKey);
     root.querySelector(".fpClose").onclick = close;
@@ -294,7 +294,8 @@
     stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up); stage.addEventListener("pointerleave", up);
     stage.addEventListener("wheel", function (e) { if (!st.inner || (o.mount && !e.ctrlKey)) return; e.preventDefault(); var r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     stage.addEventListener("scroll", function () { stage.scrollTop = 0; stage.scrollLeft = 0; });   // ボタンを押した時に、ブラウザが中を動かすのを戻す（図は transform で動かす）
-    window.addEventListener("resize", function () { if (st.inner && document.body.contains(root)) fit(); });
+    function onResize() { if (st.inner && document.body.contains(root)) fit(); }
+    window.addEventListener("resize", onResize);
 
     // ---- 読み込み ----
     Promise.resolve().then(o.load).then(function (d) {
@@ -305,8 +306,7 @@
       if (fl.length < 2) tabs.hidden = true;
       st.floors = fl;
       var withEq = !!o.status && fl.some(function (f) { return (f.equip || []).length; });
-      note.innerHTML = (withEq && o.focus ? "" : withEq ? '<div class="fpLeg"><span class="over">期限超過</span><span class="soon">期限が近い</span><span class="done">済（下の日付は次の期限）</span><span class="none">まだ記録なし</span></div>ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。' : "")
-        .replace("ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。", o.hint != null ? esc(o.hint) : "ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。")
+      note.innerHTML = (withEq && o.focus ? "" : withEq ? '<div class="fpLeg"><span class="over">期限超過</span><span class="soon">期限が近い</span><span class="done">済（下の日付は次の期限）</span><span class="none">まだ記録なし</span></div>' + (o.hint != null ? esc(o.hint) : "ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。") : "")
         + esc(d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + (withEq ? "" : "　（機器のピンは、現地確認のあと、ここに入ります）");
       show(floorOf(st.focus) || fl[0]);   // 点検の記録の画面から：その点検の機器がある階から
     }).catch(function (e) { stage.innerHTML = '<div class="fpMsg">平面図を読み込めませんでした。<br>電波のある所で、もう一度開いてください。<br><small>' + esc(String((e && e.message) || e).slice(0, 80)) + "</small></div>"; });
