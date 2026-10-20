@@ -14,6 +14,11 @@
  *     equipAction     … 札のボタンの文字（関数なら eq を受け取って文字を返す）
  *     onClose()       … 図を閉じた時
  *     noPlan          … true なら「元の図面」の切替を出さない（管理者。案内図もイラストもない棟は、元の図面だけを出す）
+ *     mount           … 要素を渡すと、画面いっぱいではなく、その中に図を埋め込む（点検のタブ）。上の帯（戻る）は出さない
+ *     filter(eq, s)   … 渡すと、絞り込みはアプリ側で決める（false のピンはうすく）。図の中の頻度のボタンは出さない
+ *     hint            … 図の下の説明（凡例のあとの文）を差し替える
+ *   戻り値 { close, redraw(), focusItem(no) } … redraw＝ピンを描き直す（絞り込み・記録が変わった時）
+ *                                             focusItem＝その点検の機器だけを濃く（null で戻す）。その機器がある階に切り替える
  * 「全体」は、図の白い余白を除いた、建物の部分が画面の中央に来るように合わせる（階を切り替えても、真ん中がそろう）
  * 操作：ドラッグで動かす／2本指（ホイール）で拡大・縮小／ダブルタップで拡大／ボタンの＋－
  */
@@ -48,6 +53,7 @@
     + ".fpFocus{position:absolute;left:10px;right:62px;bottom:10px;background:#fff;border:1px solid #244f37;border-radius:12px;padding:6px 10px;font-size:13px;color:#244f37;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.2)}"
     + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
     + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
+    + ".fpBack.fpInline{position:relative;inset:auto;z-index:auto;height:min(56vh,520px);border:1px solid #d9d4c5;border-radius:14px;overflow:hidden;margin:0 0 12px}.fpInline .fpHead{display:none}.fpInline .fpTabs{padding:6px 10px}.fpInline .fpNote{padding:6px 10px;font-size:12px}.fpInline .fpCard{bottom:8px;max-height:calc(100% - 16px);overflow:auto}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -105,17 +111,17 @@
 
   window.fpOpen = function (o) {
     addCss();
-    var root = document.createElement("div"); root.className = "fpBack";
+    var root = document.createElement("div"); root.className = "fpBack" + (o.mount ? " fpInline" : "");
     root.innerHTML = '<div class="fpHead"><button class="fpClose">← 戻る</button><h3>' + esc(o.title || "平面図") + '</h3></div><div class="fpTabs"></div>'
       + '<div class="fpStage"><div class="fpMsg">読み込んでいます…<br><small>初めて開く時・図が新しくなった時は、30秒ほどかかることがあります</small></div></div><div class="fpNote"></div>';
-    document.body.appendChild(root);
-    var prevOverflow = document.body.style.overflow; document.body.style.overflow = "hidden";
-    var close = function () { if (!root.parentNode) return; document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); root.remove(); if (o.onClose) o.onClose(); };
-    var onKey = function (e) { if (e.key === "Escape") close(); };
+    if (o.mount) { o.mount.innerHTML = ""; o.mount.appendChild(root); } else document.body.appendChild(root);
+    var prevOverflow = document.body.style.overflow; if (!o.mount) document.body.style.overflow = "hidden";
+    var close = function () { if (!root.parentNode) return; if (!o.mount) document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); root.remove(); if (o.onClose) o.onClose(); };
+    var onKey = function (e) { if (e.key === "Escape" && !o.mount) close(); };
     document.addEventListener("keydown", onKey);
     root.querySelector(".fpClose").onclick = close;
     var stage = root.querySelector(".fpStage"), tabs = root.querySelector(".fpTabs"), note = root.querySelector(".fpNote");
-    var st = { sc: 1, min: 0.1, tx: 0, ty: 0, floor: null, w: 0, h: 0, inner: null, pins: null, cb: null, flt: "", sel: "" };
+    var st = { sc: 1, min: 0.1, tx: 0, ty: 0, floor: null, w: 0, h: 0, inner: null, pins: null, cb: null, flt: "", sel: "", focus: o.focus || 0, floors: [] };
     var FREQ = [["m1", "毎月"], ["m3", "3か月"], ["m6", "半年"], ["y1", "年1回"], ["season", "季節"]];
     var STL = { over: "期限超過", soon: "期限が近い", done: "済（次の予定あり）", none: "まだ記録なし", na: "この建物には、まだ点検の項目がありません" };
     var art = o.art || "art/insp-";
@@ -124,7 +130,8 @@
     function eqStat(eq) { var s = o.status ? o.status(eq) : null; return s || { st: "na", freq: "" }; }
     function caption(s) { return s.st === "over" ? "超過" : s.st === "soon" ? "〜" + md(s.due) : s.st === "done" ? "次 " + md(s.due) : s.st === "none" ? "未記録" : ""; }
     function match(s, eq) {
-      if (o.focus) return eq.insp === o.focus;   // 点検の記録の画面から：その点検の機器だけ
+      if (st.focus) return eq.insp === st.focus;   // 点検の記録の画面から・一覧から：その点検の機器だけ
+      if (o.filter) return !!o.filter(eq, s);      // 絞り込みはアプリ側（点検のタブ）
       return !st.flt || (st.flt === "due" ? (s.st === "over" || s.st === "soon") : s.freq === st.flt);
     }
     var boxes = {};   // 図ごとの、建物の部分の範囲（画像の px）
@@ -214,13 +221,14 @@
         b.onclick = function (e) { e.stopPropagation(); if (st.moved > 8) return; st.sel = eq.id; drawEquip(floor); card(eq, s); };   // 図を動かした時は、ピンを押した扱いにしない
         st.pins.appendChild(b);
       });
-      if (o.focus) {   // 点検の記録の画面から来た時は、絞り込みの代わりに案内
+      if (st.focus) {   // 点検の記録の画面から来た時は、絞り込みの代わりに案内
         var fb = document.createElement("div"); fb.className = "fpFocus";
-        var nF = list.filter(function (eq) { return eq.insp === o.focus; }).length;
-        fb.textContent = nF ? "この点検の機器（" + nF + "）だけを濃く出しています。ピンを押して、印を付けられます" : "この階には、この点検の機器はありません";
+        var nF = list.filter(function (eq) { return eq.insp === st.focus; }).length;
+        fb.textContent = nF ? "この点検の機器（" + nF + "）だけを濃く出しています" + (o.onEquip && o.focus ? "。ピンを押して、印を付けられます" : "") : "この階には、この点検の機器はありません";
         fb.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
         stage.appendChild(fb); return;
       }
+      if (o.filter) return;   // 絞り込みはアプリ側。図の中のボタンは出さない
       // 絞り込み（頻度）：その階にある頻度だけ出す。対象外のピンは、うすく
       var has = {}; stats.forEach(function (s) { if (s.freq) has[s.freq] = (has[s.freq] || 0) + 1; });
       var nDue = stats.filter(function (s) { return s.st === "over" || s.st === "soon"; }).length;
@@ -242,12 +250,12 @@
             return "<div>" + esc(md(l.done_on)) + "　" + esc({ ok: "異常なし", issue: "要対応あり", pending: "報告書待ち" }[l.result] || "") + (l.done_by ? "　" + esc(l.done_by) + "さん" : "") + (l.memo ? '<small>' + esc(String(l.memo).slice(0, 60)) + "</small>" : "") + "</div>"; }).join("")
             : "<div><small>まだ記録がありません（点検の記録で、この機器に印を付けると出ます）</small></div>") + "</div>" : "")
         + (eq.memo ? '<div class="memo">' + esc(eq.memo) + "</div>" : "")
-        + '<div class="bt">' + (o.onEquip && s.st !== "na" && (!o.focus || eq.insp === o.focus) ? '<button class="pr" data-a="go">' + esc((typeof o.equipAction === "function" ? o.equipAction(eq) : o.equipAction) || "点検のページへ") + "</button>" : "") + '<button data-a="x">閉じる</button></div>';
+        + '<div class="bt">' + (o.onEquip && s.st !== "na" && (!st.focus || eq.insp === st.focus) ? '<button class="pr" data-a="go">' + esc((typeof o.equipAction === "function" ? o.equipAction(eq) : o.equipAction) || "点検のページへ") + "</button>" : "") + '<button data-a="x">閉じる</button></div>';
       c.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
       c.querySelector('[data-a="x"]').onclick = function () { st.sel = ""; c.remove(); drawEquip(st.floor); };
       var g = c.querySelector('[data-a="go"]'); if (g) g.onclick = function () {
         o.onEquip(eq, close);
-        if (o.focus && root.parentNode) { st.sel = ""; c.remove(); drawEquip(st.floor); }   // 記録の画面から：続けて印を付けられるように、閉じずに描き直す
+        if (st.focus && o.focus && root.parentNode) { st.sel = ""; c.remove(); drawEquip(st.floor); }   // 記録の画面から：続けて印を付けられるように、閉じずに描き直す
       };
       stage.appendChild(c);
     }
@@ -277,7 +285,7 @@
     });
     var up = function (e) { ptrs.delete(e.pointerId); if (ptrs.size < 2) last = null; if (!ptrs.size) stage.classList.remove("drag"); };
     stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up); stage.addEventListener("pointerleave", up);
-    stage.addEventListener("wheel", function (e) { if (!st.inner) return; e.preventDefault(); var r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    stage.addEventListener("wheel", function (e) { if (!st.inner || (o.mount && !e.ctrlKey)) return; e.preventDefault(); var r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     stage.addEventListener("scroll", function () { stage.scrollTop = 0; stage.scrollLeft = 0; });   // ボタンを押した時に、ブラウザが中を動かすのを戻す（図は transform で動かす）
     window.addEventListener("resize", function () { if (st.inner && document.body.contains(root)) fit(); });
 
@@ -288,11 +296,22 @@
       tabs.innerHTML = fl.map(function (f) { return '<button class="fpTab" data-f="' + esc(f.id) + '">' + esc(f.label || f.id) + "</button>"; }).join("");
       tabs.querySelectorAll(".fpTab").forEach(function (b) { b.onclick = function () { show(fl.filter(function (f) { return f.id === b.dataset.f; })[0]); }; });
       if (fl.length < 2) tabs.hidden = true;
+      st.floors = fl;
       var withEq = !!o.status && fl.some(function (f) { return (f.equip || []).length; });
       note.innerHTML = (withEq && o.focus ? "" : withEq ? '<div class="fpLeg"><span class="over">期限超過</span><span class="soon">期限が近い</span><span class="done">済（下の日付は次の期限）</span><span class="none">まだ記録なし</span></div>ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。' : "")
+        .replace("ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。", o.hint != null ? esc(o.hint) : "ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。")
         + esc(d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + (withEq ? "" : "　（機器のピンは、現地確認のあと、ここに入ります）");
-      show((o.focus && fl.filter(function (f) { return (f.equip || []).some(function (e) { return e.insp === o.focus; }); })[0]) || fl[0]);   // 点検の記録の画面から：その点検の機器がある階から
+      show(floorOf(st.focus) || fl[0]);   // 点検の記録の画面から：その点検の機器がある階から
     }).catch(function (e) { stage.innerHTML = '<div class="fpMsg">平面図を読み込めませんでした。<br>電波のある所で、もう一度開いてください。<br><small>' + esc(String((e && e.message) || e).slice(0, 80)) + "</small></div>"; });
-    return { close: close };
+    function floorOf(no) { return no ? st.floors.filter(function (f) { return (f.equip || []).some(function (e) { return e.insp === no; }); })[0] : null; }
+    return {
+      close: close,
+      redraw: function () { if (st.floor) drawEquip(st.floor); },
+      focusItem: function (no) {
+        st.focus = no || 0; st.sel = ""; var oc = stage.querySelector(".fpCard"); if (oc) oc.remove();
+        var f = floorOf(st.focus);
+        if (f && f !== st.floor) show(f); else if (st.floor) { drawEquip(st.floor); fit(); }
+      },
+    };
   };
 })();

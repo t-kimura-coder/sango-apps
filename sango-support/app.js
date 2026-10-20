@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-20", type: "feature", text: "点検のタブを1つの画面にまとめました。上で「建物」「種類」「頻度」を選ぶと、建物の中の図と一覧が同じように絞られます（例：消防 → 消火器だけ）。建物を選ぶと、上に図、下に一覧が出ます。一覧の「図」で、その点検の機器だけを図に濃く出せます。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図の読み込みを速くしました（一度開いた図は端末に控え、建物のページを開いた時に先に受け取ります。窓口が遅い時は、何回かやり直します）。点検のタブの「図で見る」を、建物の絵のボタンにしました。" },
   { date: "2026-10-20", type: "feature", text: "点検のタブに「図で見る」を足しました。建物の名前を押すと、建物の中の図が開き、ピンから点検を記録できます。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図：ピンの色（期限が近い＝期限が今月）を、管理者・本社とそろえました。絞り込んだ時に札が残る・ピンを押した直後のタップで拡大する、を直しました。" },
@@ -88,6 +89,7 @@ const ICONS = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5M12 17h.01"/>',
+  pin: '<path d="M12 21s-6-6.5-6-11a6 6 0 0112 0c0 4.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
 };
 const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 function fillIcons(root) { root.querySelectorAll("[data-icon]").forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); }); }
