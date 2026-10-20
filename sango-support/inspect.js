@@ -169,9 +169,9 @@ async function viewInspect(main, r) {
       ${rows.length ? "" : `<div class="empty">この建物の点検の項目はありません。</div>`}`;
     const tg = `<div class="segRow inspTg"><button class="segBtn${inspMode === "now" ? " on ok" : ""}" data-md="now">いまやること</button><button class="segBtn${inspMode === "list" ? " on ok" : ""}" data-md="list">期限の一覧</button><button class="segBtn${inspMode === "plan" ? " on ok" : ""}" data-md="plan">年間予定</button></div>`;
     const flt = inspMode === "list" && inspItemFilter ? `<div class="inspFlt">${esc((inspItem(inspItemFilter) || {}).title || "")} だけを表示中　<button class="btn" id="inspFltOff" style="min-height:32px;padding:2px 10px">すべて見る</button></div>` : "";
-    const mapRow = `<div class="inspMapRow" id="inspMapRow" hidden><span>${icon("info")}図で見る</span><div class="chips" id="inspMapChips"></div></div>`;
+    const mapRow = `<div class="inspMap" id="inspMapRow" hidden><div class="inspMapHd"><img src="art/ic-map.webp?v=4" alt="" width="36" height="36"><span><b>建物の中（平面図）で見る</b><small>建物を押すと、点検する機器が図に出ます。ピンから記録できます</small></span></div><div class="inspMapList" id="inspMapChips"></div></div>`;
     main.innerHTML = tg + mapRow + flt + (inspMode === "plan" ? inspPlanHtml() : inspMode === "now" ? inspNowHtml(all) : listHtml);
-    inspMapChips(blds);
+    inspMapChips(blds, all);
     main.querySelectorAll("[data-md]").forEach((b) => (b.onclick = () => { inspMode = b.dataset.md; if (inspMode === "plan") inspItemFilter = ""; draw(); window.scrollTo(0, 0); }));
     main.querySelectorAll(".planRow, .planChip").forEach((el) => (el.onclick = () => { inspItemFilter = el.dataset.i; inspMode = "list"; draw(); window.scrollTo(0, 0); }));
     const fo = $("inspFltOff"); if (fo) fo.onclick = () => { inspItemFilter = ""; draw(); };
@@ -184,12 +184,17 @@ async function viewInspect(main, r) {
 }
 
 /** 点検のタブの「図で見る」：平面図のある建物だけボタンを出す。押すと、図から入った時と同じ図（ピンを押して点検を記録） */
-async function inspMapChips(blds) {
+async function inspMapChips(blds, all) {
   const info = typeof fpInfo === "function" ? await fpInfo() : null, row = $("inspMapRow"), box = $("inspMapChips");
   if (!row || !box || !info || !info.buildings) return;
   const list = blds.filter((b) => info.buildings[b.id]);
   if (!list.length) return;
-  box.innerHTML = list.map((b) => `<button class="chip" data-mb="${esc(b.id)}">${esc(b.name)}</button>`).join("");
+  const mb = typeof master !== "undefined" && master && master.buildings ? master.buildings : [];   // 建物の絵（業者データの建物）
+  box.innerHTML = list.map((b) => {   // 建物の絵＋名前。期限超過・今月の数も
+    const c = inspCount(all.filter((x) => x.bid === b.id)), mbx = mb.find((x) => x.id === b.id) || { id: b.id };
+    return `<button class="inspMapB" data-mb="${esc(b.id)}"><span class="im">${bldImg(mbx)}</span><b>${esc(b.name)}</b>${c.over ? `<span class="chipN over">超過 ${c.over}</span>` : c.month ? `<span class="chipN month">今月 ${c.month}</span>` : ""}</button>`;
+  }).join("");
+  fillIcons(box);
   row.hidden = false;
   box.querySelectorAll("[data-mb]").forEach((el) => (el.onclick = () => {
     const bid = el.dataset.mb, b = list.find((x) => x.id === bid);
@@ -207,8 +212,7 @@ function inspItem(id) { return inspData && inspData.items.find((i) => i.id === i
 async function inspEquipOf(itemId, bid) {
   const no = Number(String(itemId).replace(/\D/g, "")), out = [];
   let data = null;
-  if (typeof fpLoad === "function") { try { data = await fpLoad(bid); } catch (e) { data = null; } }   // 版が同じなら控えを使い、違えば新しいものを読む
-  if (!data) { try { const c = await dbGet("meta", "fp_" + bid); data = c && c.data; } catch (e) { data = null; } }   // 電波がない時だけ、控えのまま
+  if (typeof fpLoad === "function") { try { data = await fpLoad(bid); } catch (e) { data = null; } }   // 版が同じなら控え、違えば新しいもの。受け取れない時は前の版
   ((data && data.floors) || []).forEach((f) => (f.equip || []).forEach((eq) => {
     if (eq.insp === no) out.push({ id: eq.id, label: `${f.label || f.id}・${eq.type}${eq.no ? " " + eq.no : ""}（${eq.room || ""}）` });
   }));

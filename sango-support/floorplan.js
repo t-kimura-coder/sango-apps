@@ -52,11 +52,62 @@
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 
+
+  /* ---------- 平面図の受け取り（3アプリ共通）----------
+   * 窓口（Google）は、たまに30秒近く待たせたり、中身のない返事（404・service だけ）を返す。
+   * → 版の情報は1回だけ聞く（失敗は覚えない）／建物ごとに端末へ控え（IndexedDB「sango-fp」）、版が同じなら控えを使う／
+   *   受け取りは、短めの待ち時間で何回かやり直す／新しい版を受け取れない時は、前の版の控えで見せる／同じ建物を同時に2回取りに行かない
+   *   fpPlanInfo(api)       … Promise<{ version, buildings } | null>
+   *   fpPlanLoad(api, bid)  … Promise<{ note, floors }>
+   *   api(body, ms)         … 各アプリの apiCall */
+  var FPC = { info: null, infoP: null, mem: {}, run: {} };
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  function idb() {
+    return new Promise(function (res) {
+      try { var q = indexedDB.open("sango-fp", 1); q.onupgradeneeded = function () { q.result.createObjectStore("plan"); }; q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(null); }; } catch (e) { res(null); }
+    });
+  }
+  function cacheGet(bid) { return idb().then(function (db) { return new Promise(function (res) { if (!db) return res(null); try { var r = db.transaction("plan").objectStore("plan").get(bid); r.onsuccess = function () { res(r.result || null); }; r.onerror = function () { res(null); }; } catch (e) { res(null); } }); }); }
+  function cachePut(bid, rec) { return idb().then(function (db) { if (!db) return; try { db.transaction("plan", "readwrite").objectStore("plan").put(rec, bid); } catch (e) { /* 控えられなくても、見られる */ } }); }
+  window.fpPlanInfo = function (api) {
+    if (FPC.info) return Promise.resolve(FPC.info);
+    if (!FPC.infoP) FPC.infoP = (async function () {
+      for (var i = 0; i < 3; i++) {
+        try { var j = await api({ action: "floorPlanInfo" }, 30000); if (j && j.buildings && j.version) { FPC.info = j; return j; } } catch (e) { /* もう一度 */ }
+        await sleep(1200);
+      }
+      return null;
+    })().then(function (v) { FPC.infoP = null; return v; });
+    return FPC.infoP;
+  };
+  window.fpPlanLoad = function (api, bid) {
+    if (FPC.run[bid]) return FPC.run[bid];
+    var p = (async function () {
+      var c = FPC.mem[bid] || await cacheGet(bid);
+      var info = await window.fpPlanInfo(api), ver = info && info.version;
+      if (c && c.data && (!ver || c.version === ver)) { FPC.mem[bid] = c; return c.data; }   // 版が同じ（または版が分からない）なら控え
+      var err = null;
+      for (var i = 0; i < 4; i++) {
+        try {
+          var j = await api({ action: "floorPlanGet", building: bid }, 45000);
+          if (j && Array.isArray(j.floors) && j.floors.length) { var rec = { version: j.version || ver || "", data: { note: j.note, floors: j.floors } }; FPC.mem[bid] = rec; cachePut(bid, rec); return rec.data; }
+        } catch (e) { err = e; }
+        await sleep(1000 * (i + 1));
+      }
+      if (c && c.data) return c.data;   // 新しい版を受け取れない時は、前の版で見せる
+      throw err || new Error("平面図を受け取れませんでした");
+    })();
+    FPC.run[bid] = p;
+    p.then(function () { delete FPC.run[bid]; }, function () { delete FPC.run[bid]; });
+    return p;
+  };
+  window.fpPlanCached = function (bid) { return FPC.mem[bid] ? Promise.resolve(true) : cacheGet(bid).then(function (c) { return !!(c && c.data); }); };
+
   window.fpOpen = function (o) {
     addCss();
     var root = document.createElement("div"); root.className = "fpBack";
     root.innerHTML = '<div class="fpHead"><button class="fpClose">← 戻る</button><h3>' + esc(o.title || "平面図") + '</h3></div><div class="fpTabs"></div>'
-      + '<div class="fpStage"><div class="fpMsg">読み込んでいます…</div></div><div class="fpNote"></div>';
+      + '<div class="fpStage"><div class="fpMsg">読み込んでいます…<br><small>初めて開く時・図が新しくなった時は、30秒ほどかかることがあります</small></div></div><div class="fpNote"></div>';
     document.body.appendChild(root);
     var prevOverflow = document.body.style.overflow; document.body.style.overflow = "hidden";
     var close = function () { if (!root.parentNode) return; document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); root.remove(); if (o.onClose) o.onClose(); };

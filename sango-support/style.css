@@ -338,3 +338,10 @@ textarea { min-height: 84px; }
 
 /* 点検のタブの「図で見る」 */
 .inspMapRow{display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap}.inspMapRow>span{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:#244f37;white-space:nowrap}.inspMapRow .chips{margin:0}
+
+/* 点検のタブの「建物の中（平面図）で見る」：建物の絵のボタンを横に並べる */
+.inspMap{border:1px solid var(--line);border-radius:16px;background:var(--card,#fff);padding:10px 12px;margin:0 0 12px;box-shadow:0 1px 3px rgba(40,50,35,.1)}
+.inspMapHd{display:flex;align-items:center;gap:10px;margin-bottom:8px}.inspMapHd img{border-radius:8px;flex:none}.inspMapHd span{display:flex;flex-direction:column}.inspMapHd b{font-size:15px}.inspMapHd small{color:var(--muted);font-size:12px}
+.inspMapList{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.inspMapB{flex:none;width:92px;display:flex;flex-direction:column;align-items:center;gap:3px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:6px 4px;cursor:pointer;font-size:13px}
+.inspMapB .im{width:76px;height:52px;border-radius:8px;overflow:hidden;background:#f4f1e8;display:block}.inspMapB .im img{width:100%;height:100%;object-fit:cover;display:block}.inspMapB .chipN{font-size:11px;padding:1px 6px}

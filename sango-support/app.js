@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-20", type: "fix", text: "建物の中の図の読み込みを速くしました（一度開いた図は端末に控え、建物のページを開いた時に先に受け取ります。窓口が遅い時は、何回かやり直します）。点検のタブの「図で見る」を、建物の絵のボタンにしました。" },
   { date: "2026-10-20", type: "feature", text: "点検のタブに「図で見る」を足しました。建物の名前を押すと、建物の中の図が開き、ピンから点検を記録できます。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図：ピンの色（期限が近い＝期限が今月）を、管理者・本社とそろえました。絞り込んだ時に札が残る・ピンを押した直後のタップで拡大する、を直しました。" },
   { date: "2026-10-20", type: "feature", text: "点検の記録の画面に「図で場所を見る」を足しました。その点検の機器だけが図で濃く出て、ピンから「点検した機器」に印を付けられます。一覧から記録する時は、印は最初は付いていません（見た機器に付けてください）。" },
@@ -336,30 +337,17 @@ const FP = { info: null };
 async function fpInfo() {
   if (FP.info) return FP.info;
   if (!hasApi()) return null;
-  try { FP.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FP.info = null; }
+  FP.info = await fpPlanInfo(apiCall);   // 失敗した時は覚えない（次に開いた時に、もう一度聞く）
   return FP.info;
 }
-async function fpLoad(bid) { // 版が同じなら、端末の控えを使う。電波がなくても、控えがあれば見られる
-  const key = "fp_" + bid, info = await fpInfo();
-  let cached = null; try { cached = await dbGet("meta", key); } catch (e) { cached = null; }
-  if (cached && cached.data && (!info || info.version === cached.version)) return cached.data;
-  let j = null;
-  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
-    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
-    if (j && Array.isArray(j.floors) && j.floors.length) break;
-    j = null; await new Promise((r) => setTimeout(r, 1500));
-  }
-  if (!j) throw new Error("平面図を受け取れませんでした");
-  const data = { note: j.note, floors: j.floors };
-  try { await dbPut("meta", { key, version: j.version, data }); } catch (e) { /* 控えられなくても、見られる */ }
-  return data;
-}
+const fpLoad = (bid) => fpPlanLoad(apiCall, bid);   // 版が同じなら端末の控え。受け取れない時は前の版（floorplan.js）
 async function fpEntry(bid, name) {
   const slot = $("fpSlot"); if (!slot || typeof fpOpen !== "function") return;
   const info = await fpInfo();
   let has = !!(info && info.buildings && info.buildings[bid]);
-  if (!has) { try { const c = await dbGet("meta", "fp_" + bid); has = !!(c && c.data); } catch (e) { has = false; } }
+  if (!has) has = await fpPlanCached(bid);
   if (!has || $("fpSlot") !== slot) return;
+  fpLoad(bid).catch(() => {});   // 建物のページを開いた時に、先に受け取っておく（押した時に待たない）
   slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
   $("fpBtn").onclick = async () => {
     try { await inspEnsure(); } catch (e) { /* 点検のデータが無くても、図は見られる */ }

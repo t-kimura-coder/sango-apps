@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -231,18 +231,8 @@ function fphPinOpts(bid) {
     prepare: () => { items = IC.byId(FPI.data ? FPI.data.items : []); idx = IC.index(FPI.data ? FPI.data.logs : []); },
     status: (eq) => IC.pinStatus(items, idx, bid, eq) };
 }
-async function fphInfo() { if (FPH.info) return FPH.info; if (!S.api) return null; try { FPH.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPH.info = null; } return FPH.info; }
-async function fphLoad(bid) {
-  if (FPH.cache.has(bid)) return FPH.cache.get(bid);
-  let j = null;
-  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
-    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
-    if (j && Array.isArray(j.floors) && j.floors.length) break;
-    j = null; await new Promise((r) => setTimeout(r, 1500));
-  }
-  if (!j) throw new Error("平面図を受け取れませんでした");
-  const d = { note: j.note, floors: j.floors }; FPH.cache.set(bid, d); return d;
-}
+async function fphInfo() { if (FPH.info) return FPH.info; if (!S.api) return null; FPH.info = await fpPlanInfo(apiCall); return FPH.info; }
+const fphLoad = (bid) => fpPlanLoad(apiCall, bid);   // 端末に控え、版が同じなら控え（floorplan.js）
 async function viewMap(main) {
   if (!S.api) return viewEmptyApi(main);
   const counts = { all: S.records.length, open: 0, todo: 0, work: 0, billing: 0, billed: 0 };
@@ -283,7 +273,7 @@ async function viewMap(main) {
       ],
       onClose: () => { selB = ""; main.querySelectorAll(".spot.sel, .bchip.sel").forEach((e) => e.classList.remove("sel")); },
     });
-    selB = id; fphInfo();
+    selB = id; fphInfo().then((info) => { if (info && info.buildings && info.buildings[id]) fphLoad(id).catch(() => {}); fphInsp(); });   // 先に受け取っておく
   };
   if (wrap) wrap.onclick = (e) => { if (!e.target.closest(".spot") && !e.target.closest(".mpPop") && !e.target.closest(".zoneBtn")) { selB = ""; mpHide(wrap); main.querySelectorAll(".spot.sel, .bchip.sel").forEach((x) => x.classList.remove("sel")); } };
   main.querySelectorAll(".spot, .bchip").forEach((el) => (el.onclick = (e) => { e.stopPropagation(); showPrev(el.dataset.b); }));

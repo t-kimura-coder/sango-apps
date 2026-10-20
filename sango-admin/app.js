@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -439,7 +439,7 @@ function renderFilters() {
 let mapSel = "";
 /* 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） */
 const FPA = { info: null, cache: new Map() };
-async function fpaInfo() { if (FPA.info) return FPA.info; if (!S.api || S.demo) return null; try { FPA.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPA.info = null; } return FPA.info; }
+async function fpaInfo() { if (FPA.info) return FPA.info; if (!S.api || S.demo) return null; FPA.info = await fpPlanInfo(apiCall); return FPA.info; }
 /** 機器のピンの点検の状態（inspcore.js。リーダー・本社と同じ判定）。索引は描くたびに1回だけ作る */
 function fpaPinOpts(bid) {
   let idx = new Map(), items = {};
@@ -452,17 +452,7 @@ async function fpaInspReady() {
   for (let i = 0; i < 60 && !IA.data && IA.busy; i++) await new Promise((r) => setTimeout(r, 250));
   if (!IA.data) { try { await inspLoad(); } catch (e) { /* 点検が読めなくても、図は見られる */ } }
 }
-async function fpaLoad(bid) {
-  if (FPA.cache.has(bid)) return FPA.cache.get(bid);
-  let j = null;
-  for (let i = 0; i < 3; i++) {   // 窓口が、たまに中身のない返事をする → 少し待って、もう一度
-    j = await apiCall({ action: "floorPlanGet", building: bid }, 90000);
-    if (j && Array.isArray(j.floors) && j.floors.length) break;
-    j = null; await new Promise((r) => setTimeout(r, 1500));
-  }
-  if (!j) throw new Error("平面図を受け取れませんでした");
-  const d = { note: j.note, floors: j.floors }; FPA.cache.set(bid, d); return d;
-}
+const fpaLoad = (bid) => fpPlanLoad(apiCall, bid);   // 端末に控え、版が同じなら控え（floorplan.js）
 function viewMap(main) {
   const live = S.records.filter((r) => !isHidden(r));
   const st = (id) => { const l = live.filter((r) => r.buildingId === id); return { all: l.length, todo: l.filter(isTodo).length, req: l.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length, urgent: l.some((r) => r.req && r.urgent && adm(r).status !== "done") }; };
@@ -494,7 +484,7 @@ function viewMap(main) {
       ],
       onClose: () => { mapSel = ""; },
     });
-    fpaInfo(); // 図面の有無を、先に聞いておく（押した時に待たない）
+    fpaInfo().then((info) => { if (info && info.buildings && info.buildings[bid]) fpaLoad(bid).catch(() => {}); });   // 図面の有無を聞き、先に受け取っておく（押した時に待たない）
   };
   if (typeof smRender === "function") {
     const narrow = (typeof MOBILE !== "undefined" && MOBILE) || innerWidth <= 720;
@@ -748,6 +738,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-20", type: "fix", text: "建物の中の図の読み込みを速くしました（一度開いた図は端末に控え、マップで建物を押した時に先に受け取ります）。" },
   { date: "2026-10-20", type: "feature", text: "点検の一覧で、点検の履歴に「図で場所を見る」を足しました（スマホ表示にも）。その点検の機器だけが図で濃く出ます。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図：ピンの色（期限が近い＝期限が今月）を、リーダー・本社とそろえました。起動してすぐ図を開くと、ピンが全部「項目なし」になることがあったのを直しました。" },
   { date: "2026-10-20", type: "feature", text: "点検の記録に「点検した機器」が残るようになりました（リーダーが印を付けた機器）。建物の中の図のピンを押すと、その機器の点検の記録が出ます。点検の履歴にも、点検した機器が出ます。" },
