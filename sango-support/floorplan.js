@@ -143,8 +143,7 @@
         var cap = caption(s);
         b.innerHTML = '<i><b class="t"></b><b class="h"><img alt="" src="' + art + esc(eq.icon) + '.webp"></b>' + (eq.no ? '<b class="n">' + eq.no + "</b>" : "")
           + (eq.place === "out" ? '<b class="g out">外</b>' : eq.place === "under" ? '<b class="g under">床下</b>' : "") + (cap ? '<b class="c">' + esc(cap) + "</b>" : "") + "</i>";
-        b.addEventListener("pointerdown", function (e) { e.stopPropagation(); });   // ピンを押した時は、図を動かさない
-        b.onclick = function (e) { e.stopPropagation(); st.sel = eq.id; drawEquip(floor); card(eq, s); };
+        b.onclick = function (e) { e.stopPropagation(); if (st.moved > 8) return; st.sel = eq.id; drawEquip(floor); card(eq, s); };   // 図を動かした時は、ピンを押した扱いにしない
         st.pins.appendChild(b);
       });
       // 絞り込み（頻度）：その階にある頻度だけ出す。対象外のピンは、うすく
@@ -174,15 +173,21 @@
 
     // ---- 操作 ----
     var ptrs = new Map(), last = null, lastTap = 0;
+    st.moved = 0;
     stage.addEventListener("pointerdown", function (e) {
       if (!st.inner) return;
-      stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.classList.add("drag");
+      var onPin = !!(e.target.closest && e.target.closest(".fpEq"));
+      // ピンの上から始めた時は、指を捕まえない（捕まえると、ピンを押しても反応しない端末がある）。動かすのは、どちらでもできる
+      if (!onPin) { try { stage.setPointerCapture(e.pointerId); } catch (er) { /* 捕まえられなくても、動かせるように */ } }
+      if (!ptrs.size) st.moved = 0;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.classList.add("drag");
       if (ptrs.size === 2) { var a = Array.from(ptrs.values()); last = { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 }; }
-      var now = Date.now(); if (ptrs.size === 1 && now - lastTap < 300) { var r = stage.getBoundingClientRect(); if (st.sc > st.min * 1.2) fit(); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top); lastTap = 0; } else lastTap = now;
+      var now = Date.now(); if (ptrs.size === 1 && now - lastTap < 300 && !onPin) { var r = stage.getBoundingClientRect(); if (st.sc > st.min * 1.2) fit(); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top); lastTap = 0; } else lastTap = now;
     });
     stage.addEventListener("pointermove", function (e) {
       if (!ptrs.has(e.pointerId)) return;
       var p = ptrs.get(e.pointerId), dx = e.clientX - p.x, dy = e.clientY - p.y; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      st.moved += Math.abs(dx) + Math.abs(dy);
       if (ptrs.size === 1) { st.tx += dx; st.ty += dy; clampPan(); apply(); }
       else if (ptrs.size === 2 && last) {
         var a = Array.from(ptrs.values()), d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx = (a[0].x + a[1].x) / 2, cy = (a[0].y + a[1].y) / 2, r = stage.getBoundingClientRect();
@@ -190,7 +195,7 @@
       }
     });
     var up = function (e) { ptrs.delete(e.pointerId); if (ptrs.size < 2) last = null; if (!ptrs.size) stage.classList.remove("drag"); };
-    stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
+    stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up); stage.addEventListener("pointerleave", up);
     stage.addEventListener("wheel", function (e) { if (!st.inner) return; e.preventDefault(); var r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     stage.addEventListener("scroll", function () { stage.scrollTop = 0; stage.scrollLeft = 0; });   // ボタンを押した時に、ブラウザが中を動かすのを戻す（図は transform で動かす）
     window.addEventListener("resize", function () { if (st.inner && document.body.contains(root)) fit(); });
