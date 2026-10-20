@@ -15,13 +15,7 @@ let inspAllNone = false;
 let inspMode = "now";     // "now"＝いまやること（頻度ごと）／"list"＝期限の一覧／"plan"＝年間予定（何月に何をやるか）
 let inspItemFilter = "";  // 年間予定から選んだ項目だけを一覧に出す
 /** 標準の予定月（項目マスターの plan。無ければ周期から） */
-const inspPlanOf = (it) => {
-  if (Array.isArray(it.plan) && it.plan.length) return it.plan;
-  const c = it.cycle || {};
-  if (c.type === "season") return c.months || [];
-  const n = c.n || 12;
-  return n === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : n === 3 ? [1, 4, 7, 10] : n === 6 ? [5, 11] : [4];
-};
+const inspPlanOf = (it) => IC.planOf(it);   // 計算は inspcore.js（管理者・本社と同じ）
 /** 年間予定：毎月のものは、まとめて1行。ほかは、今月から12か月、月ごとに「何をやるか」を並べる */
 function inspPlanHtml() {
   const today = inspToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);
@@ -51,26 +45,8 @@ const inspParse = (s) => { const [y, m, d] = String(s).split("-").map(Number); r
 const inspFmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const inspMD = (s) => { const d = inspParse(s); return `${d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "/" : ""}${d.getMonth() + 1}/${pad(d.getDate())}`; }; // 来年以降は、年も出す
 const inspDays = (a, b) => Math.round((inspParse(a) - inspParse(b)) / 86400000);
-function inspAddMonths(s, n) { // 月末をはみ出さないように足す（1/31 + 1か月 = 2/28）
-  const d = inspParse(s), day = d.getDate();
-  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
-  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
-  t.setDate(Math.min(day, last));
-  return inspFmt(t);
-}
-/** 前回の実施日から、次の期限を出す。記録がなければ null（未実施） */
-function inspDue(item, last) {
-  if (!last) return null;
-  const pl = inspPlanOf(item); // 予定月（管理者が変えた月があれば、それ）
-  if (pl.length < 12) { // 予定月が決まっている：前回の実施を含む予定月の、次の予定月の末日が期限
-    const ly = inspParse(last).getFullYear(), ds = [];
-    for (let y = ly - 1; y <= ly + 3; y++) pl.forEach((m) => ds.push(inspFmt(new Date(y, m, 0)))); // その月の末日
-    ds.sort();
-    const cover = ds.find((d) => d >= last);
-    return ds.find((d) => d > cover) || null;
-  }
-  return inspAddMonths(last, 1); // 毎月
-}
+/** 前回の実施日から、次の期限を出す。記録がなければ null（未実施）。計算は inspcore.js */
+const inspDue = (item, last) => IC.due(item, last);
 
 /* ---------- データ（端末の控え・窓口との同期） ---------- */
 async function inspLoadCache() {
@@ -137,12 +113,7 @@ const inspIconHtml = (item) => `<img src="art/insp-${esc(item.icon)}.webp?v=${AR
 
 /* ---------- いまやること（頻度ごと・項目ごとに、建物のチップを並べる） ---------- */
 const INSP_FREQ = [["m1", "毎月のこと"], ["m3", "3か月ごとのこと"], ["m6", "半年ごとのこと"], ["y1", "年に1回のこと"], ["season", "季節のこと"]];
-function inspFreqOf(it) {
-  const c = it.cycle || {};
-  if (c.type === "season") return "season";
-  const n = c.n || 12;
-  return n <= 1 ? "m1" : n <= 3 ? "m3" : n <= 6 ? "m6" : "y1";
-}
+const inspFreqOf = (it) => IC.freqOf(it);
 function inspNowHtml(rows) {
   const todo = rows.filter((x) => x.st === "over" || x.st === "month"), none = rows.filter((x) => x.st === "none");
   const chip = (x) => `<button class="nowChip ${x.st}" data-i="${esc(x.item.id)}" data-b="${esc(x.bid)}">${esc(x.bname)}<small>${x.st === "over" ? `${-x.days}日超過` : x.st === "month" ? `〜${inspMD(x.due)}` : "未実施"}</small></button>`;
@@ -219,8 +190,8 @@ function inspItem(id) { return inspData && inspData.items.find((i) => i.id === i
 async function inspEquipOf(itemId, bid) {
   const no = Number(String(itemId).replace(/\D/g, "")), out = [];
   let data = null;
-  try { const c = await dbGet("meta", "fp_" + bid); data = c && c.data; } catch (e) { data = null; }
-  if (!data && typeof fpLoad === "function") { try { data = await fpLoad(bid); } catch (e) { data = null; } }
+  if (typeof fpLoad === "function") { try { data = await fpLoad(bid); } catch (e) { data = null; } }   // 版が同じなら控えを使い、違えば新しいものを読む
+  if (!data) { try { const c = await dbGet("meta", "fp_" + bid); data = c && c.data; } catch (e) { data = null; } }   // 電波がない時だけ、控えのまま
   ((data && data.floors) || []).forEach((f) => (f.equip || []).forEach((eq) => {
     if (eq.insp === no) out.push({ id: eq.id, label: `${f.label || f.id}・${eq.type}${eq.no ? " " + eq.no : ""}（${eq.room || ""}）` });
   }));
@@ -235,9 +206,10 @@ async function viewInspRecord(main, itemId, bid, eqId) {
   if (!inspForm || inspForm.key !== key) {
     inspForm = { key, id: uid(), date: inspToday(), by: inspNames()[0] || getSetting("name"), result: "ok", memo: "", vendor: "", photos: [], rows: (item.checklist || []).map((t) => ({ t, r: "ok", m: "" })), equip: null, eqSel: {} };
     const f0 = inspForm;
-    inspEquipOf(itemId, bid).then((list) => {   // 機器の一覧は、あとから読み込む（図から来た時は、その機器だけに印。一覧から来た時は、全部に印）
+    inspEquipOf(itemId, bid).then((list) => {   // 機器の一覧は、あとから読み込む（図から来た時は、その機器に印。一覧から来た時は、印なし＝見た機器に付けてもらう）
       if (inspForm !== f0 || !list.length) return;
-      f0.equip = list; list.forEach((e) => { f0.eqSel[e.id] = eqId ? e.id === eqId : true; });
+      f0.equip = list; list.forEach((e) => { f0.eqSel[e.id] = !!eqId && e.id === eqId; });
+      f0.eqMiss = !!eqId && !list.some((e) => e.id === eqId);   // 図から来た機器が、一覧に無い（図が新しくなった時など）
       if (location.hash === key) draw();
     });
   }
@@ -255,6 +227,8 @@ async function viewInspRecord(main, itemId, bid, eqId) {
       <div class="formCard"><div class="fieldLabel">実施した業者<span class="opt">任意</span></div><input class="textInput" id="iVendor" maxlength="60" value="${esc(f.vendor)}"></div>
       <div class="formCard"><div class="fieldLabel">結果</div><div class="segRow" id="iRes">${[["ok", "異常なし"], ["issue", "要対応あり"], ["pending", "報告書待ち"]].map(([k, l]) => `<button class="segBtn${f.result === k ? " on " + k : ""}" data-v="${k}">${l}</button>`).join("")}</div></div>`}
       ${f.equip ? `<div class="formCard"><div class="fieldLabel">点検した機器<span class="opt">見た機器に印</span></div>
+        ${f.eqMiss ? `<div class="infoBar">${icon("info")}図から選んだ機器が、この一覧にありません（図が新しくなったため）。見た機器に印を付けてください。</div>` : ""}
+        <button class="btn" id="eqMap" style="width:100%;margin:2px 0 8px">図で場所を見る</button>
         <div class="eqList">${f.equip.map((e) => `<label class="eqRow"><input type="checkbox" data-eq="${esc(e.id)}" ${f.eqSel[e.id] ? "checked" : ""}> ${esc(e.label)}</label>`).join("")}</div>
         <div class="mutedText" style="margin-top:4px"><a href="#" id="eqAll" style="text-decoration:underline">すべてに印</a>　点検の時期は、この建物でまとめて決まります。印は「どの機器を見たか」の記録です</div></div>` : ""}
       <div class="formCard"><div class="fieldLabel">${isCheck ? "写真" : "点検報告書の写真"}<span class="opt">任意・複数枚OK</span></div><div class="photoStrip" id="iStrip"></div></div>
@@ -273,6 +247,12 @@ async function viewInspRecord(main, itemId, bid, eqId) {
     main.querySelectorAll("#iRes .segBtn").forEach((b) => (b.onclick = () => { f.result = b.dataset.v; draw(); }));
     main.querySelectorAll("[data-eq]").forEach((c) => (c.onchange = () => { f.eqSel[c.dataset.eq] = c.checked; }));
     const ea = $("eqAll"); if (ea) ea.onclick = (e) => { e.preventDefault(); f.equip.forEach((x) => { f.eqSel[x.id] = true; }); draw(); };
+    const em = $("eqMap"); if (em) em.onclick = () => {   // 図から入った時と同じ図で、この点検の機器の場所を見る。ピンから印を付けられる
+      fpOpen({ title: bname, load: () => fpLoad(bid), noPlan: true, ...fpPinOpts(bid), focus: Number(String(itemId).replace(/\D/g, "")),
+        marked: (eq) => !!f.eqSel[eq.id], equipAction: (eq) => (f.eqSel[eq.id] ? "印を外す" : "この機器に印を付ける"),
+        onEquip: (eq) => { if (f.equip.some((x) => x.id === eq.id)) f.eqSel[eq.id] = !f.eqSel[eq.id]; },
+        onClose: () => { if (inspForm === f && location.hash === key) draw(); } });   // 図を閉じたら、印を一覧に反映
+    };
     $("iSave").onclick = () => save(false);
     $("iIssue").onclick = () => save(true);
     fillIcons(main);

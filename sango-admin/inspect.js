@@ -9,24 +9,7 @@ const iaParse = (s) => { const [y, m, d] = String(s).split("-").map(Number); ret
 const iaFmt = (d) => `${d.getFullYear()}-${iaPad(d.getMonth() + 1)}-${iaPad(d.getDate())}`;
 const iaMD = (s) => { const d = iaParse(s); return `${d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "/" : ""}${d.getMonth() + 1}/${iaPad(d.getDate())}`; };
 const iaDays = (a, b) => Math.round((iaParse(a) - iaParse(b)) / 86400000);
-function iaAddMonths(s, n) {
-  const d = iaParse(s), day = d.getDate();
-  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
-  t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()));
-  return iaFmt(t);
-}
-function iaDue(item, last) { // 前回の実施日から次の期限（リーダー用アプリと同じ計算）。記録がなければ null
-  if (!last) return null;
-  const pl = iaPlanOf(item); // 予定月（管理者が変えた月があれば、それ）
-  if (pl.length < 12) { // 予定月が決まっている：前回の実施を含む予定月の、次の予定月の末日が期限
-    const ly = iaParse(last).getFullYear(), ds = [];
-    for (let y = ly - 1; y <= ly + 3; y++) pl.forEach((m) => ds.push(iaFmt(new Date(y, m, 0))));
-    ds.sort();
-    const cover = ds.find((d) => d >= last);
-    return ds.find((d) => d > cover) || null;
-  }
-  return iaAddMonths(last, 1); // 毎月
-}
+const iaDue = (item, last) => IC.due(item, last);   // 前回の実施日から次の期限（inspcore.js。リーダー・本社と同じ計算）
 
 async function inspLoad() {
   if (!S.api || S.demo || IA.busy) return false;
@@ -117,13 +100,7 @@ function iaSide(c) {
 }
 
 /* ---------- 年間予定（何月に何をやるか） ---------- */
-const iaPlanOf = (it) => {
-  if (Array.isArray(it.plan) && it.plan.length) return it.plan;
-  const c = it.cycle || {};
-  if (c.type === "season") return c.months || [];
-  const n = c.n || 12;
-  return n === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : n === 3 ? [1, 4, 7, 10] : n === 6 ? [5, 11] : [4];
-};
+const iaPlanOf = (it) => IC.planOf(it);   // 標準の予定月（inspcore.js。リーダー・本社と同じ）
 /** 今月から12か月の、(項目×月) の状況。done＝その月に、全部の建物で記録がある／part＝一部 */
 function iaPlanModel() {
   const today = iaToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);

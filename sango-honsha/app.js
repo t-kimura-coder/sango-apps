@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -224,36 +224,12 @@ async function fphInsp() {   // 5分以内に読んだものは、そのまま�
   try { const j = await apiCall({ action: "inspectList" }, 45000); FPI.data = { items: j.items || [], logs: j.logs || [] }; FPI.at = Date.now(); } catch (e) { /* 読めなくても、図は見られる */ }
   return FPI.data;
 }
-const fphD = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
-const fphF = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-function fphPlan(it) { // 予定月（リーダー・管理者と同じ考え方）
-  if (Array.isArray(it.plan) && it.plan.length) return it.plan;
-  const c = it.cycle || {}; if (c.type === "season") return c.months || [];
-  const n = c.n || 12; return n === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : n === 3 ? [1, 4, 7, 10] : n === 6 ? [5, 11] : [4];
-}
-function fphDue(it, last) { // 前回の実施日から次の期限（リーダー・管理者と同じ計算）
-  if (!last) return null;
-  const pl = fphPlan(it);
-  if (pl.length < 12) {
-    const ly = fphD(last).getFullYear(), ds = [];
-    for (let y = ly - 1; y <= ly + 3; y++) pl.forEach((m) => ds.push(fphF(new Date(y, m, 0))));
-    ds.sort(); const cover = ds.find((d) => d >= last); return ds.find((d) => d > cover) || null;
-  }
-  const d = fphD(last), day = d.getDate(), t = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-  t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())); return fphF(t);
-}
-function fphEquipStatus(bid, eq) {
-  const D = FPI.data; if (!D || !eq.insp) return { st: "na", freq: "" };
-  const it = D.items.find((x) => x.id === "I" + String(eq.insp).padStart(2, "0"));
-  if (!it || !it.enabled || (it.buildings || []).indexOf(bid) < 0) return { st: "na", freq: "" };
-  const desc = (a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0);
-  const mine = D.logs.filter((l) => l.item_id === it.id && l.building_id === bid);
-  const last = mine.filter((l) => l.result !== "pending").sort(desc)[0] || null, due = fphDue(it, last && last.done_on);
-  const c = it.cycle || {}, n = c.n || 12, thr = c.type === "months" ? Math.min(30, Math.max(5, Math.round(n * 30 * 0.25))) : 30;
-  let st = "none";
-  if (due) { const days = Math.round((fphD(due) - fphD(fphF(new Date()))) / 86400000); st = days < 0 ? "over" : days <= thr ? "soon" : "done"; }
-  return { st, freq: c.type === "season" ? "season" : n <= 1 ? "m1" : n <= 3 ? "m3" : n <= 6 ? "m6" : "y1", title: it.title, cycle: c.label || "", last, due,
-    hist: mine.filter((l) => (l.equip || []).some((e) => e.id === eq.id)).sort(desc) };
+/** 機器のピンの点検の状態（inspcore.js。リーダー・管理者と同じ判定）。索引は描くたびに1回だけ作る */
+function fphPinOpts(bid) {
+  let idx = new Map(), items = {};
+  return { art: "../sango-support/art/insp-",
+    prepare: () => { items = IC.byId(FPI.data ? FPI.data.items : []); idx = IC.index(FPI.data ? FPI.data.logs : []); },
+    status: (eq) => IC.pinStatus(items, idx, bid, eq) };
 }
 async function fphInfo() { if (FPH.info) return FPH.info; if (!S.api) return null; try { FPH.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPH.info = null; } return FPH.info; }
 async function fphLoad(bid) {
@@ -302,7 +278,7 @@ async function viewMap(main) {
           const info = await fphInfo();
           if (!(info && info.buildings && info.buildings[id]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
           await fphInsp();   // 点検の状態（故障の連絡を受けた時に、点検の状況を業者に伝えられるように）
-          fpOpen({ title: b.name, load: () => fphLoad(id), status: (eq) => fphEquipStatus(id, eq), art: "../sango-support/art/insp-" });
+          fpOpen({ title: b.name, load: () => fphLoad(id), ...fphPinOpts(id) });
         } },
       ],
       onClose: () => { selB = ""; main.querySelectorAll(".spot.sel, .bchip.sel").forEach((e) => e.classList.remove("sel")); },

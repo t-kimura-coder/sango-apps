@@ -2,11 +2,13 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-20", type: "fix", text: "建物の中の図：ピンの色（期限が近い＝期限が今月）を、管理者・本社とそろえました。絞り込んだ時に札が残る・ピンを押した直後のタップで拡大する、を直しました。" },
+  { date: "2026-10-20", type: "feature", text: "点検の記録の画面に「図で場所を見る」を足しました。その点検の機器だけが図で濃く出て、ピンから「点検した機器」に印を付けられます。一覧から記録する時は、印は最初は付いていません（見た機器に付けてください）。" },
   { date: "2026-10-20", type: "feature", text: "点検の記録で「点検した機器」に印を付けられるようになりました（例：どのエアコンを掃除したか）。建物の中の図のピンを押すと、その機器の点検の記録が出ます。点検の時期は、今までどおり建物ごとにまとめて決まります。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図を拡大したあと、指で動かせないことがあったのを直しました（ピンの上から指を置いても動かせます）。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図で「元の図面」の切替をなくし、案内図だけにしました。" },
@@ -360,21 +362,18 @@ async function fpEntry(bid, name) {
   slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
   $("fpBtn").onclick = async () => {
     try { await inspEnsure(); } catch (e) { /* 点検のデータが無くても、図は見られる */ }
-    fpOpen({ title: name, load: () => fpLoad(bid), noPlan: true,   // 元の図面は本社だけ（リーダー・管理者は案内図）
-      status: (eq) => fpEquipStatus(bid, eq), equipAction: "点検を記録する", art: "art/insp-",
+    fpOpen({ title: name, load: () => fpLoad(bid), noPlan: true, ...fpPinOpts(bid),   // 元の図面は本社だけ（リーダー・管理者は案内図）
+      equipAction: "点検を記録する",
       onEquip: (eq, close) => { const id = fpItemId(eq.insp); close(); go(`#/insp/rec/${encodeURIComponent(id)}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`); } });
   };
 }
-/** 機器のピンの点検の状態（点検の番号 → 項目 I04 など。期限は「項目×建物」の単位） */
-const fpItemId = (no) => "I" + String(no || 0).padStart(2, "0");
-function fpEquipStatus(bid, eq) {
-  if (!eq.insp || !inspData) return { st: "na", freq: "" };
-  const r = inspRows().find((x) => x.item.id === fpItemId(eq.insp) && x.bid === bid);
-  if (!r) return { st: "na", freq: "" };
-  const st = r.st === "over" ? "over" : r.st === "month" ? "soon" : r.st === "later" ? "done" : "none";
-  const hist = inspLogs().filter((l) => l.item_id === r.item.id && l.building_id === bid && (l.equip || []).some((e) => e.id === eq.id))
-    .sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0));
-  return { st, freq: inspFreqOf(r.item), title: r.item.title, cycle: (r.item.cycle || {}).label || "", last: r.last, due: r.due, hist };
+/** 機器のピンの点検の状態（inspcore.js。点検の番号 → 項目 I04 など。期限は「項目×建物」の単位）。索引は描くたびに1回だけ作る */
+const fpItemId = (no) => IC.itemId(no);
+function fpPinOpts(bid) {
+  let idx = new Map(), items = {};
+  return { art: "art/insp-",
+    prepare: () => { items = IC.byId(inspData ? inspData.items : []); idx = IC.index(inspLogs()); },
+    status: (eq) => IC.pinStatus(items, idx, bid, eq) };
 }
 
 /* ---------- 建物ページ ---------- */
