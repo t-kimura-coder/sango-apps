@@ -1,9 +1,13 @@
 /* 建物の中のマップ（平面図ビューア）。リーダー・管理者で同じファイルを使う
  * 平面図の画像は、社内の資料なので、窓口（Google）から受け取る（このファイルには入っていない）。
- *   fpOpen({ title, load, pins })
- *     load()          … Promise<{ note, floors: [{ id, label, w, h, img }] }>
- *     pins(floorId)   … （あとで使う）その階の機器のピン [{ id, x, y, label, tone }]（x・y は 0〜1。tone＝over/soon/ok/none）
- *     onPin(pin)      … （あとで使う）ピンを押した時
+ *   fpOpen({ title, load, status, onEquip, equipAction, art })   → { close }
+ *     load()          … Promise<{ note, floors: [{ id, label, w, h, img, guide, equip }] }>
+ *                       equip＝その階の機器 [{ id, type, no, icon, insp, room, model, place, memo, x, y }]（x・y は 0〜1）
+ *     status(eq)      … 機器の点検の状態 { st, freq, title, cycle, last, due }（アプリの点検のデータから）。無ければピンは出さない
+ *                       st＝over（期限超過）／soon（期限が近い・今月）／done（済・次の予定）／none（まだ記録なし）／na（この建物に項目なし）
+ *                       freq＝m1（毎月）／m3／m6／y1（年1回）／season（季節）
+ *     onEquip(eq, close) … 詳しい札のボタン（equipAction の文字）を押した時。点検のページへ移る
+ *     art             … 点検の絵の場所（"art/insp-" ＋ icon ＋ ".webp"）
  *     noPlan          … true なら「元の図面」の切替を出さない（管理者。案内図もイラストもない棟は、元の図面だけを出す）
  * 「全体」は、図の白い余白を除いた、建物の部分が画面の中央に来るように合わせる（階を切り替えても、真ん中がそろう）
  * 操作：ドラッグで動かす／2本指（ホイール）で拡大・縮小／ダブルタップで拡大／ボタンの＋－
@@ -21,6 +25,21 @@
     + ".fpCtl{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}.fpCtl button{width:42px;height:42px;border-radius:21px;border:1px solid #244f37;background:#fff;color:#244f37;font-size:20px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
     + ".fpSw{position:absolute;left:10px;top:10px;display:flex;border:1px solid #244f37;border-radius:18px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.25)}.fpSw button{border:0;background:#fff;color:#244f37;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer}.fpSw button.on{background:#244f37;color:#fff}"
     + ".fpNote{padding:8px 14px calc(8px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid #d9d4c5;font-size:12.5px;color:#5a645d;line-height:1.5}"
+    + ".fpEq{position:absolute;width:0;height:0;border:0;padding:0;background:none;cursor:pointer}.fpEq>i{position:absolute;left:0;top:0;transform:scale(var(--inv,1));transform-origin:0 0;display:block}"
+    + ".fpEq b.h{position:absolute;left:-20px;top:-58px;width:40px;height:40px;border-radius:50%;background:#fff;border:4px solid var(--c);box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}"
+    + ".fpEq b.h img{width:30px;height:30px;border-radius:50%}.fpEq b.t{position:absolute;left:-8px;top:-20px;border-left:8px solid transparent;border-right:8px solid transparent;border-top:16px solid var(--c)}"
+    + ".fpEq b.n{position:absolute;left:12px;top:-64px;min-width:18px;height:18px;border-radius:9px;background:var(--c);color:#fff;border:2px solid #fff;font:800 11px/14px sans-serif;text-align:center;padding:0 3px}"
+    + ".fpEq b.g{position:absolute;right:14px;top:-66px;border-radius:4px;color:#fff;border:1.5px solid #fff;font:800 10px/13px sans-serif;padding:0 3px;white-space:nowrap}.fpEq b.g.out{background:#3f6f8f}.fpEq b.g.under{background:#8a6a3a}"
+    + ".fpEq b.c{position:absolute;left:0;top:2px;transform:translateX(-50%);white-space:nowrap;font:700 11px/16px sans-serif;color:#fff;background:var(--c);border-radius:8px;padding:0 6px;box-shadow:0 1px 2px rgba(0,0,0,.25)}"
+    + ".fpEq.over{--c:#a3322a}.fpEq.soon{--c:#c27a1e}.fpEq.done{--c:#2f6b45}.fpEq.none{--c:#8a8f84}.fpEq.na{--c:#b9bdb5}.fpEq.dim{opacity:.18;pointer-events:none}.fpPins.small .fpEq b.c{display:none}.fpEq.sel b.h{box-shadow:0 0 0 5px rgba(36,79,55,.35)}"
+    + ".fpFlt{position:absolute;left:10px;right:62px;bottom:10px;display:flex;gap:6px;overflow-x:auto;padding:2px}.fpFlt button{flex:none;border:1px solid #244f37;background:#fff;color:#244f37;border-radius:16px;padding:6px 12px;font-size:13px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:pointer}.fpFlt button.on{background:#244f37;color:#fff}.fpFlt button small{font-weight:600;opacity:.8;margin-left:3px}"
+    + ".fpCard{position:absolute;left:50%;bottom:60px;transform:translateX(-50%);width:min(380px,calc(100% - 20px));background:#fff;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.3);padding:12px 14px;font-size:14px;color:#1f2a24}"
+    + ".fpCard .hd{display:flex;gap:10px;align-items:center}.fpCard .hd img{width:44px;height:44px;border-radius:10px;background:#f4f1e8}.fpCard h4{margin:0;font-size:16px}.fpCard .sub{font-size:12.5px;color:#5a645d}"
+    + ".fpCard .st{margin:8px 0 4px;padding:6px 10px;border-radius:8px;font-weight:800;color:#fff;background:var(--c)}.fpCard .rw{font-size:13px;margin:2px 0}.fpCard .memo{font-size:12px;color:#a3322a;margin-top:4px}"
+    + ".fpCard .bt{display:flex;gap:8px;margin-top:10px}.fpCard .bt button{flex:1;min-height:40px;border-radius:10px;border:1px solid #244f37;background:#fff;color:#244f37;font-weight:800;font-size:14px;cursor:pointer}.fpCard .bt button.pr{background:#244f37;color:#fff}"
+    + ".fpCard.over{--c:#a3322a}.fpCard.soon{--c:#c27a1e}.fpCard.done{--c:#2f6b45}.fpCard.none,.fpCard.na{--c:#8a8f84}"
+    + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
+    + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -37,7 +56,15 @@
     document.addEventListener("keydown", onKey);
     root.querySelector(".fpClose").onclick = close;
     var stage = root.querySelector(".fpStage"), tabs = root.querySelector(".fpTabs"), note = root.querySelector(".fpNote");
-    var st = { sc: 1, min: 0.1, tx: 0, ty: 0, floor: null, w: 0, h: 0, inner: null, pins: null, cb: null };
+    var st = { sc: 1, min: 0.1, tx: 0, ty: 0, floor: null, w: 0, h: 0, inner: null, pins: null, cb: null, flt: "", sel: "" };
+    var FREQ = [["m1", "毎月"], ["m3", "3か月"], ["m6", "半年"], ["y1", "年1回"], ["season", "季節"]];
+    var STL = { over: "期限超過", soon: "期限が近い", done: "済（次の予定あり）", none: "まだ記録なし", na: "この建物には、まだ点検の項目がありません" };
+    var art = o.art || "art/insp-";
+    function md(s) { var p = String(s || "").split("-"); return p.length === 3 ? (+p[1]) + "/" + (+p[2]) : ""; }
+    function eqName(eq) { return eq.type + (eq.no ? " " + eq.no : ""); }
+    function eqStat(eq) { var s = o.status ? o.status(eq) : null; return s || { st: "na", freq: "" }; }
+    function caption(s) { return s.st === "over" ? "超過" : s.st === "soon" ? "〜" + md(s.due) : s.st === "done" ? "次 " + md(s.due) : s.st === "none" ? "未記録" : ""; }
+    function match(s) { return !st.flt || (st.flt === "due" ? (s.st === "over" || s.st === "soon") : s.freq === st.flt); }
     var boxes = {};   // 図ごとの、建物の部分の範囲（画像の px）
 
     // 図の、余白でない部分（四すみの色と違う所）の範囲を、小さく描いて調べる。調べられない時は、図の全体
@@ -62,7 +89,11 @@
     function apply() {
       if (!st.inner) return;
       st.inner.style.transform = "translate(" + st.tx + "px," + st.ty + "px) scale(" + st.sc + ")";
-      if (st.pins) st.pins.style.setProperty("--inv", String(1 / st.sc));
+      if (st.pins) {   // ピンの大きさ：小さい画面の「全体」では小さく、拡大すると元の大きさに（重なりを減らす）
+        var ps = Math.max(0.5, Math.min(1, (stage.clientWidth / 900) * (st.sc / (st.min || st.sc))));
+        st.pins.style.setProperty("--inv", String(ps / st.sc));
+        st.pins.classList.toggle("small", ps < 0.75);
+      }
     }
     function clampPan() {   // 建物の部分（cb）が画面より小さい時は真ん中に。大きい時は、はみ出しすぎないように
       var sw = stage.clientWidth, sh = stage.clientHeight, b = st.cb || { x: 0, y: 0, w: st.w, h: st.h }, m = 60;
@@ -78,7 +109,7 @@
 
     function show(floor) {
       st.floor = floor; st.w = floor.w; st.h = floor.h;
-      var hasPins = !!(o.pins && (o.pins(floor.id) || []).length), v = st.view;
+      var hasPins = !!(o.status && (floor.equip || []).length), v = st.view;
       var base = floor.illust || (floor.guide ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(floor.guide) : "");
       if (!base || (v === "plan" && !o.noPlan)) v = "plan"; else if (v === "fade" && !(floor.illust && hasPins)) v = "base"; else if (v !== "fade") v = "base";
       var src = v === "plan" ? floor.img : base;
@@ -92,11 +123,53 @@
       var onImg = function () { if (st.floor !== floor) return; st.cb = contentBox(im, key, st.w, st.h); fit(); };
       if (im.complete && im.naturalWidth) setTimeout(onImg, 0); else im.addEventListener("load", onImg);
       st.inner.style.width = st.w + "px"; st.inner.style.height = st.h + "px";
-      var list = (o.pins && o.pins(floor.id)) || [];
-      list.forEach(function (p) { var b = document.createElement("button"); b.className = "fpPin " + (p.tone || ""); b.style.left = p.x * 100 + "%"; b.style.top = p.y * 100 + "%"; b.textContent = p.label || ""; b.onclick = function (ev) { ev.stopPropagation(); if (o.onPin) o.onPin(p); }; st.pins.appendChild(b); });
+      drawEquip(floor);
       stage.querySelectorAll(".fpCtl button").forEach(function (b) { b.onclick = function () { var z = b.dataset.z, cx = stage.clientWidth / 2, cy = stage.clientHeight / 2; if (z === "fit") fit(); else zoomAt(z === "in" ? 1.5 : 1 / 1.5, cx, cy); }; b.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); });
       fit();
       Array.prototype.forEach.call(tabs.querySelectorAll(".fpTab"), function (t) { t.classList.toggle("on", t.dataset.f === floor.id); });
+    }
+
+    // ---- 機器のピン・絞り込み・詳しい札 ----
+    function drawEquip(floor) {
+      var list = (o.status && floor.equip) || [];
+      st.pins.innerHTML = "";
+      var old = stage.querySelector(".fpFlt"); if (old) old.remove();
+      if (!list.length) return;
+      var stats = list.map(eqStat);
+      list.forEach(function (eq, i) {
+        var s = stats[i], b = document.createElement("button");
+        b.className = "fpEq " + s.st + (match(s) ? "" : " dim") + (st.sel === eq.id ? " sel" : "");
+        b.style.left = eq.x * 100 + "%"; b.style.top = eq.y * 100 + "%"; b.title = eqName(eq);
+        var cap = caption(s);
+        b.innerHTML = '<i><b class="t"></b><b class="h"><img alt="" src="' + art + esc(eq.icon) + '.webp"></b>' + (eq.no ? '<b class="n">' + eq.no + "</b>" : "")
+          + (eq.place === "out" ? '<b class="g out">外</b>' : eq.place === "under" ? '<b class="g under">床下</b>' : "") + (cap ? '<b class="c">' + esc(cap) + "</b>" : "") + "</i>";
+        b.addEventListener("pointerdown", function (e) { e.stopPropagation(); });   // ピンを押した時は、図を動かさない
+        b.onclick = function (e) { e.stopPropagation(); st.sel = eq.id; drawEquip(floor); card(eq, s); };
+        st.pins.appendChild(b);
+      });
+      // 絞り込み（頻度）：その階にある頻度だけ出す。対象外のピンは、うすく
+      var has = {}; stats.forEach(function (s) { if (s.freq) has[s.freq] = (has[s.freq] || 0) + 1; });
+      var nDue = stats.filter(function (s) { return s.st === "over" || s.st === "soon"; }).length;
+      var bar = document.createElement("div"); bar.className = "fpFlt";
+      var chip = function (k, label, n) { return '<button data-k="' + k + '"' + (st.flt === k ? ' class="on"' : "") + ">" + label + (n != null ? "<small>" + n + "</small>" : "") + "</button>"; };
+      bar.innerHTML = chip("", "すべて", list.length) + FREQ.filter(function (f) { return has[f[0]]; }).map(function (f) { return chip(f[0], f[1], has[f[0]]); }).join("") + (nDue ? chip("due", "期限が近い・超過", nDue) : "");
+      bar.querySelectorAll("button").forEach(function (x) { x.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); x.onclick = function () { st.flt = x.dataset.k; drawEquip(floor); }; });
+      stage.appendChild(bar);
+    }
+    function card(eq, s) {
+      var oc = stage.querySelector(".fpCard"); if (oc) oc.remove();
+      var c = document.createElement("div"); c.className = "fpCard " + s.st;
+      c.innerHTML = '<div class="hd"><img alt="" src="' + art + esc(eq.icon) + '.webp"><div><h4>' + esc(eqName(eq)) + (eq.place === "out" ? "（外）" : eq.place === "under" ? "（床下）" : "") + '</h4><div class="sub">' + esc(eq.room) + (eq.model ? "　" + esc(eq.model) : "") + "</div></div></div>"
+        + '<div class="st">' + esc(STL[s.st] || "") + (s.st === "over" || s.st === "soon" ? "　期限 " + esc(md(s.due)) : "") + "</div>"
+        + (s.title ? '<div class="rw">点検：' + esc(s.title) + (s.cycle ? "（" + esc(s.cycle) + "）" : "") + "</div>" : "")
+        + (s.st !== "na" ? '<div class="rw">前回：' + (s.last ? esc(md(s.last.done_on)) + (s.last.done_by ? "　" + esc(s.last.done_by) + "さん" : "") : "まだ記録がありません") + "</div>" : "")
+        + (s.due ? '<div class="rw">次の期限：' + esc(String(s.due).replace(/-/g, "/")) + "</div>" : "")
+        + (eq.memo ? '<div class="memo">' + esc(eq.memo) + "</div>" : "")
+        + '<div class="bt">' + (o.onEquip && s.st !== "na" ? '<button class="pr" data-a="go">' + esc(o.equipAction || "点検のページへ") + "</button>" : "") + '<button data-a="x">閉じる</button></div>';
+      c.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      c.querySelector('[data-a="x"]').onclick = function () { st.sel = ""; c.remove(); drawEquip(st.floor); };
+      var g = c.querySelector('[data-a="go"]'); if (g) g.onclick = function () { o.onEquip(eq, close); };
+      stage.appendChild(c);
     }
 
     // ---- 操作 ----
@@ -119,6 +192,7 @@
     var up = function (e) { ptrs.delete(e.pointerId); if (ptrs.size < 2) last = null; if (!ptrs.size) stage.classList.remove("drag"); };
     stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
     stage.addEventListener("wheel", function (e) { if (!st.inner) return; e.preventDefault(); var r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    stage.addEventListener("scroll", function () { stage.scrollTop = 0; stage.scrollLeft = 0; });   // ボタンを押した時に、ブラウザが中を動かすのを戻す（図は transform で動かす）
     window.addEventListener("resize", function () { if (st.inner && document.body.contains(root)) fit(); });
 
     // ---- 読み込み ----
@@ -128,8 +202,11 @@
       tabs.innerHTML = fl.map(function (f) { return '<button class="fpTab" data-f="' + esc(f.id) + '">' + esc(f.label || f.id) + "</button>"; }).join("");
       tabs.querySelectorAll(".fpTab").forEach(function (b) { b.onclick = function () { show(fl.filter(function (f) { return f.id === b.dataset.f; })[0]); }; });
       if (fl.length < 2) tabs.hidden = true;
-      note.textContent = (d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + "　（機器のピンは、現地確認のあと、ここに入ります）";
+      var withEq = !!o.status && fl.some(function (f) { return (f.equip || []).length; });
+      note.innerHTML = (withEq ? '<div class="fpLeg"><span class="over">期限超過</span><span class="soon">期限が近い</span><span class="done">済（下の日付は次の期限）</span><span class="none">まだ記録なし</span></div>ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。' : "")
+        + esc(d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + (withEq ? "" : "　（機器のピンは、現地確認のあと、ここに入ります）");
       show(fl[0]);
     }).catch(function (e) { stage.innerHTML = '<div class="fpMsg">平面図を読み込めませんでした。<br>電波のある所で、もう一度開いてください。<br><small>' + esc(String((e && e.message) || e).slice(0, 80)) + "</small></div>"; });
+    return { close: close };
   };
 })();

@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -440,6 +440,15 @@ let mapSel = "";
 /* 建物の中（平面図）：窓口から受け取る（社内の資料。公開のリポジトリには入れない） */
 const FPA = { info: null, cache: new Map() };
 async function fpaInfo() { if (FPA.info) return FPA.info; if (!S.api || S.demo) return null; try { FPA.info = await apiCall({ action: "floorPlanInfo" }, 20000); } catch (e) { FPA.info = null; } return FPA.info; }
+/** 機器のピンの点検の状態（点検の番号 → 項目 I04 など。期限は「項目×建物」の単位） */
+const fpaCell = (bid, eq) => (eq.insp ? iaCells().find((c) => c.item.id === "I" + String(eq.insp).padStart(2, "0") && c.bid === bid) : null);
+function fpaEquipStatus(bid, eq) {
+  const c = fpaCell(bid, eq);
+  if (!c) return { st: "na", freq: "" };
+  const cy = c.item.cycle || {}, n = cy.n || 12;
+  return { st: c.st === "over" ? "over" : c.st === "soon" ? "soon" : c.st === "ok" ? "done" : "none", freq: cy.type === "season" ? "season" : n <= 1 ? "m1" : n <= 3 ? "m3" : n <= 6 ? "m6" : "y1",
+    title: c.item.title, cycle: cy.label || "", last: c.last, due: c.due };
+}
 async function fpaLoad(bid) {
   if (FPA.cache.has(bid)) return FPA.cache.get(bid);
   let j = null;
@@ -474,7 +483,10 @@ function viewMap(main) {
         { label: "図面・点検", sub: "建物の中の図", onClick: async () => {
           const info = await fpaInfo();
           if (!(info && info.buildings && info.buildings[bid]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
-          fpOpen({ title: name, load: () => fpaLoad(bid), noPlan: true });   // 元の図面は、管理者には出さない（本社だけ）
+          if (!IA.data) { try { await inspLoad(); } catch (e) { /* 点検が読めなくても、図は見られる */ } }
+          fpOpen({ title: name, load: () => fpaLoad(bid), noPlan: true,   // 元の図面は、管理者には出さない（本社だけ）
+            status: (eq) => fpaEquipStatus(bid, eq), equipAction: "点検の履歴を見る", art: "../sango-support/art/insp-",
+            onEquip: (eq, close) => { const c = fpaCell(bid, eq); close(); if (!c) return; IA.mode = "list"; IA.group = c.item.group; IA.sel = { i: c.item.id, b: bid }; location.hash = "#/insp"; } });
         } },
       ],
       onClose: () => { mapSel = ""; },
@@ -733,6 +745,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-20", type: "feature", text: "建物の中の図に、点検する機器のピンを出しました（試し：図面から読んだ下書き）。色で点検の状態、ピンの下に次の期限が出て、毎月・年1回などに絞れます。ピンを押すと、点検の一覧でその点検の履歴を開けます。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図：和の案内図を追加しました。開いた時や「全体」を押した時に、建物が画面の真ん中に来るようにしました。管理者の画面では「元の図面」の切替をなくし、案内図だけにしました（案内図がまだない棟は、元の図面が出ます）。" },
   { date: "2026-10-18", type: "feature", text: "敷地マップで建物を押すと、その建物の横に吹き出しが出るようになりました。「症例」でその建物の一覧へ、「図面・点検」で建物の中の図を開けます。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図に「案内図」を追加しました（店舗・春・香から。ほかの棟も順に足します）。「案内図／元の図面」で切り替えられます。店舗はイラストです。" },
