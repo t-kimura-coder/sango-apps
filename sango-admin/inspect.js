@@ -112,7 +112,7 @@ function iaSide(c) {
   return `<h3>${esc(c.bname)} × ${esc(c.item.title)}</h3><div class="note">${esc((c.item.cycle || {}).label || "")}／${c.item.legal ? "法定" : "任意"}／${esc(c.item.who || "")}</div>
     <p><b>次の期限：</b>${c.due ? `${c.due.replace(/-/g, "/")}${c.st === "over" ? `（${-c.days}日超過）` : ""}` : "まだ記録がありません"}</p>${c.item.note ? `<div class="note">${esc(c.item.note)}</div>` : ""}
     <h4>実施の履歴</h4>${logs.length ? logs.map((l) => `<div class="iaLog"><div><b>${esc(l.done_on.replace(/-/g, "/"))}</b> <span class="chip ${l.result === "issue" ? "todo" : l.result === "pending" ? "" : "done"}">${RL[l.result] || ""}</span></div>
-      <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>${(l.checks || []).filter((x) => x.r === "issue").map((x) => `<div class="note">要対応：${esc(x.t)}${x.m ? "（" + esc(x.m) + "）" : ""}</div>`).join("")}${l.memo ? `<div class="note">${esc(l.memo)}</div>` : ""}
+      <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>${(l.equip || []).length ? `<div class="note">点検した機器：${l.equip.map((e) => esc(e.label)).join("／")}</div>` : ""}${(l.checks || []).filter((x) => x.r === "issue").map((x) => `<div class="note">要対応：${esc(x.t)}${x.m ? "（" + esc(x.m) + "）" : ""}</div>`).join("")}${l.memo ? `<div class="note">${esc(l.memo)}</div>` : ""}
       ${(l.photos || []).map((p, n) => `<button class="btn iaPh" data-photo="${esc(p)}">写真${n + 1}</button>`).join("")}</div>`).join("") : `<div class="note">まだ記録がありません</div>`}`;
 }
 

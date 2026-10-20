@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-20", type: "feature", text: "点検の記録で「点検した機器」に印を付けられるようになりました（例：どのエアコンを掃除したか）。建物の中の図のピンを押すと、その機器の点検の記録が出ます。点検の時期は、今までどおり建物ごとにまとめて決まります。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図を拡大したあと、指で動かせないことがあったのを直しました（ピンの上から指を置いても動かせます）。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図で「元の図面」の切替をなくし、案内図だけにしました。" },
   { date: "2026-10-20", type: "feature", text: "建物の中の図に、点検する機器のピンが出るようになりました（試し：図面から読んだ下書きで、現地確認のあと直します）。ピンの色で点検の状態（期限超過・期限が近い・済・まだ記録なし）、ピンの下に次の期限が出ます。下のボタンで毎月・年1回などに絞れます。ピンを押すと、そのまま点検を記録できます。" },
@@ -361,7 +362,7 @@ async function fpEntry(bid, name) {
     try { await inspEnsure(); } catch (e) { /* 点検のデータが無くても、図は見られる */ }
     fpOpen({ title: name, load: () => fpLoad(bid), noPlan: true,   // 元の図面は本社だけ（リーダー・管理者は案内図）
       status: (eq) => fpEquipStatus(bid, eq), equipAction: "点検を記録する", art: "art/insp-",
-      onEquip: (eq, close) => { const id = fpItemId(eq.insp); close(); go(`#/insp/rec/${encodeURIComponent(id)}/${encodeURIComponent(bid)}`); } });
+      onEquip: (eq, close) => { const id = fpItemId(eq.insp); close(); go(`#/insp/rec/${encodeURIComponent(id)}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`); } });
   };
 }
 /** 機器のピンの点検の状態（点検の番号 → 項目 I04 など。期限は「項目×建物」の単位） */
@@ -371,7 +372,9 @@ function fpEquipStatus(bid, eq) {
   const r = inspRows().find((x) => x.item.id === fpItemId(eq.insp) && x.bid === bid);
   if (!r) return { st: "na", freq: "" };
   const st = r.st === "over" ? "over" : r.st === "month" ? "soon" : r.st === "later" ? "done" : "none";
-  return { st, freq: inspFreqOf(r.item), title: r.item.title, cycle: (r.item.cycle || {}).label || "", last: r.last, due: r.due };
+  const hist = inspLogs().filter((l) => l.item_id === r.item.id && l.building_id === bid && (l.equip || []).some((e) => e.id === eq.id))
+    .sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0));
+  return { st, freq: inspFreqOf(r.item), title: r.item.title, cycle: (r.item.cycle || {}).label || "", last: r.last, due: r.due, hist };
 }
 
 /* ---------- 建物ページ ---------- */

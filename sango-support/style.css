@@ -330,3 +330,8 @@ textarea { min-height: 84px; }
 .fpEntry { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--card, #fff); text-align: left; cursor: pointer; box-shadow: 0 1px 3px rgba(40, 50, 35, 0.1); }
 .fpEntry img { border-radius: 10px; flex: none; } .fpEntry .fpT { flex: 1; display: flex; flex-direction: column; } .fpEntry small { color: var(--muted); }
 .fpEntry svg { width: 20px; height: 20px; flex: none; color: var(--muted); } .fpEntry .fpT b { font-size: 16px; }
+
+/* 点検した機器（点検の記録） */
+.eqList{display:flex;flex-direction:column;gap:2px}
+.eqRow{display:flex;align-items:flex-start;gap:8px;padding:8px 4px;border-bottom:1px solid #eee9dc;font-size:14px;line-height:1.4}
+.eqRow input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:#244f37}

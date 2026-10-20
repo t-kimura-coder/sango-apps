@@ -38,6 +38,7 @@
     + ".fpCard .st{margin:8px 0 4px;padding:6px 10px;border-radius:8px;font-weight:800;color:#fff;background:var(--c)}.fpCard .rw{font-size:13px;margin:2px 0}.fpCard .memo{font-size:12px;color:#a3322a;margin-top:4px}"
     + ".fpCard .bt{display:flex;gap:8px;margin-top:10px}.fpCard .bt button{flex:1;min-height:40px;border-radius:10px;border:1px solid #244f37;background:#fff;color:#244f37;font-weight:800;font-size:14px;cursor:pointer}.fpCard .bt button.pr{background:#244f37;color:#fff}"
     + ".fpCard.over{--c:#a3322a}.fpCard.soon{--c:#c27a1e}.fpCard.done{--c:#2f6b45}.fpCard.none,.fpCard.na{--c:#8a8f84}"
+    + ".fpCard .hs{margin-top:6px;padding-top:6px;border-top:1px solid #e3e0d6;font-size:12.5px}.fpCard .hs b{display:block;font-size:12px;color:#5a645d;margin-bottom:2px}.fpCard .hs small{display:block;color:#5a645d;font-size:11.5px}"
     + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
     + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
@@ -91,6 +92,7 @@
       st.inner.style.transform = "translate(" + st.tx + "px," + st.ty + "px) scale(" + st.sc + ")";
       if (st.pins) {   // ピンの大きさ：小さい画面の「全体」では小さく、拡大すると元の大きさに（重なりを減らす）
         var ps = Math.max(0.5, Math.min(1, (stage.clientWidth / 900) * (st.sc / (st.min || st.sc))));
+        if (st.nnd) ps = Math.max(0.5, Math.min(ps, st.nnd * st.sc / 46));   // ピンが混み合う階は、となりのピンとの間に合わせて小さく（拡大すると元の大きさ）
         st.pins.style.setProperty("--inv", String(ps / st.sc));
         st.pins.classList.toggle("small", ps < 0.75);
       }
@@ -132,10 +134,14 @@
     // ---- 機器のピン・絞り込み・詳しい札 ----
     function drawEquip(floor) {
       var list = (o.status && floor.equip) || [];
+      st.nnd = 0;
       st.pins.innerHTML = "";
       var old = stage.querySelector(".fpFlt"); if (old) old.remove();
       if (!list.length) return;
       var stats = list.map(eqStat);
+      // となりのピンまでの距離（図の px、近い方から3割の所）。混み合っているかの目安
+      var nn = list.map(function (a) { var m = 1e9; list.forEach(function (b) { if (a !== b) m = Math.min(m, Math.hypot((a.x - b.x) * st.w, (a.y - b.y) * st.h)); }); return m; }).sort(function (a, b) { return a - b; });
+      st.nnd = nn.length > 1 ? nn[Math.floor(nn.length * 0.3)] : 0; apply();
       list.forEach(function (eq, i) {
         var s = stats[i], b = document.createElement("button");
         b.className = "fpEq " + s.st + (match(s) ? "" : " dim") + (st.sel === eq.id ? " sel" : "");
@@ -163,6 +169,9 @@
         + (s.title ? '<div class="rw">点検：' + esc(s.title) + (s.cycle ? "（" + esc(s.cycle) + "）" : "") + "</div>" : "")
         + (s.st !== "na" ? '<div class="rw">前回：' + (s.last ? esc(md(s.last.done_on)) + (s.last.done_by ? "　" + esc(s.last.done_by) + "さん" : "") : "まだ記録がありません") + "</div>" : "")
         + (s.due ? '<div class="rw">次の期限：' + esc(String(s.due).replace(/-/g, "/")) + "</div>" : "")
+        + (s.st !== "na" && s.hist ? '<div class="hs"><b>この機器の点検</b>' + (s.hist.length ? s.hist.slice(0, 3).map(function (l) {
+            return "<div>" + esc(md(l.done_on)) + "　" + esc({ ok: "異常なし", issue: "要対応あり", pending: "報告書待ち" }[l.result] || "") + (l.done_by ? "　" + esc(l.done_by) + "さん" : "") + (l.memo ? '<small>' + esc(String(l.memo).slice(0, 60)) + "</small>" : "") + "</div>"; }).join("")
+            : "<div><small>まだ記録がありません（点検の記録で、この機器に印を付けると出ます）</small></div>") + "</div>" : "")
         + (eq.memo ? '<div class="memo">' + esc(eq.memo) + "</div>" : "")
         + '<div class="bt">' + (o.onEquip && s.st !== "na" ? '<button class="pr" data-a="go">' + esc(o.equipAction || "点検のページへ") + "</button>" : "") + '<button data-a="x">閉じる</button></div>';
       c.addEventListener("pointerdown", function (e) { e.stopPropagation(); });

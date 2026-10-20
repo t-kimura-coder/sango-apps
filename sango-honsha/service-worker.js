@@ -1,7 +1,7 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 23;
+const CACHE_VERSION = 24;
 const CACHE_NAME = `sango-honsha-v${CACHE_VERSION}`;
-const APP_SHELL = ['./', 'index.html', 'floorplan.js?v=6', 'mappop.js?v=1', 'app.js?v=17', 'art/sitemap.svg', 'style.css?v=11', 'manifest.webmanifest', 'icon-96.png?v=1', 'icon-180.png?v=1', 'icon-192.png?v=1', 'icon-512.png?v=1'];
+const APP_SHELL = ['./', 'index.html', 'floorplan.js?v=7', 'mappop.js?v=1', 'app.js?v=18', 'art/sitemap.svg', 'style.css?v=11', 'manifest.webmanifest', 'icon-96.png?v=1', 'icon-180.png?v=1', 'icon-192.png?v=1', 'icon-512.png?v=1'];
 // 依頼や請求のデータはキャッシュしない（窓口から毎回読む）
 
 self.addEventListener('install', (event) => {

@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -447,7 +447,8 @@ function fpaEquipStatus(bid, eq) {
   if (!c) return { st: "na", freq: "" };
   const cy = c.item.cycle || {}, n = cy.n || 12;
   return { st: c.st === "over" ? "over" : c.st === "soon" ? "soon" : c.st === "ok" ? "done" : "none", freq: cy.type === "season" ? "season" : n <= 1 ? "m1" : n <= 3 ? "m3" : n <= 6 ? "m6" : "y1",
-    title: c.item.title, cycle: cy.label || "", last: c.last, due: c.due };
+    title: c.item.title, cycle: cy.label || "", last: c.last, due: c.due,
+    hist: c.logs.filter((l) => l.result !== undefined && (l.equip || []).some((e) => e.id === eq.id)).sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0)) };
 }
 async function fpaLoad(bid) {
   if (FPA.cache.has(bid)) return FPA.cache.get(bid);
@@ -745,6 +746,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-20", type: "feature", text: "点検の記録に「点検した機器」が残るようになりました（リーダーが印を付けた機器）。建物の中の図のピンを押すと、その機器の点検の記録が出ます。点検の履歴にも、点検した機器が出ます。" },
   { date: "2026-10-20", type: "feature", text: "建物の中の図に、点検する機器のピンを出しました（試し：図面から読んだ下書き）。色で点検の状態、ピンの下に次の期限が出て、毎月・年1回などに絞れます。ピンを押すと、点検の一覧でその点検の履歴を開けます。" },
   { date: "2026-10-18", type: "feature", text: "建物の中の図：和の案内図を追加しました。開いた時や「全体」を押した時に、建物が画面の真ん中に来るようにしました。管理者の画面では「元の図面」の切替をなくし、案内図だけにしました（案内図がまだない棟は、元の図面が出ます）。" },
   { date: "2026-10-18", type: "feature", text: "敷地マップで建物を押すと、その建物の横に吹き出しが出るようになりました。「症例」でその建物の一覧へ、「図面・点検」で建物の中の図を開けます。" },

@@ -172,7 +172,7 @@ function inspCard(r, cls) {
     <button class="btn btnPrimary inspGo">記録する</button></div>`;
 }
 async function viewInspect(main, r) {
-  if (r.id === "rec") return viewInspRecord(main, r.sub, r.sid);
+  if (r.id === "rec") return viewInspRecord(main, r.sub, r.sid, r.q.get("eq"));
   if (r.id === "hist") return viewInspHist(main, r.sub, r.sid);
   $("topTitle").textContent = "点検";
   if (!hasApi()) { main.innerHTML = `<div class="empty">点検は、窓口につながっている時に使えます。<br>設定で「報告の送り方」を確認してください。</div>`; return; }
@@ -215,14 +215,31 @@ const inspNames = () => { try { return JSON.parse(getSetting("inspNames", "[]"))
 function inspRememberName(n) { const l = [n, ...inspNames().filter((x) => x !== n)].slice(0, 8); setSetting("inspNames", JSON.stringify(l)); }
 function inspItem(id) { return inspData && inspData.items.find((i) => i.id === id); }
 
-async function viewInspRecord(main, itemId, bid) {
+/** その建物・その点検の番号の機器（平面図の控えから）。控えが無ければ、窓口から読む */
+async function inspEquipOf(itemId, bid) {
+  const no = Number(String(itemId).replace(/\D/g, "")), out = [];
+  let data = null;
+  try { const c = await dbGet("meta", "fp_" + bid); data = c && c.data; } catch (e) { data = null; }
+  if (!data && typeof fpLoad === "function") { try { data = await fpLoad(bid); } catch (e) { data = null; } }
+  ((data && data.floors) || []).forEach((f) => (f.equip || []).forEach((eq) => {
+    if (eq.insp === no) out.push({ id: eq.id, label: `${f.label || f.id}・${eq.type}${eq.no ? " " + eq.no : ""}（${eq.room || ""}）` });
+  }));
+  return out;
+}
+async function viewInspRecord(main, itemId, bid, eqId) {
   if (!inspData) await inspLoadCache();
   const item = inspItem(itemId), bname = (((inspData && inspData.meta.buildings) || []).find((b) => b.id === bid) || {}).name;
   if (!item || !bname) { goReplace("#/insp"); return; }
   $("topTitle").textContent = "点検を記録";
   const key = location.hash;
   if (!inspForm || inspForm.key !== key) {
-    inspForm = { key, id: uid(), date: inspToday(), by: inspNames()[0] || getSetting("name"), result: "ok", memo: "", vendor: "", photos: [], rows: (item.checklist || []).map((t) => ({ t, r: "ok", m: "" })) };
+    inspForm = { key, id: uid(), date: inspToday(), by: inspNames()[0] || getSetting("name"), result: "ok", memo: "", vendor: "", photos: [], rows: (item.checklist || []).map((t) => ({ t, r: "ok", m: "" })), equip: null, eqSel: {} };
+    const f0 = inspForm;
+    inspEquipOf(itemId, bid).then((list) => {   // 機器の一覧は、あとから読み込む（図から来た時は、その機器だけに印。一覧から来た時は、全部に印）
+      if (inspForm !== f0 || !list.length) return;
+      f0.equip = list; list.forEach((e) => { f0.eqSel[e.id] = eqId ? e.id === eqId : true; });
+      if (location.hash === key) draw();
+    });
   }
   const f = inspForm;
   const rows = inspRows().filter((x) => x.item.id === itemId && x.bid === bid), cur = rows[0];
@@ -237,6 +254,9 @@ async function viewInspRecord(main, itemId, bid) {
       ${isCheck ? `<div class="formCard"><div class="fieldLabel">点検表</div><div id="iRows"></div></div>` : `
       <div class="formCard"><div class="fieldLabel">実施した業者<span class="opt">任意</span></div><input class="textInput" id="iVendor" maxlength="60" value="${esc(f.vendor)}"></div>
       <div class="formCard"><div class="fieldLabel">結果</div><div class="segRow" id="iRes">${[["ok", "異常なし"], ["issue", "要対応あり"], ["pending", "報告書待ち"]].map(([k, l]) => `<button class="segBtn${f.result === k ? " on " + k : ""}" data-v="${k}">${l}</button>`).join("")}</div></div>`}
+      ${f.equip ? `<div class="formCard"><div class="fieldLabel">点検した機器<span class="opt">見た機器に印</span></div>
+        <div class="eqList">${f.equip.map((e) => `<label class="eqRow"><input type="checkbox" data-eq="${esc(e.id)}" ${f.eqSel[e.id] ? "checked" : ""}> ${esc(e.label)}</label>`).join("")}</div>
+        <div class="mutedText" style="margin-top:4px"><a href="#" id="eqAll" style="text-decoration:underline">すべてに印</a>　点検の時期は、この建物でまとめて決まります。印は「どの機器を見たか」の記録です</div></div>` : ""}
       <div class="formCard"><div class="fieldLabel">${isCheck ? "写真" : "点検報告書の写真"}<span class="opt">任意・複数枚OK</span></div><div class="photoStrip" id="iStrip"></div></div>
       <div class="formCard"><div class="fieldLabel">メモ<span class="opt">任意</span></div><textarea id="iMemo" maxlength="500" placeholder="気づいたことなど">${esc(f.memo)}</textarea></div>
       ${isCheck ? "" : `<div class="infoBar">${icon("info")}点検は有資格者が行います。ここには、いつ・誰が行ったかの記録を残します。${next ? `次回の期限：${inspMD(next)}（${next.slice(0, 4)}）` : ""}</div>`}
@@ -251,6 +271,8 @@ async function viewInspRecord(main, itemId, bid) {
     $("iMemo").oninput = (e) => { f.memo = e.target.value; };
     const v = $("iVendor"); if (v) v.oninput = (e) => { f.vendor = e.target.value; };
     main.querySelectorAll("#iRes .segBtn").forEach((b) => (b.onclick = () => { f.result = b.dataset.v; draw(); }));
+    main.querySelectorAll("[data-eq]").forEach((c) => (c.onchange = () => { f.eqSel[c.dataset.eq] = c.checked; }));
+    const ea = $("eqAll"); if (ea) ea.onclick = (e) => { e.preventDefault(); f.equip.forEach((x) => { f.eqSel[x.id] = true; }); draw(); };
     $("iSave").onclick = () => save(false);
     $("iIssue").onclick = () => save(true);
     fillIcons(main);
@@ -293,7 +315,7 @@ async function viewInspRecord(main, itemId, bid) {
     const result = isCheck ? (f.rows.some((x) => x.r === "issue") ? "issue" : "ok") : f.result;
     const now = new Date().toISOString();
     const photos = f.photos.map((p, n) => ({ name: safeName(`点検_${bname}_${item.id}_${f.date.replace(/-/g, "")}_${f.id.slice(-4)}_${n + 1}_${p.id.slice(-4)}.jpg`), blob: p.blob, takenAt: p.takenAt }));
-    const log = { id: f.id, item_id: item.id, building_id: bid, done_on: f.date, done_by: by, result, checks: isCheck ? f.rows.map((x) => ({ t: x.t, r: x.r, m: x.r === "issue" ? x.m.trim() : "" })) : [], memo: f.memo.trim(), photos: photos.map((p) => ({ file: p.name })), vendor: f.vendor.trim(), created_at: now, updated_at: now };
+    const log = { id: f.id, item_id: item.id, building_id: bid, done_on: f.date, done_by: by, result, checks: isCheck ? f.rows.map((x) => ({ t: x.t, r: x.r, m: x.r === "issue" ? x.m.trim() : "" })) : [], memo: f.memo.trim(), photos: photos.map((p) => ({ file: p.name })), vendor: f.vendor.trim(), equip: (f.equip || []).filter((e) => f.eqSel[e.id]).map((e) => ({ id: e.id, label: e.label })), created_at: now, updated_at: now };
     $("iSave").disabled = true;
     inspPend.push({ log, photos });
     try { await inspSavePend(); } catch (e) { inspPend.pop(); $("iSave").disabled = false; toast("保存できませんでした。端末の空き容量を確認してください"); return; }
@@ -323,7 +345,7 @@ async function viewInspHist(main, itemId, bid) {
     ${logs.length ? logs.map((l) => `<div class="formCard"><div class="recMeta"><span>${esc(l.done_on.replace(/-/g, "/"))}</span><span class="tag${l.result === "issue" ? " warn" : ""}">${RL[l.result] || ""}</span>${l._pending ? `<span class="tag gray">送信待ち</span>` : ""}</div>
       <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>
       ${(l.checks || []).filter((c) => c.r === "issue").map((c) => `<div class="mutedText">要対応：${esc(c.t)}${c.m ? "（" + esc(c.m) + "）" : ""}</div>`).join("")}
-      ${l.memo ? `<div class="mutedText">${esc(l.memo)}</div>` : ""}${(l.photos || []).length ? `<div class="mutedText">写真 ${l.photos.length}枚</div>` : ""}</div>`).join("") : `<div class="empty">まだ記録がありません。</div>`}`;
+      ${(l.equip || []).length ? `<div class="mutedText">点検した機器：${l.equip.map((e) => esc(e.label)).join("／")}</div>` : ""}${l.memo ? `<div class="mutedText">${esc(l.memo)}</div>` : ""}${(l.photos || []).length ? `<div class="mutedText">写真 ${l.photos.length}枚</div>` : ""}</div>`).join("") : `<div class="empty">まだ記録がありません。</div>`}`;
 }
 
 /* ---------- ホーム・建物ページの入口 ---------- */
