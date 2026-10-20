@@ -84,15 +84,23 @@ function viewInsp(main) {
   iaWireMode(main, () => viewInsp(main));
   $("iaNear").onchange = (e) => { IA.near = e.target.checked; viewInsp(main); };
   main.querySelectorAll(".iaC[data-i]").forEach((el) => (el.onclick = () => { IA.sel = { i: el.dataset.i, b: el.dataset.b }; viewInsp(main); }));
+  main.querySelectorAll("[data-iamap]").forEach((el) => (el.onclick = () => iaOpenMap(el.dataset.iamap, +el.dataset.iano)));
   main.querySelectorAll("[data-photo]").forEach((el) => (el.onclick = async () => {
     try { const x = await apiCall({ action: "getPhoto", name: el.dataset.photo }, 60000); const bin = atob(x.data), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); showLightbox(URL.createObjectURL(new Blob([u8], { type: x.mime || "image/jpeg" }))); }
     catch (e) { toast("写真を読めませんでした"); }
   }));
 }
+/** 点検の一覧から、その建物の図を開く（その点検の機器だけを濃く。見るだけ） */
+async function iaOpenMap(bid, no) {
+  const info = typeof fpaInfo === "function" ? await fpaInfo() : null;
+  if (!(info && info.buildings && info.buildings[bid]) || typeof fpOpen !== "function") return toast("この建物の図面は、まだありません");
+  const b = (IA.data.meta.buildings || []).find((x) => x.id === bid) || { name: bid };
+  fpOpen({ title: b.name, load: () => fpaLoad(bid), noPlan: true, ...fpaPinOpts(bid), focus: no });
+}
 function iaSide(c) {
   const RL = { ok: "異常なし", issue: "要対応あり", pending: "報告書待ち" };
   const logs = c.logs.slice().sort((a, b) => (a.done_on < b.done_on ? 1 : a.done_on > b.done_on ? -1 : 0));
-  return `<h3>${esc(c.bname)} × ${esc(c.item.title)}</h3><div class="note">${esc((c.item.cycle || {}).label || "")}／${c.item.legal ? "法定" : "任意"}／${esc(c.item.who || "")}</div>
+  return `<h3>${esc(c.bname)} × ${esc(c.item.title)}</h3><p><button class="btn" data-iamap="${esc(c.bid)}" data-iano="${c.item.no}">図で場所を見る</button></p><div class="note">${esc((c.item.cycle || {}).label || "")}／${c.item.legal ? "法定" : "任意"}／${esc(c.item.who || "")}</div>
     <p><b>次の期限：</b>${c.due ? `${c.due.replace(/-/g, "/")}${c.st === "over" ? `（${-c.days}日超過）` : ""}` : "まだ記録がありません"}</p>${c.item.note ? `<div class="note">${esc(c.item.note)}</div>` : ""}
     <h4>実施の履歴</h4>${logs.length ? logs.map((l) => `<div class="iaLog"><div><b>${esc(l.done_on.replace(/-/g, "/"))}</b> <span class="chip ${l.result === "issue" ? "todo" : l.result === "pending" ? "" : "done"}">${RL[l.result] || ""}</span></div>
       <div>${esc(l.done_by || "")}${l.vendor ? "　業者：" + esc(l.vendor) : ""}</div>${(l.equip || []).length ? `<div class="note">点検した機器：${l.equip.map((e) => esc(e.label)).join("／")}</div>` : ""}${(l.checks || []).filter((x) => x.r === "issue").map((x) => `<div class="note">要対応：${esc(x.t)}${x.m ? "（" + esc(x.m) + "）" : ""}</div>`).join("")}${l.memo ? `<div class="note">${esc(l.memo)}</div>` : ""}

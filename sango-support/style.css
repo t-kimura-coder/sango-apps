@@ -335,3 +335,6 @@ textarea { min-height: 84px; }
 .eqList{display:flex;flex-direction:column;gap:2px}
 .eqRow{display:flex;align-items:flex-start;gap:8px;padding:8px 4px;border-bottom:1px solid #eee9dc;font-size:14px;line-height:1.4}
 .eqRow input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:#244f37}
+
+/* 点検のタブの「図で見る」 */
+.inspMapRow{display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap}.inspMapRow>span{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:#244f37;white-space:nowrap}.inspMapRow .chips{margin:0}
