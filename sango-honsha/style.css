@@ -186,3 +186,16 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 }
 /* 依頼のカード：内容は、1行で切らずに、2行まで折り返す */
 .card .what { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+/* 業者（本社経由 → 直接連絡OK）と、手配の欄の案内 */
+.chip.hq { background: var(--warn-soft); color: var(--warn); font-weight: 700; margin-left: 4px; }
+.hqNoteBox { border: 1px solid var(--line); border-left: 4px solid var(--amber); background: var(--amber-soft); border-radius: 8px; padding: 9px 12px; margin: 4px 0 12px; font-size: 14px; line-height: 1.6; }
+.hqNoteBox.first { border-left-color: var(--warn); background: var(--warn-soft); }
+.vRow { display: grid; grid-template-columns: 1fr 92px 92px auto; gap: 10px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--line); }
+.vRow.ready { background: var(--ok-soft); border-radius: 8px; }
+.vName { font-weight: 700; font-size: 15px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.vNum { text-align: center; } .vNum small { display: block; font-size: 11px; color: var(--muted); } .vNum b { font-size: 20px; }
+.vConfirm { grid-column: 1 / -1; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.vChk { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; font-size: 14px; color: inherit; }
+.vChk input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+@media (max-width: 720px) { .vRow { grid-template-columns: 1fr 1fr; } .vMain, .vAct { grid-column: 1 / -1; } }

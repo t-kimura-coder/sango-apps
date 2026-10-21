@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -111,6 +111,37 @@ async function loadMaster() {
   } catch (e) { /* 本社用の合言葉だけでは受け取れない。候補が出ないだけ */ }
 }
 const entryOf = (r) => (S.master && S.master.entries ? S.master.entries.find((e) => e.b === r.building_id && e.c === r.category_id) : null);
+
+/* ---------- 業者の「直接連絡OK（解禁）」：まだ山郷からの修繕実績がない業者は「本社経由」（業者データの direct が false） ---------- */
+// 名前の比べ方は、窓口（Auth.gs の coKey_）と同じ：全角・半角、空白、株式会社・(株) の違いは無視
+const coKey = (s) => String(s || "").normalize("NFKC").replace(/\s/g, "").replace(/株式会社|有限会社|合同会社|\((株|有)\)/g, "");
+/** 業者データの業者を、名前ごとにまとめる（担当している建物・分類の数つき） */
+function companyMap() {
+  const m = new Map();
+  ((S.master && S.master.entries) || []).forEach((e) => (e.none ? [] : e.companies || []).forEach((c) => {
+    const k = coKey(c.name); if (!k) return;
+    const o = m.get(k) || { key: k, name: c.name, phone: c.phone || "", contact: c.contact || "", direct: c.direct !== false, spots: [] };
+    if (c.direct === false) o.direct = false;   // 1か所でも本社経由なら、本社経由として扱う（窓口は名前ごとにまとめて切り替える）
+    o.spots.push(e); m.set(k, o);
+  }));
+  return m;
+}
+const coOf = (name) => (name ? companyMap().get(coKey(name)) || null : null);
+/** その業者に、本社経由で手配した依頼（依頼の記録の「手配先」から数える）。exceptId の依頼は数えない */
+function vendorStats(key, exceptId) {
+  const list = S.records.filter((r) => r.id !== exceptId && item(r).vendor && coKey(item(r).vendor) === key);
+  const arranged = list.filter((r) => ["arranged", "scheduled", "done"].includes(item(r).progress));
+  return { list, arranged: arranged.length, done: arranged.filter((r) => item(r).progress === "done").length };
+}
+/** 依頼の手配の画面の案内（手配先が本社経由の業者の時） */
+function hqVendorNote(name, recId) {
+  const co = coOf(name);
+  if (!co || co.direct) return "";
+  const st = vendorStats(co.key, recId);
+  return st.done
+    ? `<div class="hqNoteBox">「${esc(co.name)}」は、<b>本社経由</b>の業者です（本社経由の施工完了 ${st.done}件）。業者に「今後は山郷から直接連絡がいく」と伝えて了承をもらえたら、<a href="#/vendors">業者</a>の画面で「直接連絡OK」にできます。</div>`
+    : `<div class="hqNoteBox first"><b>初回です。</b>「${esc(co.name)}」は、まだ山郷からの修繕実績がない業者（本社経由）です。<br>完了したら、業者に「<b>今後は山郷から直接連絡がいく</b>」と伝えて、了承をもらってください（請求の流れも確認）。了承をもらえたら、<a href="#/vendors">業者</a>の画面で「直接連絡OK」にします。</div>`;
+}
 
 /* ---------- 一覧 ---------- */
 const F = { stage: "open", q: "", bld: "", late: "" };
@@ -330,7 +361,8 @@ function viewDetail(main, id) {
         <div class="wide"><label>山郷へのひとこと</label><input type="text" id="fReply" maxlength="120" placeholder="例）10/14 午前に業者が伺います" value="${esc(it.reply || "")}"></div>
       </div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
-      ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
+      ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.direct === false ? `<span class="chip hq" title="まだ山郷からの修繕実績がない業者。山郷のリーダーの画面では、電話が本社に回ります">本社経由</span>` : ""}${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
+      <div id="hqVNote">${hqVendorNote(it.vendor, r.id)}</div>
       <div class="form">
         <div><label>手配先の業者</label><input type="text" id="fVendor" list="vendorList" maxlength="60" value="${esc(it.vendor || "")}"><datalist id="vendorList">${vendors.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></div>
         <div><label>進捗</label><select id="fProg">${PROGRESS.map(([k, l]) => `<option value="${k}"${(it.progress || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -346,7 +378,9 @@ function viewDetail(main, id) {
       <div class="btnRow"><button class="btn primary" id="fSave">保存する</button><span class="sum" id="gross"></span><span class="note">${it.at ? "最終更新 " + new Date(Number(it.at)).toLocaleString("ja-JP") + (it.by ? "　" + esc(it.by) : "") : ""}</span></div></div>`;
   const upGross = () => { const g = gross({ cost: $("fCost").value, bill_amount: $("fBill").value }); $("gross").textContent = g == null ? "" : "粗利 " + g.toLocaleString("ja-JP") + "円"; };
   upGross(); $("fCost").oninput = upGross; $("fBill").oninput = upGross;
-  main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); }));
+  const upNote = () => { $("hqVNote").innerHTML = hqVendorNote($("fVendor").value.trim(), r.id); };   // 手配先が本社経由の業者なら、案内を出す
+  $("fVendor").oninput = upNote;
+  main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); upNote(); }));
   $("fSave").onclick = async () => {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
@@ -391,6 +425,56 @@ function viewBill(main) {
   };
 }
 
+/* ---------- 業者（本社経由 → 直接連絡OK） ---------- */
+let vOpen = "", vBusy = false;   // 「直接連絡OKにする」の確認を開いている業者
+function viewVendors(main) {
+  if (!S.api) return viewEmptyApi(main);
+  if (!S.master) { main.innerHTML = `<h2>業者（直接連絡OK）</h2><div class="empty">業者データを受け取れませんでした。<br>窓口の更新（本社の合言葉で業者データを受け取れるようにする）のあとで使えます。<br><br><button class="btn" id="vRetry">もう一度受け取る</button></div>`; $("vRetry").onclick = async () => { await loadMaster(); viewVendors(main); }; return; }
+  const all = [...companyMap().values()].map((c) => ({ ...c, st: vendorStats(c.key) })).sort((a, b) => b.st.done - a.st.done || b.st.arranged - a.st.arranged || a.name.localeCompare(b.name, "ja"));
+  const hq = all.filter((c) => !c.direct), ok = all.filter((c) => c.direct);
+  const nm = (id, list, key) => ((list || []).find((x) => x.id === id) || {})[key] || id;
+  const spotTxt = (c) => c.spots.slice(0, 4).map((e) => nm(e.b, S.master.buildings, "name") + "・" + nm(e.c, S.master.categories, "label")).join("／") + (c.spots.length > 4 ? ` ほか${c.spots.length - 4}か所` : "");
+  const row = (c) => `<div class="vRow${c.st.done ? " ready" : ""}" data-k="${esc(c.key)}">
+      <div class="vMain"><div class="vName">${esc(c.name)}${c.st.done ? `<span class="chip ok">解禁できます</span>` : ""}</div>
+        <div class="meta">${c.phone ? esc(c.phone) : "電話なし"}${c.contact ? "　" + esc(c.contact) : ""}　｜　担当：${esc(spotTxt(c))}</div></div>
+      <div class="vNum"><small>本社経由で手配</small><b>${c.st.arranged}</b></div>
+      <div class="vNum"><small>施工完了</small><b>${c.st.done}</b></div>
+      <div class="vAct"><button class="btn${c.st.done ? " primary" : ""} vOpenBtn" data-k="${esc(c.key)}">直接連絡OKにする</button></div>
+      ${vOpen === c.key ? `<div class="vConfirm">
+        <div class="note">山郷のリーダーの画面で、この業者に<b>直接電話できる</b>ようになります（次に開いた時に反映）。2つとも確かめてから押してください。</div>
+        <label class="vChk"><input type="checkbox" id="vc1">本社経由で手配し、施工が完了した${c.st.done ? `（この画面の記録で ${c.st.done}件）` : `　<span class="warnText">※この画面の記録では、まだ施工完了が0件です</span>`}</label>
+        <label class="vChk"><input type="checkbox" id="vc2">業者に「今後は山郷から直接連絡がいく」と伝えて、了承をもらった（請求の流れも確認した）</label>
+        <div class="btnRow"><button class="btn primary" id="vGo" disabled>直接連絡OKにして、配り直す</button><button class="btn" id="vCancel">やめる</button></div></div>` : ""}
+    </div>`;
+  main.innerHTML = `<h2>業者（直接連絡OK）</h2>
+    <div class="panel"><h3>本社経由の業者 <span class="chip hq">${hq.length}社</span></h3>
+      <div class="note" style="margin-bottom:8px">まだ山郷からの修繕実績がない業者です。山郷のリーダーの画面では、電話番号を押すと本社に回ります。<br><b>直接連絡OKにする目安</b>：① 本社経由で1回以上手配して、施工が完了した　② 業者に「今後は山郷から直接連絡がいく」と伝えて、了承をもらった（請求の流れも確認）。件数は、依頼の「手配先」から数えています。</div>
+      ${hq.map(row).join("") || `<div class="note">本社経由の業者は、ありません</div>`}</div>
+    <div class="panel"><h3>直接連絡OKの業者 <span class="chip ok">${ok.length}社</span></h3>
+      ${ok.map((c) => `<div class="vRow" data-k="${esc(c.key)}"><div class="vMain"><div class="vName">${esc(c.name)}</div><div class="meta">${c.phone ? esc(c.phone) : "電話なし"}　｜　担当：${esc(spotTxt(c))}</div></div><div class="vNum"><small>本社経由で手配</small><b>${c.st.arranged}</b></div><div class="vNum"><small>施工完了</small><b>${c.st.done}</b></div><div class="vAct"><button class="btn small vBackBtn" data-k="${esc(c.key)}">本社経由に戻す</button></div></div>`).join("") || `<div class="note">まだ、ありません</div>`}
+      <div class="note" style="margin-top:8px">ここで切り替えると、窓口の業者データがすぐに配り直されます。元の表（csv/vendor_phones.csv の direct 列）も、あとで同じに直してください（置き直した時に、食い違いがあれば知らせが出ます）。</div></div>`;
+  const setDirect = async (c, direct) => {
+    if (vBusy) return; vBusy = true;
+    try {
+      const j = await apiCall({ action: "masterSetDirect", name: c.name, direct }, 60000);
+      const res = j.result || {};
+      if (res.data) { S.master = res.data; setLS("master", JSON.stringify({ v: res.version, u: res.updated, data: res.data })); }
+      vOpen = "";
+      toast(direct ? `「${c.name}」を直接連絡OKにしました（リーダーの画面には、次に開いた時に反映）` : `「${c.name}」を本社経由に戻しました`);
+    } catch (e) { alert("切り替えられませんでした。\n（" + String((e && e.message) || e) + "）"); }
+    finally { vBusy = false; if (route().name === "vendors") viewVendors(main); }
+  };
+  main.querySelectorAll(".vOpenBtn").forEach((b) => (b.onclick = () => { vOpen = vOpen === b.dataset.k ? "" : b.dataset.k; viewVendors(main); }));
+  if ($("vGo")) {
+    const c = hq.find((x) => x.key === vOpen);
+    const upd = () => { $("vGo").disabled = !($("vc1").checked && $("vc2").checked); };
+    $("vc1").onchange = upd; $("vc2").onchange = upd;
+    $("vCancel").onclick = () => { vOpen = ""; viewVendors(main); };
+    $("vGo").onclick = () => { if (c) setDirect(c, true); };
+  }
+  main.querySelectorAll(".vBackBtn").forEach((b) => (b.onclick = () => { const c = ok.find((x) => x.key === b.dataset.k); if (c && confirm(`「${c.name}」を本社経由に戻しますか？（山郷のリーダーの画面で、電話が本社に回るようになります）`)) setDirect(c, false); }));
+}
+
 /* ---------- 使い方 ---------- */
 function viewHelp(main) {
   const sec = (title, items) => `<div class="panel"><h3>${title}</h3><ol class="helpList">${items.map((i) => `<li>${i}</li>`).join("")}</ol></div>`;
@@ -399,6 +483,7 @@ function viewHelp(main) {
     ${sec("この画面でできること", ["山郷のリーダーが「対応を依頼する」で送った依頼を、一覧で受けて、<b>業者への手配の進み具合</b>と、<b>山郷への請求</b>を管理します。", "山郷側の管理者・リーダーには、ここに入れた金額・粗利・手配先は、見えません。"])}
     ${sec("依頼を受けて、手配する", ["依頼が届くと、メールが来ます。この画面を開くと、「<b>新着</b>」の印が付いた依頼が、一覧に出ます（急ぎは先頭）。", "依頼を開くと、写真・内容と、この建物・分類の<b>担当業者（電話番号つき）</b>が出ます。業者の名前を押すと、「手配先」に入ります。", "<b>手配先・進捗・手配した日・見積番号</b>を入れて「保存」。進捗は、「未手配 → 手配済み → 施工待ち → 施工完了」と進めます。上の帯で、今どこかが分かります。", "上の4つの数字（未手配・進行中・請求待ち・今月の請求）を押すと、その状態の依頼だけが出ます。"])}
     ${sec("山郷に返事する（山郷に表示されます）", ["依頼の詳細の「<b>山郷への返事</b>」に、<b>訪問予定日</b>・<b>ひとこと</b>・<b>業者の金額の目安</b>を入れて保存すると、リーダー・管理者の画面の「手配の状況」に出ます。", "山郷に見えるのは、手配の段階（手配済み・施工待ち・施工完了）と、この3つだけです。<b>手配先の名前・粗利を乗せた請求額・粗利は、見えません。</b>金額の目安は、業者の金額を、そのまま入れます。"])}
+    ${sec("業者の「直接連絡OK」（解禁）", ["まだ山郷からの修繕実績がない業者は「<b>本社経由</b>」です。山郷のリーダーの画面では、電話番号を押すと、本社に電話するか、症例で対応を依頼するように案内されます。", "依頼の手配先が本社経由の業者だと、手配の欄に「<b>初回です</b>」の案内が出ます。施工が完了したら、業者に「今後は山郷から直接連絡がいく」と伝えて、了承をもらいます（請求の流れも確認）。", "左のメニューの「<b>業者</b>」に、本社経由の業者と、本社経由で手配した件数・施工完了の件数が出ます。了承をもらったら「<b>直接連絡OKにする</b>」→ 2つの確認にチェック → 押すと、業者データが配り直され、リーダーの画面には次に開いた時に反映されます。", "間違えた時は、「直接連絡OKの業者」の「本社経由に戻す」で戻せます。"])}
     ${sec("請求を管理する", ["依頼の詳細で、<b>請求区分</b>（請求する／請求しない＝保証・サービス／未定）を選びます。「請求しない」は、施工完了で、請求待ちに出ずに「請求なし」で終わります。", "<b>業者への支払い</b>と<b>山郷への請求額</b>を入れると、<b>粗利</b>が自動で出ます。", "請求書を出したら、<b>請求月</b>を入れて「請求済み」にチェックして保存します（請求月が無いと、請求済みにできません）。請求書そのものは、見積アプリのPDFで、これまでどおり社内で処理します。", "「請求」の画面に、<b>請求待ち</b>（施工完了で、まだ請求していないもの）と、<b>月ごとの請求額・粗利</b>が出ます。「CSVに出す」で、Excelで開けます。"])}
     ${sec("過去の症例", ["「依頼」の一覧と、建物の画面にある「<b>過去の症例</b>」で、これまでの修繕の記録（業者・金額・原因・メモ）を見られます（見るだけです）。", "新しい順に150件まで出ます。建物とキーワードで絞り込めます。山郷に見せない<b>本社用メモ</b>（茶色の枠）が付くことがあります。"])}
     ${sec("困った時", ["「窓口につながりません」は、ネットワークを確認して、右上の「↻」を押します。", "新しい機能が出ない時は、設定の「更新」にある2つのボタンを押します。", "山郷側の管理者が使う管理者ビューアとは、別の画面です（合言葉の役割が違うため）。"])}`;
@@ -449,6 +534,7 @@ function render() {
   else if (r.name === "map") viewMap(main);
   else if (r.name === "b") viewBuilding(main, r.id);
   else if (r.name === "bill") viewBill(main);
+  else if (r.name === "vendors") viewVendors(main);
   else if (r.name === "help") viewHelp(main);
   else if (r.name === "settings") viewSettings(main);
   else viewList(main);
@@ -458,6 +544,7 @@ function refreshView() { // 自動更新のあと。入力中の画面（詳細�
   const n = route().name;
   if (n === "list" && $("listBody")) { renderListBody(); const m = $("main"); if (!m.contains(document.activeElement) || !["INPUT", "SELECT"].includes(document.activeElement.tagName)) viewListChips(); }
   else if (n === "bill") viewBill($("main"));
+  else if (n === "vendors" && !vOpen) viewVendors($("main"));   // 解禁の確認を開いている間は描き直さない
   else if (n === "map") viewMap($("main"));
   else if (n === "b") { const m = $("main"); if (!m.contains(document.activeElement)) viewBuilding(m, route().id); }
   updateTitle();
@@ -470,10 +557,10 @@ function viewListChips() { // 件数の表示と、上の数字だけ更新す�
 }
 async function autoRefresh() { if (S.api && !document.hidden && (await loadAll(false))) refreshView(); else renderSync(); }
 
-$("reloadBtn").onclick = async () => { if (S.api) { await loadAll(true); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b") render(); else if (n === "r" && !$("fSave")) render(); } };
+$("reloadBtn").onclick = async () => { if (S.api) { await loadAll(true); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b" || n === "vendors") render(); else if (n === "r" && !$("fSave")) render(); } };
 window.addEventListener("hashchange", render);
 render();
-if (S.api) { loadAll(false).then(() => { initSeen(); loadMaster().then(() => { if (route().name === "r") render(); }); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); }); }
+if (S.api) { loadAll(false).then(() => { initSeen(); loadMaster().then(() => { if (route().name === "r" || route().name === "vendors") render(); }); const n = route().name; if (n === "list" || n === "bill" || n === "map" || n === "b" || (n === "r" && !S.loaded) || (n === "r" && !document.querySelector("#photos"))) render(); else refreshView(); }); }
 setInterval(autoRefresh, 45000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
