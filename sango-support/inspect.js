@@ -29,7 +29,7 @@ const inspPlanOf = (it) => IC.planOf(it);   // 計算は inspcore.js（管理者
 function inspPlanHtml() {
   const today = inspToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);
   const logs = inspLogs(), bn = {};
-  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { if (bldVisible(b.id)) bn[b.id] = b.name; });   // 見える建物だけ
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bn[b.id] = b.name; });   // 見える建物は、読み込んだ時に絞ってある（inspScope）
   const items = inspData.items.filter((i) => i.enabled && (i.buildings || []).some((b) => bn[b]));
   const monthly = items.filter((i) => inspPlanOf(i).length === 12);
   const doneIn = (item, bid, ym) => logs.some((l) => l.item_id === item.id && l.building_id === bid && l.result !== "pending" && String(l.done_on).slice(0, 7) === ym);
@@ -59,8 +59,15 @@ const inspDays = (a, b) => Math.round((inspParse(a) - inspParse(b)) / 86400000);
 const inspDue = (item, last) => IC.due(item, last);
 
 /* ---------- データ（端末の控え・窓口との同期） ---------- */
+/** 見える建物だけにする（合言葉で決まる。窓口も絞って返すが、前の控えが残っている時のため）。読み込んだ時に1回だけ */
+function inspScope(d) {
+  if (!d || !bldScope().length) return d;
+  const blds = ((d.meta && d.meta.buildings) || []).filter((b) => bldVisible(b.id));
+  return { ...d, meta: { ...(d.meta || {}), buildings: blds }, logs: (d.logs || []).filter((l) => bldVisible(l.building_id)),
+    items: (d.items || []).map((it) => ({ ...it, buildings: (it.buildings || []).filter((b) => bldVisible(b)) })) };
+}
 async function inspLoadCache() {
-  try { const c = await dbGet("meta", INSP_CACHE); if (c && c.data) inspData = c.data; } catch (e) { /* 無ければ空 */ }
+  try { const c = await dbGet("meta", INSP_CACHE); if (c && c.data) inspData = inspScope(c.data); } catch (e) { /* 無ければ空 */ }
   try { const p = await dbGet("meta", INSP_PEND); inspPend = (p && p.list) || []; } catch (e) { inspPend = []; }
 }
 const inspSavePend = () => dbPut("meta", { key: INSP_PEND, list: inspPend });
@@ -90,7 +97,7 @@ async function inspSync() {
   try {
     await inspFlush();
     const j = await apiCall({ action: "inspectList" }, 40000);
-    inspData = { meta: j.meta || { buildings: [], groups: [] }, items: j.items || [], logs: j.logs || [], at: Date.now() };
+    inspData = inspScope({ meta: j.meta || { buildings: [], groups: [] }, items: j.items || [], logs: j.logs || [], at: Date.now() });
     await inspSaveCache();
     return true;
   } catch (e) { console.warn("点検の読み込みに失敗", e); return false; } finally { inspBusy = false; }
@@ -100,7 +107,7 @@ async function inspSync() {
 function inspRows() {
   if (!inspData) return [];
   const today = inspToday(), bnames = {};
-  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { if (bldVisible(b.id)) bnames[b.id] = b.name; });   // 見える建物だけ（合言葉で決まる）
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bnames[b.id] = b.name; });   // 見える建物は、読み込んだ時に絞ってある（inspScope）
   const logs = inspLogs();
   const rows = [];
   inspData.items.filter((i) => i.enabled).forEach((item) => {

@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -113,31 +113,40 @@ async function loadMaster() {
 const entryOf = (r) => (S.master && S.master.entries ? S.master.entries.find((e) => e.b === r.building_id && e.c === r.category_id) : null);
 
 /* ---------- 業者の「直接連絡OK（解禁）」：まだ山郷からの修繕実績がない業者は「本社経由」（業者データの direct が false） ---------- */
-// 名前の比べ方は、窓口（Auth.gs の coKey_）と同じ：全角・半角、空白、株式会社・(株) の違いは無視
+// 業者は、窓口が業者データに付けた key（Auth.gs の coKey_）でまとめる。key が無い古い業者データの時だけ、同じ比べ方をここでする
 const coKey = (s) => String(s || "").normalize("NFKC").replace(/\s/g, "").replace(/株式会社|有限会社|合同会社|\((株|有)\)/g, "");
 /** 業者データの業者を、名前ごとにまとめる（担当している建物・分類の数つき） */
 function companyMap() {
   const m = new Map();
   ((S.master && S.master.entries) || []).forEach((e) => (e.none ? [] : e.companies || []).forEach((c) => {
-    const k = coKey(c.name); if (!k) return;
+    const k = c.key || coKey(c.name); if (!k) return;
     const o = m.get(k) || { key: k, name: c.name, phone: c.phone || "", contact: c.contact || "", direct: c.direct !== false, spots: [] };
     if (c.direct === false) o.direct = false;   // 1か所でも本社経由なら、本社経由として扱う（窓口は名前ごとにまとめて切り替える）
     o.spots.push(e); m.set(k, o);
   }));
   return m;
 }
-const coOf = (name) => (name ? companyMap().get(coKey(name)) || null : null);
+/** 手配先の名前（自由に書ける）から業者を探す：同じ名前か、名前に業者名が入っている（「map 河村さん」→ map）。いちばん長く合う業者 */
+function coMatch(map, name) {
+  const v = coKey(name); if (!v) return null;
+  if (map.has(v)) return map.get(v);
+  let best = null;
+  map.forEach((c) => { if (c.key.length >= 2 && v.indexOf(c.key) >= 0 && (!best || c.key.length > best.key.length)) best = c; });
+  return best;
+}
+const coOf = (name, map) => (name ? coMatch(map || companyMap(), name) : null);
 /** その業者に、本社経由で手配した依頼（依頼の記録の「手配先」から数える）。exceptId の依頼は数えない */
-function vendorStats(key, exceptId) {
-  const list = S.records.filter((r) => r.id !== exceptId && item(r).vendor && coKey(item(r).vendor) === key);
+function vendorStats(key, exceptId, map) {
+  const m = map || companyMap();
+  const list = S.records.filter((r) => r.id !== exceptId && item(r).vendor && (coMatch(m, item(r).vendor) || {}).key === key);
   const arranged = list.filter((r) => ["arranged", "scheduled", "done"].includes(item(r).progress));
   return { list, arranged: arranged.length, done: arranged.filter((r) => item(r).progress === "done").length };
 }
 /** 依頼の手配の画面の案内（手配先が本社経由の業者の時） */
-function hqVendorNote(name, recId) {
-  const co = coOf(name);
+function hqVendorNote(name, recId, map) {
+  const co = coOf(name, map);
   if (!co || co.direct) return "";
-  const st = vendorStats(co.key, recId);
+  const st = vendorStats(co.key, recId, map);
   return st.done
     ? `<div class="hqNoteBox">「${esc(co.name)}」は、<b>本社経由</b>の業者です（本社経由の施工完了 ${st.done}件）。業者に「今後は山郷から直接連絡がいく」と伝えて了承をもらえたら、<a href="#/vendors">業者</a>の画面で「直接連絡OK」にできます。</div>`
     : `<div class="hqNoteBox first"><b>初回です。</b>「${esc(co.name)}」は、まだ山郷からの修繕実績がない業者（本社経由）です。<br>完了したら、業者に「<b>今後は山郷から直接連絡がいく</b>」と伝えて、了承をもらってください（請求の流れも確認）。了承をもらえたら、<a href="#/vendors">業者</a>の画面で「直接連絡OK」にします。</div>`;
@@ -378,7 +387,8 @@ function viewDetail(main, id) {
       <div class="btnRow"><button class="btn primary" id="fSave">保存する</button><span class="sum" id="gross"></span><span class="note">${it.at ? "最終更新 " + new Date(Number(it.at)).toLocaleString("ja-JP") + (it.by ? "　" + esc(it.by) : "") : ""}</span></div></div>`;
   const upGross = () => { const g = gross({ cost: $("fCost").value, bill_amount: $("fBill").value }); $("gross").textContent = g == null ? "" : "粗利 " + g.toLocaleString("ja-JP") + "円"; };
   upGross(); $("fCost").oninput = upGross; $("fBill").oninput = upGross;
-  const upNote = () => { $("hqVNote").innerHTML = hqVendorNote($("fVendor").value.trim(), r.id); };   // 手配先が本社経由の業者なら、案内を出す
+  const coMap = companyMap();   // 業者のまとめは、この画面を開いた時に1回だけ作る（打つたびに作り直さない）
+  const upNote = () => { $("hqVNote").innerHTML = hqVendorNote($("fVendor").value.trim(), r.id, coMap); };   // 手配先が本社経由の業者なら、案内を出す
   $("fVendor").oninput = upNote;
   main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); upNote(); }));
   $("fSave").onclick = async () => {
@@ -430,7 +440,8 @@ let vOpen = "", vBusy = false;   // 「直接連絡OKにする」の確認を開
 function viewVendors(main) {
   if (!S.api) return viewEmptyApi(main);
   if (!S.master) { main.innerHTML = `<h2>業者（直接連絡OK）</h2><div class="empty">業者データを受け取れませんでした。<br>窓口の更新（本社の合言葉で業者データを受け取れるようにする）のあとで使えます。<br><br><button class="btn" id="vRetry">もう一度受け取る</button></div>`; $("vRetry").onclick = async () => { await loadMaster(); viewVendors(main); }; return; }
-  const all = [...companyMap().values()].map((c) => ({ ...c, st: vendorStats(c.key) })).sort((a, b) => b.st.done - a.st.done || b.st.arranged - a.st.arranged || a.name.localeCompare(b.name, "ja"));
+  const cm = companyMap();
+  const all = [...cm.values()].map((c) => ({ ...c, st: vendorStats(c.key, null, cm) })).sort((a, b) => b.st.done - a.st.done || b.st.arranged - a.st.arranged || a.name.localeCompare(b.name, "ja"));
   const hq = all.filter((c) => !c.direct), ok = all.filter((c) => c.direct);
   const nm = (id, list, key) => ((list || []).find((x) => x.id === id) || {})[key] || id;
   const spotTxt = (c) => c.spots.slice(0, 4).map((e) => nm(e.b, S.master.buildings, "name") + "・" + nm(e.c, S.master.categories, "label")).join("／") + (c.spots.length > 4 ? ` ほか${c.spots.length - 4}か所` : "");

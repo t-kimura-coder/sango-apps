@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-21", type: "fix", text: "見える建物が決まっている人の画面を直しました。見える建物の外の症例を開いた時も、建物の名前がそのまま出ます（選び直さなくても保存できます）。点検の一覧も、見える建物だけになります。" },
   { date: "2026-10-21", type: "feature", text: "合言葉ごとに「見える建物」を決められるようにしました。決まっている人は、その建物だけがホーム・症例・点検に出ます（設定の「あなたの合言葉」に、見える建物が出ます）。" },
   { date: "2026-10-21", type: "feature", text: "まだ山郷からの修繕の実績がない業者に「本社経由」と出るようにしました。電話番号を押すと、本社への電話か、症例で「対応を依頼する」に進みます。最初は本社（木村）から業者へつなぎ、実績ができたら直接電話できるようになります。" },
   { date: "2026-10-20", type: "fix", text: "点検のタブ：建物を変えた時、その建物に無い種類・項目の絞り込みが残って一覧が空になるのを直しました。電波が弱くて図を読み込めなかった時は、次に開いた時に読み直します。建物のページから点検を開いた時に、前の「図」の選択が残らないようにしました。" },
@@ -618,8 +619,8 @@ async function viewForm(main, r) {
   const b = () => bById(form.buildingId), c = () => cById(form.categoryId);
   const draw = () => {
     main.innerHTML = `
-      <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() ? "" : " ph"}">${b() ? esc(b().name) : "選んでください"}</div></div>${icon("chevron")}</button>
-      <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() ? "" : " ph"}">${c() ? esc(c().label) : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
       <div class="formCard"><div class="fieldLabel">報告の種類</div><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>
       <div class="formCard"><div class="fieldLabel">何が起きたか<span class="req">必須</span></div><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
       <div class="formCard"><div class="fieldLabel">どう対応したか<span class="opt">対応中なら空欄でOK</span></div><textarea id="fHow" maxlength="500" placeholder="例）業者へ連絡。トラップを清掃し、排水は改善。">${esc(form.how)}</textarea><div class="counter"><span id="cHow">${form.how.length}</span>/500</div></div>
