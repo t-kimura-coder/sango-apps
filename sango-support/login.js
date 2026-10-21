@@ -27,7 +27,7 @@ async function masterPull(force) {
   const got = await acall(token, { action: "masterGet" }, 60000);
   const data = normMaster(got.data);
   await dbPut("meta", { key: "master", data, importedAt: Date.now(), src: got.updated });
-  master = data;
+  master = scopedMaster(data);
   return true;
 }
 
@@ -44,6 +44,7 @@ async function accountLogin(raw) {
   setSetting("tokenBad", "");
   setSetting("name", who.name || "");
   setSetting("role", who.role || "");
+  setSetting("bldScope", JSON.stringify(Array.isArray(who.buildings) ? who.buildings : []));   // 見える建物（空＝全部）
   if (who.given && !getSetting("given")) setSetting("given", who.given);
   await masterPull(true);
   return who;
@@ -58,7 +59,10 @@ async function accountStart(force) {
   try {
     const who = await acall(token, { action: "whoami" }, 20000);
     setSetting("name", who.name || getSetting("name")); setSetting("role", who.role || ""); setSetting("tokenBad", "");
+    const scope = JSON.stringify(Array.isArray(who.buildings) ? who.buildings : []), scopeChanged = scope !== getSetting("bldScope", "[]");
+    setSetting("bldScope", scope);   // 見える建物が変わった時（本社が名簿を直した時）は、表示を作り直す
     if (await masterPull(false)) { toast("業者データを更新しました"); render(); }
+    else if (scopeChanged) { await loadMaster(); render(); }
   } catch (e) {
     if (/unauthorized/.test(String(e.message))) { setSetting("tokenBad", "1"); toast("合言葉が使えなくなっています。設定で、新しい合言葉を入れてください"); if (route().name === "settings" || route().name === "home") render(); }
   }
@@ -91,6 +95,7 @@ function accountSettingsHtml(meta) {
   const status = t ? (bad ? `<span class="statusWarn">合言葉が使えなくなっています</span>（止められたか、出し直されました。新しい合言葉を入れてください）` : `<span class="statusOk">つながっています</span>　${esc(getSetting("name"))}さん（${esc(getSetting("role"))}）`) : `<span class="statusWarn">まだ入っていません</span>`;
   return `<div class="settingSec"><h3>あなたの合言葉</h3><div class="formCard">
       <div style="margin-bottom:8px">${status}</div>
+      ${t && !bad && bldScope().length ? `<div class="mutedText" style="margin:-4px 0 8px">見える建物：${esc(bldScope().map((id) => (bById(id) || { name: id }).name).join("・"))}（合言葉で決まります）</div>` : ""}
       <input class="textInput" id="acToken" type="password" autocomplete="off" placeholder="${t ? "合言葉を入れ直す時だけ入れる" : "あなたの合言葉"}">
       <button class="btn btnPrimary" id="acGo" style="width:100%;margin-top:8px">${t ? "入れ直す" : "つないで受け取る"}</button>
       <div id="acMsg" class="mutedText" style="margin-top:6px;color:var(--warn)"></div>

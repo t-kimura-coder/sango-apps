@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 51;
+const APP_VERSION = 52;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-21", type: "feature", text: "合言葉ごとに「見える建物」を決められるようにしました。決まっている人は、その建物だけがホーム・症例・点検に出ます（設定の「あなたの合言葉」に、見える建物が出ます）。" },
   { date: "2026-10-21", type: "feature", text: "まだ山郷からの修繕の実績がない業者に「本社経由」と出るようにしました。電話番号を押すと、本社への電話か、症例で「対応を依頼する」に進みます。最初は本社（木村）から業者へつなぎ、実績ができたら直接電話できるようになります。" },
   { date: "2026-10-20", type: "fix", text: "点検のタブ：建物を変えた時、その建物に無い種類・項目の絞り込みが残って一覧が空になるのを直しました。電波が弱くて図を読み込めなかった時は、次に開いた時に読み直します。建物のページから点検を開いた時に、前の「図」の選択が残らないようにしました。" },
   { date: "2026-10-20", type: "feature", text: "点検のタブの図に「⤢ 大きく見る」を足しました。押すと、建物のページと同じように、画面いっぱいで図を見られます（選んだ絞り込みのまま）。" },
@@ -135,6 +136,14 @@ const photosOf = (recordId) => run("photos", "readonly", (st) => st.index("recor
 
 /* ---------- マスター（社内データ） ---------- */
 let master = null;
+/* 見える建物（合言葉で決まる。窓口の whoami の buildings）。空なら全部。店舗のスタッフなど、一部の建物だけの人がいる */
+const bldScope = () => { try { const v = JSON.parse(getSetting("bldScope", "[]")); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+const bldVisible = (id) => { const s = bldScope(); return !s.length || s.indexOf(id) >= 0; };
+/** 端末に控えた業者データ（全部の建物）から、見える建物だけにした「表示用」を作る。控えそのものは変えない */
+function scopedMaster(data) {
+  if (!data || !bldScope().length) return data;
+  return { ...data, buildings: data.buildings.filter((b) => bldVisible(b.id)), entries: data.entries.filter((e) => bldVisible(e.b)) };
+}
 const bById = (id) => (master && master.buildings.find((b) => b.id === id)) || null;
 const cById = (id) => (master && master.categories.find((c) => c.id === id)) || null;
 const entryOf = (b, c) => (master && master.entries.find((e) => e.b === b && e.c === c)) || { b, c, none: false, companies: [], note: "" };
@@ -149,7 +158,7 @@ function normMaster(data) {
 }
 async function loadMaster() {
   const m = await dbGet("meta", "master");
-  try { master = m && m.data ? normMaster(m.data) : null; } catch (e) { master = null; }
+  try { master = m && m.data ? scopedMaster(normMaster(m.data)) : null; } catch (e) { master = null; }
   return master;
 }
 async function importMaster(file) {
@@ -157,7 +166,7 @@ async function importMaster(file) {
   try { data = JSON.parse(await file.text()); } catch (e) { throw new Error("JSONとして読めませんでした"); }
   data = normMaster(data);
   await dbPut("meta", { key: "master", data, importedAt: Date.now() });
-  master = data;
+  master = scopedMaster(data);
 }
 
 /* ---------- 画像 ---------- */

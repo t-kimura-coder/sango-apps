@@ -28,8 +28,9 @@ const inspPlanOf = (it) => IC.planOf(it);   // 計算は inspcore.js（管理者
 /** 年間予定：毎月のものは、まとめて1行。ほかは、今月から12か月、月ごとに「何をやるか」を並べる */
 function inspPlanHtml() {
   const today = inspToday(), y0 = +today.slice(0, 4), m0 = +today.slice(5, 7);
-  const items = inspData.items.filter((i) => i.enabled), logs = inspLogs(), bn = {};
-  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bn[b.id] = b.name; });
+  const logs = inspLogs(), bn = {};
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { if (bldVisible(b.id)) bn[b.id] = b.name; });   // 見える建物だけ
+  const items = inspData.items.filter((i) => i.enabled && (i.buildings || []).some((b) => bn[b]));
   const monthly = items.filter((i) => inspPlanOf(i).length === 12);
   const doneIn = (item, bid, ym) => logs.some((l) => l.item_id === item.id && l.building_id === bid && l.result !== "pending" && String(l.done_on).slice(0, 7) === ym);
   let html = `<div class="infoBar">${icon("info")}「標準の予定月」です。実際の期限は、前回の実施日から計算されます（「期限の一覧」）。項目を押すと、その項目だけを一覧で見られます。</div>`;
@@ -99,7 +100,7 @@ async function inspSync() {
 function inspRows() {
   if (!inspData) return [];
   const today = inspToday(), bnames = {};
-  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { bnames[b.id] = b.name; });
+  ((inspData.meta && inspData.meta.buildings) || []).forEach((b) => { if (bldVisible(b.id)) bnames[b.id] = b.name; });   // 見える建物だけ（合言葉で決まる）
   const logs = inspLogs();
   const rows = [];
   inspData.items.filter((i) => i.enabled).forEach((item) => {
