@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-21", type: "feature", text: "まだ山郷からの修繕の実績がない業者に「本社経由」と出るようにしました。電話番号を押すと、本社への電話か、症例で「対応を依頼する」に進みます。最初は本社（木村）から業者へつなぎ、実績ができたら直接電話できるようになります。" },
   { date: "2026-10-20", type: "fix", text: "点検のタブ：建物を変えた時、その建物に無い種類・項目の絞り込みが残って一覧が空になるのを直しました。電波が弱くて図を読み込めなかった時は、次に開いた時に読み直します。建物のページから点検を開いた時に、前の「図」の選択が残らないようにしました。" },
   { date: "2026-10-20", type: "feature", text: "点検のタブの図に「⤢ 大きく見る」を足しました。押すと、建物のページと同じように、画面いっぱいで図を見られます（選んだ絞り込みのまま）。" },
   { date: "2026-10-20", type: "feature", text: "点検のタブを1つの画面にまとめました。上で「建物」「種類」「頻度」を選ぶと、建物の中の図と一覧が同じように絞られます（例：消防 → 消火器だけ）。建物を選ぶと、上に図、下に一覧が出ます。一覧の「図」で、その点検の機器だけを図に濃く出せます。" },
@@ -409,9 +410,13 @@ function contactHtml(bid, cid) {
   let h = "";
   if (e.none) h += `<div class="empty">この建物には設置されていません。</div>`;
   e.companies.forEach((co) => {
-    h += `<div class="vendorCard"><div class="vName">${esc(co.name)}</div>
+    const hold = co.direct === false;   // 本社経由：まだ山郷からの修繕実績がない業者（業者データの direct が空）。番号は見せるが、押すと注意と本社への電話
+    h += `<div class="vendorCard${hold ? " hold" : ""}"><div class="vName">${esc(co.name)}${hold ? `<span class="tag warn">本社経由</span>` : ""}</div>
       <div class="vSub">${co.contact ? "担当：" + esc(co.contact) : "担当者名は未登録"}</div>
-      ${co.phone ? `<a class="callBtn big" href="${telHref(co.phone)}" data-name="${esc(co.name + (co.contact ? "（" + co.contact + "）" : ""))}" data-phone="${esc(co.phone)}">${icon("phone")}${esc(co.phone)}</a>` : `<span class="callBtn big off">電話番号は未登録</span>`}</div>`;
+      ${hold ? `<div class="vHold">${icon("info")}まだ山郷からの修繕の実績がない業者です。まずは本社（木村）に連絡してください。本社から業者へつなぎます。</div>` : ""}
+      ${!co.phone ? `<span class="callBtn big off">電話番号は未登録</span>`
+        : hold ? `<button class="callBtn big held" data-hold="${esc(co.name)}" data-b="${esc(bid)}" data-c="${esc(cid)}">${icon("phone")}${esc(co.phone)}</button>`
+        : `<a class="callBtn big" href="${telHref(co.phone)}" data-name="${esc(co.name + (co.contact ? "（" + co.contact + "）" : ""))}" data-phone="${esc(co.phone)}">${icon("phone")}${esc(co.phone)}</a>`}</div>`;
   });
   if (!e.none && !e.companies.length) h += `<div class="empty">この分類の担当業者はまだ登録されていません。</div>`;
   if (e.note) h += `<div class="vendorCard"><div class="vSub" style="margin:0">備考</div><ul class="noteList">${e.note.split("／").map((n) => `<li>${esc(n.trim())}</li>`).join("")}</ul></div>`;
@@ -531,6 +536,23 @@ document.addEventListener("click", (e) => {
       <div class="btnCol"><a class="btn btnPrimary" id="callGo" href="${esc(a.getAttribute("href"))}">${icon("phone")}電話する</a><button class="btn" id="callNo">やめる</button></div>`;
     $("callNo").onclick = close;
     $("callGo").onclick = () => setTimeout(close, 300);
+  });
+}, true);
+
+/* ---------- 本社経由の業者の電話番号を押した時：電話はかけず、注意と「本社に電話」「依頼を書く」 ---------- */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hold]");
+  if (!b) return;
+  e.preventDefault();
+  const help = (master && master.help) || {}, hq = (help.contacts || []).filter((c) => c.phone);
+  openSheet("まず本社に連絡してください", (body, close) => {
+    body.innerHTML = `<div class="vendorCard"><div class="vName">${esc(b.dataset.hold)}</div>
+        <div class="vHold" style="margin-top:6px">${icon("info")}この業者には、まだ山郷から直接お願いしたことがありません。最初は本社（木村）から業者へつなぎます。本社に電話するか、症例で「対応を依頼する」を出してください。</div></div>
+      <div class="btnCol">${hq.map((c) => `<a class="btn btnPrimary" href="${telHref(c.phone)}" data-hq="1">${icon("phone")}${esc(c.name)}に電話する</a>`).join("")}
+        <button class="btn" id="holdReq">${icon("edit")}症例を書いて、対応を依頼する</button><button class="btn" id="holdNo">閉じる</button></div>`;
+    $("holdNo").onclick = close;
+    $("holdReq").onclick = () => { close(); go(`#/new?b=${encodeURIComponent(b.dataset.b)}&c=${encodeURIComponent(b.dataset.c)}`); };
+    body.querySelectorAll("[data-hq]").forEach((a) => (a.onclick = () => setTimeout(close, 300)));
   });
 }, true);
 
