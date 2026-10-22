@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 58;
+const APP_VERSION = 59;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1807,11 +1807,14 @@ function renderHome() {
     return;
   }
   const open = openQuestions().sort((a, b) => (a.at < b.at ? 1 : -1));
+  const shares = scopedNotes().filter((n) => noteStatus(n) === "share"); // 確認待ちの気づき（返信不要だが、見たら「確認した」）
   const recent = scopedNotes().filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
   html +=
-    `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">未回答の疑問・要望</div>` +
-    `<div class="bigNum"><b>${open.length}</b>件</div></div><a class="btn btnOutline bigBtn" href="#/notes?st=open">未回答をすべて確認${icon("chevron", 16)}</a></div>` +
-    `<div class="card newCard"><div class="cardHead"><h2>新着の疑問・気づき<span class="sub">（未回答 ${open.length}件）</span></h2><a href="#/notes" class="moreLink">すべて見る${icon("chevron", 16)}</a></div>` +
+    `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">対応待ちの現場の声</div>` +
+    `<div class="bigNum bigNums"><span>疑問・要望 <b>${open.length}</b>件</span><span>気づき <b>${shares.length}</b>件</span></div></div>` +
+    `<div class="bigBtns"><a class="btn btnOutline bigBtn" href="#/notes?st=open">未回答の疑問・要望${icon("chevron", 16)}</a>` +
+    `<a class="btn btnOutline bigBtn" href="#/notes?st=share">確認待ちの気づき${icon("chevron", 16)}</a></div></div>` +
+    `<div class="card newCard"><div class="cardHead"><h2>新着の疑問・気づき<span class="sub">（未回答 ${open.length}件・確認待ち ${shares.length}件）</span></h2><a href="#/notes" class="moreLink">すべて見る${icon("chevron", 16)}</a></div>` +
     (recent.length
       ? `<div class="newList">${recent
           .map((n) => `<button class="newRow" data-note="${esc(n.id)}">${typeBadge(n.type)}<span class="newSite">${esc(n.siteName)}</span><span class="newText">${esc(headline(n.text))}</span><span class="newAgo">${relTime(n.at)}</span></button>`)

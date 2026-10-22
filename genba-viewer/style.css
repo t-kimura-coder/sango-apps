@@ -906,3 +906,10 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .noteRow.done { background: var(--color-surface-sub, #f4f1e8); box-shadow: none; }
 .noteRow.done .noteTitle, .noteRow.done .noteBody { color: var(--color-text-sub); }
 .noteRow.done .noteIcon { opacity: 0.55; }
+
+/* ホームの「対応待ちの現場の声」：疑問・要望と気づきを並べる */
+.bigNums { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 18px; }
+.bigNums span { white-space: nowrap; }
+.bigNums b { font-size: 44px; }
+.bigBtns { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.bigBtns .bigBtn { flex: 1 1 180px; }
