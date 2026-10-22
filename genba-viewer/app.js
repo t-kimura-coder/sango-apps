@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 59;
+const APP_VERSION = 60;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1793,6 +1793,36 @@ function noDataView() {
 }
 
 /* ---------- ホーム ---------- */
+// 対応待ちの現場の声：「疑問・要望」と「気づき」をタブで切り替える（選んだタブは覚える。初めは件数のある方）
+function homeVoiceHtml(nOpen, nShare) {
+  let tab = getLS("homeVoiceTab", "");
+  if (tab !== "q" && tab !== "n") tab = nOpen || !nShare ? "q" : "n";
+  const panel = (k, label, n, href, btn) =>
+    `<div class="bigPanel" data-vpanel="${k}"${tab === k ? "" : " hidden"}><div class="bigIcon">${icon(k === "q" ? "chat" : "bulb", 40, 1.8)}</div>` +
+    `<div><div class="bigLabel">${label}</div><div class="bigNum"><b>${n}</b>件</div></div>` +
+    `<a class="btn btnOutline bigBtn" href="${href}">${btn}${icon("chevron", 16)}</a></div>`;
+  return (
+    `<div class="homeTop"><div class="bigCard bigTabbed${tab === "n" ? " notice" : ""}">` +
+    `<div class="bigTabs" role="tablist">` +
+    `<button class="bigTab${tab === "q" ? " on" : ""}" data-vtab="q" role="tab">疑問・要望<span class="bigTabNum">${nOpen}</span></button>` +
+    `<button class="bigTab${tab === "n" ? " on" : ""}" data-vtab="n" role="tab">気づき<span class="bigTabNum">${nShare}</span></button></div>` +
+    panel("q", "未回答の疑問・要望", nOpen, "#/notes?st=open", "未回答をすべて確認") +
+    panel("n", "確認待ちの気づき", nShare, "#/notes?st=share", "確認待ちをすべて見る") +
+    `</div>`
+  );
+}
+function bindHomeVoice(main) {
+  main.querySelectorAll("[data-vtab]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.vtab;
+      setLS("homeVoiceTab", k);
+      main.querySelectorAll("[data-vtab]").forEach((x) => x.classList.toggle("on", x === b));
+      main.querySelectorAll("[data-vpanel]").forEach((x) => (x.hidden = x.dataset.vpanel !== k));
+      const card = main.querySelector(".bigTabbed");
+      if (card) card.classList.toggle("notice", k === "n");
+    })
+  );
+}
 let homeFilter = "all";
 function renderHome() {
   const main = $("main");
@@ -1810,10 +1840,7 @@ function renderHome() {
   const shares = scopedNotes().filter((n) => noteStatus(n) === "share"); // 確認待ちの気づき（返信不要だが、見たら「確認した」）
   const recent = scopedNotes().filter((n) => noteStatus(n) !== "resolved").sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
   html +=
-    `<div class="homeTop"><div class="bigCard"><div class="bigIcon">${icon("chat", 40, 1.8)}</div><div><div class="bigLabel">対応待ちの現場の声</div>` +
-    `<div class="bigNum bigNums"><span>疑問・要望 <b>${open.length}</b>件</span><span>気づき <b>${shares.length}</b>件</span></div></div>` +
-    `<div class="bigBtns"><a class="btn btnOutline bigBtn" href="#/notes?st=open">未回答の疑問・要望${icon("chevron", 16)}</a>` +
-    `<a class="btn btnOutline bigBtn" href="#/notes?st=share">確認待ちの気づき${icon("chevron", 16)}</a></div></div>` +
+    homeVoiceHtml(open.length, shares.length) +
     `<div class="card newCard"><div class="cardHead"><h2>新着の疑問・気づき<span class="sub">（未回答 ${open.length}件・確認待ち ${shares.length}件）</span></h2><a href="#/notes" class="moreLink">すべて見る${icon("chevron", 16)}</a></div>` +
     (recent.length
       ? `<div class="newList">${recent
@@ -1825,6 +1852,7 @@ function renderHome() {
   html += scopeBarHtml();
   html += siteSectionHtml();
   main.innerHTML = html;
+  bindHomeVoice(main);
   $("siteSort").addEventListener("change", (e) => {
     setLS("siteSort", e.target.value);
     renderHome();

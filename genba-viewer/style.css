@@ -907,9 +907,17 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .noteRow.done .noteTitle, .noteRow.done .noteBody { color: var(--color-text-sub); }
 .noteRow.done .noteIcon { opacity: 0.55; }
 
-/* ホームの「対応待ちの現場の声」：疑問・要望と気づきを並べる */
-.bigNums { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 18px; }
-.bigNums span { white-space: nowrap; }
-.bigNums b { font-size: 44px; }
-.bigBtns { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
-.bigBtns .bigBtn { flex: 1 1 180px; }
+/* ホームの「対応待ちの現場の声」：疑問・要望／気づきのタブ */
+.bigTabbed { display: block; padding-top: 14px; }
+.bigTabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.bigTab { flex: 1; min-height: 40px; border-radius: 20px; border: 1px solid rgba(179, 54, 47, 0.25); background: rgba(255, 255, 255, 0.6); color: var(--color-text-sub); font-weight: 700; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+.bigTab.on { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
+.bigTabNum { min-width: 24px; padding: 0 7px; border-radius: 12px; background: rgba(255, 255, 255, 0.85); color: var(--color-danger); font-size: 13px; line-height: 22px; }
+.bigPanel { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px 18px; }
+.bigPanel[hidden] { display: none; }
+.bigTabbed.notice { background: var(--color-primary-soft, #e6f0eb); border-color: rgba(14, 90, 69, 0.18); }
+.bigTabbed.notice .bigTab { border-color: rgba(14, 90, 69, 0.25); }
+.bigTabbed.notice .bigTab.on { background: var(--color-primary); border-color: var(--color-primary); }
+.bigTabbed.notice .bigTabNum { color: var(--color-primary); }
+.bigTabbed.notice .bigLabel, .bigTabbed.notice .bigNum, .bigTabbed.notice .bigIcon { color: var(--color-primary); }
+.bigTabbed.notice .bigBtn { border-color: rgba(14, 90, 69, 0.25); }
