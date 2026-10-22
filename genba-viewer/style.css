@@ -900,3 +900,9 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .noteNavBtn { min-height: 38px; padding: 0 14px; display: inline-flex; align-items: center; gap: 4px; }
 .noteNavBtn:disabled { opacity: 0.4; }
 .noteNavPos { font-size: 14px; color: var(--color-text-sub); }
+
+/* 疑問・気づきの一覧：確認待ちの気づきは色付き、済んだものは落ち着いた見た目 */
+.noteRow.share { background: linear-gradient(90deg, var(--color-primary-soft, #e6f0eb), var(--color-surface) 60%); }
+.noteRow.done { background: var(--color-surface-sub, #f4f1e8); box-shadow: none; }
+.noteRow.done .noteTitle, .noteRow.done .noteBody { color: var(--color-text-sub); }
+.noteRow.done .noteIcon { opacity: 0.55; }

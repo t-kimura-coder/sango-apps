@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -1942,12 +1942,12 @@ function noteRow(n) {
   const t = NOTE_TYPES[n.type] || NOTE_TYPES.notice;
   const rest = n.type === "contact" ? contactLine(n) : restText(n.text);
   return (
-    `<div class="noteRow ${st === "open" ? "open" : ""} ${t.cls}"><div class="noteIcon ${t.cls}">${icon(t.icon, 26, 1.8)}</div>` +
+    `<div class="noteRow ${st === "open" ? "open" : st === "share" ? "share" : ["replied", "acked", "resolved"].includes(st) ? "done" : ""} ${t.cls}"><div class="noteIcon ${t.cls}">${icon(t.icon, 26, 1.8)}</div>` +
     `<div class="noteMain"><div class="noteBadges">${typeBadge(n.type, n.origType)}${statusBadge(n)}</div><div class="noteTitle">${esc(headline(n.text))}</div>` +
     (rest ? `<div class="noteBody">${esc(rest)}</div>` : "") +
     `</div><div class="noteMeta"><div>${icon("user", 16)}${esc(n.personName)}</div><div>${icon("building", 16)}${esc(n.siteName)}</div>` +
     `<div>${icon("list", 16)}${esc(shortProc(n.process))} › ${esc(n.item || "")}</div><div>${icon("clock", 16)}${fmtDateTime(n.at)}</div></div>` +
-    `<button class="btn ${st === "open" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "share" ? "見る・確認する" : st === "open" || st === "" ? "返信を書く" : "返信を見る"}${icon("chevron", 16)}</button></div>`
+    `<button class="btn ${st === "open" || st === "share" ? "btnPrimary" : "btnOutline"} replyBtn" data-note="${esc(n.id)}">${["acked", "replied", "resolved"].includes(st) && n.type !== "contact" ? icon("check", 18, 2.6) : icon("chat", 18)}${n.type === "contact" ? "内容を見る" : st === "share" ? "見る・確認する" : st === "open" || st === "" ? "返信を書く" : st === "acked" ? "確認済み" : st === "resolved" ? "解決済み" : "返信済み"}${icon("chevron", 16)}</button></div>`
   );
 }
 // 現場ナビ v75〜（報告 schema 7）：お客様への報告メールの材料（工程ごとの状態と一言・写真以外・来週の予定）
@@ -2041,7 +2041,7 @@ function openNote(id) {
   $("drawerFoot").innerHTML = n.noId
     ? `<div class="noReply">このメモは古い版の現場ナビから届いたため、返信しても監督のアプリに届きません。直接伝えてください。</div>`
     : isNotice
-    ? `${acked ? `<div class="ackDone">${icon("check", 18, 2.6)}確認済み</div>` : `<button id="ackBtn" class="btn btnPrimary">${icon("check", 18, 2.6)}確認した</button>`}<button id="sendBtn" class="btn btnOutline">${icon("send", 18)}返信を送る</button>`
+    ? `${acked || st === "replied" ? `<div class="ackDone">${icon("check", 18, 2.6)}${acked ? "確認済み" : "確認済み（返信しました）"}</div>` : `<button id="ackBtn" class="btn btnPrimary">${icon("check", 18, 2.6)}確認した</button>`}<button id="sendBtn" class="btn btnOutline">${icon("send", 18)}返信を送る</button>`
     : `<button id="draftBtn" class="btn btnOutline">${icon("save", 18)}下書き保存</button><button id="sendBtn" class="btn btnPrimary">${icon("send", 18)}送る</button>`;
   // マニュアル改訂の候補にする★（改訂担当のシートに1行書き足す）
   if (!n.noId && gasOn()) {
