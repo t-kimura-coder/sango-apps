@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 124;
+const APP_VERSION = 125;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-22", type: "fix", text: "同じ現場の人がチェックや品質写真を付けた時、ホームと写真要の一覧にもすぐ反映されるようにしました。「済み」を外した時に「済みにしました」と出ていたのを直しました" },
   { date: "2026-10-17", type: "feature", text: "週の報告を送ったあとの「お客様メール用の写真」の案内を分かりやすくしました（上司への報告はそこで済み、PC でメールを作るなら保存は不要）。慣れたら「次から出さない」で出さないようにできます（設定の「週の報告」で戻せます）" },
   { date: "2026-10-16", type: "feature", text: "同じ現場（同じ工事番号）の人がチェックを付けたり品質写真を撮ったりしていたら、自分の画面でも「済み」として数えるようにしました（工程の✓完了・ホームの進み具合と次の項目・撮り忘れ・写真要の一覧）。相手のチェックは薄い✓で「○○さんが確認済み」と出ます。自分でも確かめたい時は、今までどおり自分で付けられます。チェックの記録は付けた本人のものだけで、上司の見守りの人ごとの進み具合も本人の分だけです" },
   { date: "2026-10-13", type: "feature", text: "報告の「今週のこの工程」の入力例に、検査の種類（社内検査・JIO検査）と、写真が何の状態か（例：塗った後）の書き方を足しました。書いておくと、お客様への報告メールの下書きが正確になります" },
@@ -4575,7 +4576,7 @@ async function toggleItemDone(it) {
   const y = window.scrollY;
   await renderItem();
   window.scrollTo(0, y);
-  if (itemDone(it)) toast(`「${it.name}」を済みにしました`);
+  if (rec.marks[ITEM_DONE_KEY]) toast(`「${it.name}」を済みにしました`);
 }
 
 async function toggleNa(it) {
@@ -5570,6 +5571,7 @@ async function syncStates(manual = false) {
         (others[x.key] = others[x.key] || []).push({ person: x.person, at, ph });
       }
     }
+    const othersChanged = JSON.stringify(others) !== JSON.stringify(othersByKey);
     othersByKey = others;
     try {
       localStorage.setItem(OTHERS_KEY, JSON.stringify(others));
@@ -5581,8 +5583,8 @@ async function syncStates(manual = false) {
       await refreshSites();
       await loadSiteChecks();
       rerenderCurrentView();
-    } else if (Object.keys(others).length && currentView === "groupView") {
-      rerenderCurrentView();
+    } else if (othersChanged && ["groupView", "dashView", "requiredView"].includes(currentView)) {
+      rerenderCurrentView(); // 同じ現場の人のチェック・写真で、済み・次の項目・撮り忘れが変わる
     }
     try {
       if ((await checkManualVersion()) && manualUpdateAvailable() && currentView === "dashView") renderDash();

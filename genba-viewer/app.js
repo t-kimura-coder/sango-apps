@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 60;
+const APP_VERSION = 61;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -2021,8 +2021,10 @@ function openNote(id) {
   if (dt) dt.textContent = isNotice ? "気づきを見る" : n.type === "contact" ? "やりとりを見る" : "返信を書く";
   const body = $("drawerBody");
   // 前へ・次へ：今の画面に並んでいる順（一覧・週ごと・現場の詳細など）でめくる
-  const order = [...new Set([...$("main").querySelectorAll("[data-note]")].map((b) => b.dataset.note))].filter((x) => data.notes.has(x));
+  let order = [...new Set([...$("main").querySelectorAll("[data-note]")].map((b) => b.dataset.note))].filter((x) => data.notes.has(x));
+  if (!order.includes(id) && noteNavOrder && noteNavOrder.includes(id)) order = noteNavOrder.filter((x) => data.notes.has(x) || x === id); // 確認・返信で絞り込みから外れた時
   const pos = order.indexOf(id);
+  noteNavOrder = pos >= 0 ? order : null;
   const navHtml =
     pos >= 0 && order.length > 1
       ? `<div class="noteNav"><button class="btn btnOutline noteNavBtn" id="notePrev"${pos === 0 ? " disabled" : ""}>${icon("back", 16)}前へ</button>` +
@@ -2137,7 +2139,7 @@ function openNote(id) {
   };
   if ($("notePrev")) $("notePrev").addEventListener("click", () => go(-1));
   if ($("noteNext")) $("noteNext").addEventListener("click", () => go(1));
-  drawerGo = go;
+  drawerGo = pos >= 0 ? go : null;
   bindCommon(body);
   $("drawer").hidden = false;
   if (!isNotice) setTimeout(() => ta.focus(), 50);
@@ -2146,8 +2148,10 @@ function closeDrawer() {
   $("drawer").hidden = true;
   drawerNoteId = null;
   drawerGo = null;
+  noteNavOrder = null;
 }
 let drawerGo = null; // 開いている疑問・気づきの前へ・次へ（キーボードの ← → でも）
+let noteNavOrder = null; // 前へ・次への並び（開いた時の一覧の順）
 
 /* ---------- 監督・現場 ---------- */
 function renderSites() {
@@ -2689,7 +2693,7 @@ async function init() {
       return showGalleryAt(galState.i + (e.key === "ArrowLeft" ? -1 : 1));
     }
     // 打合せモード：← → で現場をめくる（入力中は除く）
-    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey && $("lightbox").hidden && !$("drawer").hidden && drawerGo && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "")) {
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.altKey && !e.ctrlKey && !e.metaKey && $("lightbox").hidden && !$("drawer").hidden && drawerGo && !/INPUT|SELECT/.test((document.activeElement || {}).tagName || "") && !((document.activeElement || {}).tagName === "TEXTAREA" && document.activeElement.value)) {
       e.preventDefault();
       drawerGo(e.key === "ArrowRight" ? 1 : -1);
       return;
