@@ -894,3 +894,9 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .nwTag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
 .nwTag.open { background: #fbe3df; color: #a2382b; }
 .nwTag.share { background: #fff1d6; color: #8a5a00; }
+
+/* 疑問・気づきの引き出しの「前へ・次へ」 */
+.noteNav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.noteNavBtn { min-height: 38px; padding: 0 14px; display: inline-flex; align-items: center; gap: 4px; }
+.noteNavBtn:disabled { opacity: 0.4; }
+.noteNavPos { font-size: 14px; color: var(--color-text-sub); }
