@@ -21,6 +21,8 @@
  *     pickRoom(sel)   … 部屋を選ぶ図にする（症例の場所）。floors[].rooms＝[{ name, pts:[[x,y]…] }]（0〜1）を、押せる形で重ねる。
  *                       機器のピンは出さない（status を渡さない）。sel＝{ floor, room } を渡すと、その部屋を選んだ状態で開く。
  *                       「この場所にする」で onPick({ floor, floorLabel, room }) を呼んで閉じる
+ *     roomBar(room)   … pickRoom の時、下の帯を差し替える。room（選んだ部屋。まだなら null）から { text, actions:[{ label, primary, run(room, close) }] } を返す
+ *                       （症例のページ：部屋を押すと「この部屋の症例を書く」「これまでの症例」）
  *     roomView        … { floor, floorLabel, room }：その部屋に色を付けて見せるだけ（症例の詳細の「図で場所を見る」）。押しても変わらない
  *   戻り値 { close, redraw(), focusItem(no) } … redraw＝ピンを描き直す（絞り込み・記録が変わった時）
  *                                             focusItem＝その点検の機器だけを濃く（null で戻す）。その機器がある階に切り替える
@@ -62,7 +64,7 @@
     + ".fpRooms{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.fpRooms polygon{fill:rgba(36,79,55,0);stroke:transparent;stroke-width:3;cursor:pointer;vector-effect:non-scaling-stroke}"
     + ".fpRooms polygon:hover{fill:rgba(36,79,55,.10)}.fpRooms polygon.on{fill:rgba(194,122,30,.30);stroke:#c27a1e;stroke-width:3}"
     + ".fpPick{position:absolute;left:10px;right:62px;bottom:10px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #244f37;border-radius:12px;padding:8px 10px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:14px;color:#244f37;font-weight:700}"
-    + ".fpPick span{flex:1;min-width:0}.fpPick button{flex:none;border:0;border-radius:10px;background:#244f37;color:#fff;font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}.fpPick button:disabled{opacity:.35}"
+    + ".fpPick span{flex:1;min-width:0}.fpPick button{flex:none;border:0;border-radius:10px;background:#244f37;color:#fff;font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}.fpPick button:disabled{opacity:.35}.fpPick{flex-wrap:wrap}.fpPick button.sub{background:#fff;color:#244f37;border:1px solid #244f37}"
     + ".fpBig{position:absolute;right:10px;top:10px;border:1px solid #244f37;background:#244f37;color:#fff;border-radius:18px;padding:7px 14px;font-size:14px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
@@ -231,12 +233,12 @@
         stage.appendChild(fb); return;
       }
       st.inner.querySelectorAll(".fpRooms polygon").forEach(function (pg) {
-        pg.addEventListener("click", function (e) { e.stopPropagation(); if (st.moved > 8) return; var r = rs[+pg.dataset.i]; st.room = { floor: floor.id, floorLabel: floor.label || floor.id, room: r.name }; refreshRooms(floor); });
+        pg.addEventListener("click", function (e) { e.stopPropagation(); if (st.moved > 14) return; var r = rs[+pg.dataset.i]; st.room = { floor: floor.id, floorLabel: floor.label || floor.id, room: r.name }; refreshRooms(floor); });
       });
       var bar = document.createElement("div"); bar.className = "fpPick";
       bar.innerHTML = '<span></span><button>この場所にする</button>';
       bar.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
-      bar.querySelector("button").onclick = function () { if (st.room && o.onPick) { o.onPick(st.room); close(); } };
+      if (!o.roomBar) bar.querySelector("button").onclick = function () { if (st.room && o.onPick) { o.onPick(st.room); close(); } };
       stage.appendChild(bar);
       refreshRooms(floor);
     }
@@ -244,6 +246,13 @@
       var rs = floor.rooms || [];
       st.inner.querySelectorAll(".fpRooms polygon").forEach(function (pg) { var r = rs[+pg.dataset.i]; pg.classList.toggle("on", !!(st.room && st.room.floor === floor.id && st.room.room === r.name)); });
       var bar = stage.querySelector(".fpPick"); if (!bar) return;
+      if (o.roomBar) {   // 帯をアプリが決める（部屋の名前と、ボタン）
+        var spec = o.roomBar(st.room) || {};
+        bar.innerHTML = '<span></span>' + (spec.actions || []).map(function (a, i) { return '<button data-i="' + i + '"' + (a.primary ? "" : ' class="sub"') + ">" + esc(a.label) + "</button>"; }).join("");
+        bar.querySelector("span").textContent = !rs.length ? "この階は、まだ部屋を選べません" : spec.text || "部屋を押してください";
+        bar.querySelectorAll("button").forEach(function (x) { x.onclick = function () { (spec.actions[+x.dataset.i].run)(st.room, close); }; });
+        return;
+      }
       bar.querySelector("span").textContent = !rs.length ? "この階は、まだ部屋を選べません" : st.room ? "選んだ場所：" + st.room.floorLabel + "・" + st.room.room : "部屋を押して、場所を選んでください";
       bar.querySelector("button").disabled = !st.room;
     }

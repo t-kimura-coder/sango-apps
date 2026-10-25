@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-26", type: "feature", text: "画面の作りを整理しました。建物を選ぶと「症例」か「点検」かを選びます。下のタブに「症例」を足しました（建物を選ぶと、連絡先と、建物の中の部屋の図。部屋を押すと、その部屋の症例を書けます）。「自分の症例」は、症例タブの中にあります。点検の図は、画面いっぱいで開くようにしました。" },
   { date: "2026-10-25", type: "feature", text: "症例に「場所」を足しました。症例を書く時、「場所（任意）」から建物の中の図を開いて、部屋を押して選べます（トイレが2つある時なども、どちらか分かります）。症例の詳細の「図で場所を見る」で、その部屋が色付きで出ます。" },
   { date: "2026-10-21", type: "fix", text: "見える建物が決まっている人の画面を直しました。見える建物の外の症例を開いた時も、建物の名前がそのまま出ます（選び直さなくても保存できます）。点検の一覧も、見える建物だけになります。" },
   { date: "2026-10-21", type: "feature", text: "合言葉ごとに「見える建物」を決められるようにしました。決まっている人は、その建物だけがホーム・症例・点検に出ます（設定の「あなたの合言葉」に、見える建物が出ます）。" },
@@ -286,13 +287,13 @@ async function renderInner() {
   if (r.name !== "new") form = null;
   const main = $("main");
   const back = $("backBtn"), title = $("topTitle"), brand = $("topBrand");
-  const showBack = r.name !== "home" && r.name !== "mine" && !(r.name === "insp" && !r.id);
+  const showBack = r.name !== "home" && !(r.name === "case" && !r.id) && !(r.name === "insp" && !r.id);
   back.hidden = !showBack;
   brand.hidden = r.name !== "home";
   title.hidden = r.name === "home";
   $("tabbar").hidden = r.name === "new" || r.name === "r" || (r.name === "insp" && !!r.id);
   const ti = $("tabInsp"); if (ti) ti.hidden = !hasApi();
-  document.querySelectorAll("#tabbar a").forEach((a) => a.classList.toggle("on", a.dataset.tab === (r.name === "mine" ? "mine" : r.name === "insp" ? "insp" : r.name === "home" || r.name === "b" ? "home" : "")));
+  document.querySelectorAll("#tabbar a").forEach((a) => a.classList.toggle("on", a.dataset.tab === (r.name === "mine" || r.name === "case" || (r.name === "b" && r.sub === "c") ? "case" : r.name === "insp" ? "insp" : r.name === "home" || r.name === "b" ? "home" : "")));
   main.innerHTML = "";
   window.scrollTo(0, 0);
   if (r.name === "home") await viewHome(main);
@@ -300,6 +301,8 @@ async function renderInner() {
   else if (r.name === "b") await viewBuilding(main, r.id);
   else if (r.name === "new") await viewForm(main, r);
   else if (r.name === "mine") await viewMine(main);
+  else if (r.name === "case" && r.id) await viewCaseBuilding(main, r.id);
+  else if (r.name === "case") await viewCaseTab(main);
   else if (r.name === "insp") await viewInspect(main, r);
   else if (r.name === "help") viewHelp(main);
   else if (r.name === "r") await viewDetail(main, r.id);
@@ -357,20 +360,18 @@ async function fpInfo() {
   return FP.info;
 }
 const fpLoad = (bid) => fpPlanLoad(apiCall, bid);   // 版が同じなら端末の控え。受け取れない時は前の版（floorplan.js）
-async function fpEntry(bid, name) {
-  const slot = $("fpSlot"); if (!slot || typeof fpOpen !== "function") return;
-  const info = await fpInfo();
-  let has = !!(info && info.buildings && info.buildings[bid]);
-  if (!has) has = await fpPlanCached(bid);
-  if (!has || $("fpSlot") !== slot) return;
-  fpLoad(bid).catch(() => {});   // 建物のページを開いた時に、先に受け取っておく（押した時に待たない）
-  slot.innerHTML = `<button class="fpEntry" id="fpBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中（平面図）</b><small>階ごとの平面図を見る</small></span>${icon("chevron")}</button>`;
-  $("fpBtn").onclick = async () => {
-    try { await inspEnsure(); } catch (e) { /* 点検のデータが無くても、図は見られる */ }
-    fpOpen({ title: name, load: () => fpLoad(bid), noPlan: true, ...fpPinOpts(bid),   // 元の図面は本社だけ（リーダー・管理者は案内図）
-      equipAction: "点検を記録する",
-      onEquip: (eq, close) => { const id = fpItemId(eq.insp); close(); go(`#/insp/rec/${encodeURIComponent(id)}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`); } });
-  };
+/** 症例のページの部屋の図：部屋を押すと、その部屋の「これまでの症例」と「この部屋の症例を書く」 */
+function openRoomMap(bid, bname, recs) {
+  const inRoom = (r, p) => r.place && r.place.room === p.room && r.place.floor === p.floor;
+  fpOpen({ title: bname + "：部屋を選ぶ", load: () => fpLoad(bid), noPlan: true, pickRoom: true,
+    hint: "部屋を押すと、その部屋の症例を書けます。設計時点の図です（実際と違う時は、近い部屋を選んで、メモに書いてください）。",
+    roomBar: (p) => {
+      if (!p) return { text: "部屋を押してください", actions: [] };
+      const n = recs.filter((r) => inRoom(r, p)).length;
+      const acts = [{ label: "この部屋の症例を書く", primary: true, run: (pp, close) => { close(); go(`#/new?b=${encodeURIComponent(bid)}&floor=${encodeURIComponent(pp.floor)}&fl=${encodeURIComponent(pp.floorLabel)}&room=${encodeURIComponent(pp.room)}`); } }];
+      if (n) acts.push({ label: `これまでの症例 ${n}件`, run: (pp, close) => { close(); const list = recs.filter((r) => inRoom(r, pp)); openSheet(`${placeText(pp)} の症例`, (body) => { body.innerHTML = `<div class="recList" id="roomRecs"></div>`; fillRecList($("roomRecs"), list, ""); }); } });
+      return { text: placeText(p) + (n ? `（あなたの症例 ${n}件）` : ""), actions: acts };
+    } });
 }
 /** 機器のピンの点検の状態（inspcore.js。点検の番号 → 項目 I04 など。期限は「項目×建物」の単位）。索引は描くたびに1回だけ作る */
 const fpItemId = (no) => IC.itemId(no);
@@ -392,13 +393,42 @@ async function viewBuilding(main, bid) {
   if (!b) { goReplace("#/home"); return; }
   $("topTitle").textContent = b.name;
   await inspEnsure();
+  const recs = (await dbAll("records")).filter((r) => r.buildingId === bid);
+  const ins = hasApi() && inspData ? inspCount(inspRows().filter((x) => x.bid === bid)) : null;
+  const nUnsent = recs.filter(needsReport).length;
+  main.innerHTML = `
+    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>症例か点検かを選んでください</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
+    <div class="hubGrid">
+      <a class="hubCard hubCase" href="#/case/${encodeURIComponent(bid)}"><img src="art/ic-mine.webp?v=4" alt="" width="54" height="54"><div><b>症例</b><small>困った時の連絡先・建物の中の部屋の図・症例を書く</small>${recs.length ? `<span class="chipN">あなたの症例 ${recs.length}</span>` : ""}${nUnsent ? `<span class="chipN over">未報告 ${nUnsent}</span>` : ""}</div>${icon("chevron")}</a>
+      ${hasApi() ? `<a class="hubCard hubInsp" href="#/insp?b=${encodeURIComponent(bid)}"><img src="art/ic-schedule.webp?v=4" alt="" width="54" height="54"><div><b>点検</b><small>この建物の定期点検・機器の図（ピン）・点検の記録</small>${ins && ins.over ? `<span class="chipN over">期限超過 ${ins.over}</span>` : ""}${ins && ins.month ? `<span class="chipN month">今月 ${ins.month}</span>` : ""}</div>${icon("chevron")}</a>` : ""}
+    </div>
+    ${helpCard(true)}`;
+  fillIcons(main);
+}
+/* ---------- 症例タブ：建物を選ぶ（＋自分の症例へ） ---------- */
+async function viewCaseTab(main) {
+  $("topTitle").textContent = "症例";
+  const all = await dbAll("records");
+  const unsent = all.filter(needsReport).length;
+  main.innerHTML = `
+    <div class="mutedText" style="margin:0 4px 10px">建物を選ぶと、連絡先（分類ごとの業者）と、建物の中の部屋の図が出ます。部屋を押して、そこで起きたことを症例に書けます。</div>
+    <a class="hubCard" href="#/mine"><img src="art/ic-mine.webp?v=4" alt="" width="46" height="46"><div><b>自分の症例</b><small>この端末で書いた症例（全部の建物）。未報告をまとめて送る</small>${unsent ? `<span class="chipN over">未報告 ${unsent}</span>` : ""}</div>${icon("chevron")}</a>
+    <div class="sectionHead"><h3>建物を選ぶ</h3><span class="rule"></span></div>
+    <div class="caseBlds">${master.buildings.map((b) => { const n = all.filter((r) => r.buildingId === b.id).length; return `<a class="caseBld" href="#/case/${encodeURIComponent(b.id)}"><span class="im">${bldImg(b)}</span><b>${esc(b.name)}</b>${n ? `<span class="chipN">${n}件</span>` : ""}</a>`; }).join("")}</div>
+    <button class="fab" id="fabAdd">${icon("plus")}症例を追加</button>`;
+  fillIcons(main);
+  $("fabAdd").onclick = () => go("#/new");
+}
+/* ---------- 建物の症例のページ：部屋の図・分類（連絡先）・あなたの症例 ---------- */
+async function viewCaseBuilding(main, bid) {
+  const b = bById(bid);
+  if (!b) { goReplace("#/case"); return; }
+  $("topTitle").textContent = b.name + "：症例";
   const recs = (await dbAll("records")).filter((r) => r.buildingId === bid).sort((a, c) => c.createdAt - a.createdAt);
   main.innerHTML = `
-    <div class="pageHero"><div class="heroText"><h2>${esc(b.name)}</h2><p>連絡先と症例</p></div><div class="fbHero bldImg" style="background:none">${bldImg(b)}</div></div>
+    ${hasApi() ? `<button class="fpEntry roomEntry" id="roomBtn"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中の図で部屋を選ぶ</b><small id="roomSub">部屋を押すと、その部屋の症例を書けます（これまでの症例も出ます）</small></span>${icon("chevron")}</button>` : ""}
     ${helpCard(true)}
-    ${inspBuildingCard(bid)}
-    <div id="fpSlot"></div>
-    <div class="sectionHead"><h3>分類から探す</h3><span class="rule"></span></div>
+    <div class="sectionHead"><h3>分類から探す（連絡先）</h3><span class="rule"></span></div>
     <div class="catGrid">${master.categories.map((c) => {
       const e = entryOf(bid, c.id), s = catSummary(e);
       return `<div class="catCard${e.none ? " none" : ""}" data-c="${esc(c.id)}" role="button" tabindex="0">
@@ -413,7 +443,12 @@ async function viewBuilding(main, bid) {
     <button class="fab" id="fabAdd">${icon("plus")}症例を追加</button>`;
   main.querySelectorAll(".catCard").forEach((el) => (el.onclick = (ev) => { if (ev.target.closest("[data-stop]")) return; go(`#/b/${encodeURIComponent(bid)}/c/${encodeURIComponent(el.dataset.c)}`); }));
   $("fabAdd").onclick = () => go(`#/new?b=${encodeURIComponent(bid)}`);
-  fpEntry(bid, b.name);
+  const rb = $("roomBtn");
+  if (rb) {   // 図のボタンは、最初から出しておく（あとから出てくると「ボタンは？」となるため）。図が無い建物と分かったら、文を変える
+    rb.onclick = () => openRoomMap(bid, b.name, recs);
+    fpInfo().then((info) => { if (!info || !info.buildings || info.buildings[bid] || $("roomBtn") !== rb) return; rb.disabled = true; rb.classList.add("off"); $("roomSub").textContent = "この建物の図は、まだありません"; });
+    fpLoad(bid).catch(() => {});   // 先に受け取っておく（押した時に待たない）
+  }
   await fillRecList($("bRecs"), recs, "この建物で、あなたが残した症例はまだありません。");
 }
 function contactHtml(bid, cid) {
@@ -613,7 +648,7 @@ async function viewForm(main, r) {
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: ((await dbGet("images", p.id)) || {}).blob || p.thumb, saved: true })));
       form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", place: rec.place || null, doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, kind: rec.kind === "request" ? "request" : "report", urgent: !!rec.urgent, photos: full, removed: [] };
     } else {
-      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", kind: "report", urgent: false, photos: [], removed: [] };
+      form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", place: r.q.get("room") && r.q.get("b") ? { b: r.q.get("b"), floor: r.q.get("floor") || "", floorLabel: r.q.get("fl") || "", room: r.q.get("room") } : null, what: takePrefill(), how: "", vendor: "", reporter: "", kind: "report", urgent: false, photos: [], removed: [] };
     }
   }
   $("topTitle").textContent = form.isNew ? "症例を入力" : "症例を編集";

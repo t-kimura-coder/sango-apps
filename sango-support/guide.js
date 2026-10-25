@@ -13,11 +13,12 @@ let tourTimer = null;
 const firstBld = () => (master && master.buildings && master.buildings[0] ? master.buildings[0].id : "");
 const TOUR_STEPS = [
   { goto: () => "#/home", target: () => $("siteMap") || document.querySelector(".bldCard"), text: "ようこそ！まず、建物を選びます。敷地マップで、エリア（北・中央・東）を押すと拡大するので、建物を押してください。マップに無い建物や、名前で選びたい時は、下の「名前から選ぶ」から。（案内の途中でも、照らした所は、そのまま押せます）" },
-  { goto: () => "#/b/" + encodeURIComponent(firstBld()), target: () => document.querySelector(".catCard"), text: "建物の中では、設備の分類（水回り・電気・建具など）を選びます。担当の業者と電話番号が出て、電話できます（押すと、確認の画面が出ます）。「設置なし」は、その建物にない設備です。" },
-  { goto: () => "#/b/" + encodeURIComponent(firstBld()), target: () => $("fabAdd"), text: "困ったことが起きたら、「症例を追加」。何が起きたか・写真・対応を残します。「報告のみ」（記録として残す）か、「対応を依頼する」（本社に連絡が届く。急ぎにもできる）を選べます。" },
-  { goto: () => "#/b/" + encodeURIComponent(firstBld()), target: () => document.querySelector(".inspEntry"), optional: true, text: "「点検・メンテナンス」は、この建物の定期点検の入口です。期限が過ぎているものは赤く出ます。" },
-  { goto: () => "#/home", target: () => $("tabInsp"), optional: true, text: "下の「点検」タブの最初の画面は「いまやること」。頻度（毎月・3か月・半年・年1回）ごとに、点検の項目と、どの建物をやるかが並びます。建物の名前を押して、点検表（○／要対応）を付けます。ほかのリーダーが記録したものも、ここに自動で出ます。" },
-  { goto: () => "#/home", target: () => document.querySelector('#tabbar a[data-tab="mine"]'), text: "「自分の症例」には、あなたが残した症例が並びます。「未報告」「報告済み」「完了」で状態が分かり、未報告は、まとめて報告できます。" },
+  { goto: () => "#/b/" + encodeURIComponent(firstBld()), target: () => document.querySelector(".hubCase"), text: "建物を選ぶと、「症例」か「点検」かを選びます。「症例」は、困った時の連絡先と、建物の中の部屋の図。「点検」は、定期点検と機器の図です。" },
+  { goto: () => "#/case/" + encodeURIComponent(firstBld()), target: () => document.querySelector(".catCard"), text: "建物の中では、設備の分類（水回り・電気・建具など）を選びます。担当の業者と電話番号が出て、電話できます（押すと、確認の画面が出ます）。「設置なし」は、その建物にない設備です。" },
+  { goto: () => "#/case/" + encodeURIComponent(firstBld()), target: () => $("fabAdd"), text: "困ったことが起きたら、「症例を追加」。何が起きたか・写真・対応を残します。「報告のみ」（記録として残す）か、「対応を依頼する」（本社に連絡が届く。急ぎにもできる）を選べます。" },
+  { goto: () => "#/b/" + encodeURIComponent(firstBld()), target: () => document.querySelector(".hubInsp"), optional: true, text: "「点検・メンテナンス」は、この建物の定期点検の入口です。期限が過ぎているものは赤く出ます。" },
+  { goto: () => "#/home", target: () => $("tabInsp"), optional: true, text: "下の「点検」タブでは、建物・種類・頻度で絞って、期限の近い点検から記録できます。建物を選ぶと、建物の中の図（機器のピン）も開けます。" },
+  { goto: () => "#/home", target: () => document.querySelector('#tabbar a[data-tab="case"]'), text: "下の「症例」タブからも、建物を選んで症例を書けます。「自分の症例」には、あなたが残した症例が並びます。未報告のものは、まとめて管理者へ報告できます。" },
   { goto: () => "#/home", target: () => $("helpBtn"), text: "この「？」から、いつでも「使い方」を見られます。この案内も、使い方のページから、もう一度見られます。" },
   { goto: () => "#/home", target: () => $("gearBtn"), text: "歯車は設定です。名前（下の名前）の登録、業者データを最新にする、困ったことを木村に送る「質問・要望」が、ここにあります。", nextLabel: "完了" },
 ];

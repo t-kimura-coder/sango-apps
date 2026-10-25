@@ -16,8 +16,6 @@ let inspMode = "list";    // "list"＝点検（絞り込み＋建物の中の図
 let inspGrp = "";         // 種類（消防・空調…）の絞り込み
 let inspItemFilter = "";  // 項目（消火器の目視点検など）の絞り込み。年間予定から選んだ時も
 let inspFreq = "";        // 頻度（m1・m3…）の絞り込み
-let inspFocusNo = 0;      // 一覧の「図」から選んだ点検の番号（図で、その機器だけを濃く）
-let inspMapV = null;      // 点検のタブに埋め込んだ図 { bid, el, api, f, failed }（同じ建物なら作り直さない＝拡大・階がそのまま。読み込めなかった時は作り直す）
 let inspInfoAsked = false;  // 図面の有無（floorPlanInfo）を、このタブで聞いたか
 const inspPinNos = {};    // 建物ごとの、図にピンがある点検の番号（Set）。図を読み込んだ時に作る
 /** 絞り込み（建物以外）に合う項目か。一覧と図のピンで同じものを使う */
@@ -140,14 +138,14 @@ function inspCard(r, cls, map) {   // map＝"pin"（図にピンあり）／"non
     <div class="inspBody"><div class="inspTitle">${esc(r.item.title)}${r.item.legal ? ` <span class="tag warn">法定</span>` : ""}</div>
       <div class="inspMeta"><span class="tag gray">${esc(r.bname)}</span> ${esc((r.item.cycle || {}).label || "")}${map === "none" ? ` <span class="tag gray mapNone">ピンなし</span>` : ""}</div>
       ${due ? `<div class="inspDue ${r.st}">${due}</div>` : ""}<div class="inspLast">${who}${r.waiting ? "　報告書待ち" : ""}</div></div>
-    <div class="inspBtns">${map === "pin" ? `<button class="btn inspMapBtn${inspFocusNo === r.item.no ? " on" : ""}" data-fn="${r.item.no}">${icon("pin")}図</button>` : ""}<button class="btn btnPrimary inspGo">記録する</button></div></div>`;
+    <div class="inspBtns">${map === "pin" ? `<button class="btn inspMapBtn" data-fn="${r.item.no}">${icon("pin")}図</button>` : ""}<button class="btn btnPrimary inspGo">記録する</button></div></div>`;
 }
 async function viewInspect(main, r) {
   if (r.id === "rec") return viewInspRecord(main, r.sub, r.sid, r.q.get("eq"));
   if (r.id === "hist") return viewInspHist(main, r.sub, r.sid);
   $("topTitle").textContent = "点検";
   if (!hasApi()) { main.innerHTML = `<div class="empty">点検は、窓口につながっている時に使えます。<br>設定で「報告の送り方」を確認してください。</div>`; return; }
-  const q = r.q.get("b"); if (q) { if (q !== inspBld) inspFocusNo = 0; inspBld = q; }
+  const q = r.q.get("b"); if (q) inspBld = q;
   inspInfoAsked = false;   // 図面の有無は、タブを開くたびに1回だけ聞き直す
   if (!inspData) await inspLoadCache();
   draw();
@@ -161,7 +159,6 @@ async function viewInspect(main, r) {
     if (inspGrp && !scope.some((x) => x.item.group === inspGrp)) inspGrp = "";
     if (inspItemFilter && !scope.some((x) => x.item.id === inspItemFilter)) inspItemFilter = "";
     if (inspFreq && !scope.some((x) => inspFreqOf(x.item) === inspFreq && (!inspGrp || x.item.group === inspGrp))) inspFreq = "";
-    if (inspFocusNo && !scope.some((x) => x.item.no === inspFocusNo)) inspFocusNo = 0;
     const rows = scope.filter((x) => inspOk(x.item)), cnt = inspCount(rows);
     const today = inspToday();
     const info = FP.info, planOk = !!(inspBld && info && info.buildings && info.buildings[inspBld]), pins = planOk ? inspPinNos[inspBld] : null;
@@ -183,9 +180,8 @@ async function viewInspect(main, r) {
       ${gItems.length > 1 ? `<div class="fRow sub"><span class="fLbl"></span><div class="chips">${chip("data-ii", "", inspItemFilter, "ぜんぶ")}${gItems.map((it) => chip("data-ii", it.id, inspItemFilter, esc(short(it.title)))).join("")}</div></div>` : ""}
       <div class="fRow"><span class="fLbl">頻度</span><div class="chips">${chip("data-ff", "", inspFreq, "すべて")}${freqs.map(([k, l]) => chip("data-ff", k, inspFreq, l)).join("")}</div></div>
     </div>`;
-    const focusIt = inspFocusNo ? inspData.items.find((i) => i.no === inspFocusNo) : null;
-    const mapPart = !inspBld ? `<div class="inspMap" id="inspMapRow" hidden><div class="inspMapHd"><img src="art/ic-map.webp?v=4" alt="" width="36" height="36"><span><b>建物を選ぶと、建物の中の図が出ます</b><small>点検する機器がピンで出ます。ピンから記録できます</small></span></div><div class="inspMapList" id="inspMapChips"></div></div>`
-      : planOk ? `${focusIt ? `<div class="inspFocusBar">「${esc(focusIt.title)}」の機器だけを、図に濃く出しています<button class="btn" id="inspFocusOff">戻す</button></div>` : ""}<div id="inspMapHost"></div>` : "";
+    const mapPart = !inspBld ? `<div class="inspMap" id="inspMapRow" hidden><div class="inspMapHd"><img src="art/ic-map.webp?v=4" alt="" width="36" height="36"><span><b>建物を選ぶと、建物の中の図で見られます</b><small>点検する機器がピンで出ます。ピンから記録できます</small></span></div><div class="inspMapList" id="inspMapChips"></div></div>`
+      : planOk ? `<button class="fpEntry" id="inspBigMap"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中の図で見る</b><small>${inspFiltered() ? "上の絞り込みのまま、" : ""}点検する機器がピンで出ます。ピンから記録できます</small></span>${icon("chevron")}</button>` : "";
     const listHtml = `<div class="inspSum"><span class="chipN over">期限超過 ${cnt.over}</span><span class="chipN month">今月 ${cnt.month}</span>${inspFiltered() ? `<button class="linkBtn" id="inspFltOff">絞り込みを戻す</button>` : ""}</div>
       ${sec("期限が過ぎています", "over", over)}${sec("今月やること", "month", month)}${sec("最近済んだもの", "done", recent)}${sec("次の予定", "later", later.filter((x) => !recent.includes(x)))}${sec("まだ記録がありません", "none", inspAllNone ? none : none.slice(0, 6), "初めての記録をすると、次の期限が出ます。")}
       ${!inspAllNone && none.length > 6 ? `<button class="btn" id="inspMore" style="width:100%;margin:4px 0 12px">あと ${none.length - 6}件を表示する</button>` : ""}
@@ -194,10 +190,10 @@ async function viewInspect(main, r) {
     main.innerHTML = tg + (inspMode === "plan" ? inspPlanHtml() : flts + mapPart + listHtml);
     if (inspMode !== "plan") {
       if (!inspBld) inspMapChips(info, blds, all.filter((x) => inspOk(x.item)), () => draw());
-      else if (planOk) inspMountMap($("inspMapHost"), inspBld, draw);
+      else if (planOk && !inspPinNos[inspBld]) { const bb = inspBld; fpLoad(bb).then((d) => { inspPinNos[bb] = new Set(((d && d.floors) || []).flatMap((f) => (f.equip || []).map((e) => e.insp))); if (location.hash.startsWith("#/insp") && !route().id && inspBld === bb) draw(); }).catch(() => {}); }   // 図にピンがある点検を覚える（一覧の「図」「ピンなし」）
     }
     if (!info && hasApi() && !inspInfoAsked) { inspInfoAsked = true; fpInfo().then((i) => { if (i && location.hash.startsWith("#/insp") && !route().id) draw(); }); }   // 図面の有無が分かったら、描き直す
-    const reset = () => { inspFocusNo = 0; inspAllNone = false; };
+    const reset = () => { inspAllNone = false; };
     main.querySelectorAll("[data-md]").forEach((b) => (b.onclick = () => { inspMode = b.dataset.md; draw(); window.scrollTo(0, 0); }));
     main.querySelectorAll(".planRow, .planChip").forEach((el) => (el.onclick = () => { const it = inspItem(el.dataset.i); inspItemFilter = el.dataset.i; inspGrp = it ? it.group : ""; inspFreq = ""; reset(); inspMode = "list"; draw(); window.scrollTo(0, 0); }));
     main.querySelectorAll("[data-bb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.bb; reset(); draw(); }));
@@ -205,13 +201,9 @@ async function viewInspect(main, r) {
     main.querySelectorAll("[data-ii]").forEach((el) => (el.onclick = () => { inspItemFilter = el.dataset.ii; reset(); draw(); }));
     main.querySelectorAll("[data-ff]").forEach((el) => (el.onclick = () => { inspFreq = el.dataset.ff; reset(); draw(); }));
     const fo = $("inspFltOff"); if (fo) fo.onclick = () => { inspGrp = ""; inspItemFilter = ""; inspFreq = ""; reset(); draw(); };
-    const ff = $("inspFocusOff"); if (ff) ff.onclick = () => { inspFocusNo = 0; draw(); };
+    const bm = $("inspBigMap"); if (bm) bm.onclick = () => inspOpenMap(inspBld, 0);
     const more = $("inspMore"); if (more) more.onclick = () => { inspAllNone = true; draw(); };
-    main.querySelectorAll(".inspMapBtn").forEach((el) => (el.onclick = (e) => {   // 一覧の「図」：その点検の機器だけを図に濃く出して、図を見せる
-      e.stopPropagation();
-      const no = +el.dataset.fn; inspFocusNo = inspFocusNo === no ? 0 : no; draw();
-      const h = $("inspMapHost"); if (h && inspFocusNo) h.scrollIntoView({ behavior: "smooth", block: "start" });
-    }));
+    main.querySelectorAll(".inspMapBtn").forEach((el) => (el.onclick = (e) => { e.stopPropagation(); inspOpenMap(inspBld, +el.dataset.fn); }));   // 一覧の「図」：その点検の機器だけを濃くした図
     main.querySelectorAll(".inspCard").forEach((el) => (el.onclick = () => go(`#/insp/rec/${encodeURIComponent(el.dataset.i)}/${encodeURIComponent(el.dataset.b)}`)));
     main.querySelectorAll(".inspFlts .chip.on").forEach((c) => {   // 選んだボタンが、横にはみ出して見えない時は、見える所まで寄せる
       const box = c.parentElement, d = c.getBoundingClientRect().left - box.getBoundingClientRect().left;
@@ -234,36 +226,19 @@ function inspMapChips(info, blds, all, redraw) {   // info＝図面の有無（F
   }).join("");
   fillIcons(box);
   row.hidden = false;
-  box.querySelectorAll("[data-mb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.mb; inspFocusNo = 0; inspAllNone = false; redraw(); window.scrollTo(0, 0); }));
+  box.querySelectorAll("[data-mb]").forEach((el) => (el.onclick = () => { inspBld = el.dataset.mb; inspAllNone = false; redraw(); window.scrollTo(0, 0); }));
 }
 
-/** 点検のタブに、その建物の図を埋め込む。ピンの絞り込みは一覧と同じ（inspOk）。同じ建物なら作り直さない */
-function inspMountMap(host, bid, redraw) {
-  if (!host || typeof fpOpen !== "function") return;
-  if (!inspMapV || inspMapV.bid !== bid || inspMapV.failed) {   // 前に読み込めなかった図は、作り直す（電波が戻った時に、もう一度読む）
-    if (inspMapV) inspMapV.api.close();
-    const el = document.createElement("div"), b = ((inspData.meta && inspData.meta.buildings) || []).find((x) => x.id === bid) || { name: bid };
-    const recUrl = (eq) => `#/insp/rec/${encodeURIComponent(fpItemId(eq.insp))}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`;
-    const base = { title: b.name, noPlan: true, ...fpPinOpts(bid), filter: (eq, st) => (st.item ? inspOk(st.item) : !inspFiltered()), equipAction: "点検を記録する" };   // 埋め込みと「大きく見る」で同じ
-    const v = { bid, el, api: null, f: 0, failed: false };
-    v.api = fpOpen({ ...base, mount: el,
-      hint: "ピンを押すと、点検の状態が出ます。上の「種類」「頻度」で絞ると、図のピンも同じように絞れます。",
-      onExpand: () => {   // 「大きく見る」：同じ絞り込み・同じ「図」の選択のまま、画面いっぱいで開く（ホームの建物のページと同じ図）
-        const big = fpOpen({ ...base, load: () => fpLoad(bid), hint: "ピンを押すと、点検の状態が出ます。点検のタブで選んだ「種類」「頻度」の絞り込みのまま出ています。",
-          onEquip: (eq, close) => { close(); go(recUrl(eq)); } });
-        if (inspFocusNo) big.focusItem(inspFocusNo);
-      },
-      load: () => fpLoad(bid).then((d) => {   // 図にピンがある点検を覚える（一覧の「図」「ピンなし」）
-        const had = !!inspPinNos[bid];
-        inspPinNos[bid] = new Set(((d && d.floors) || []).flatMap((f) => (f.equip || []).map((e) => e.insp)));
-        if (!had && location.hash.startsWith("#/insp") && !route().id && inspBld === bid) setTimeout(redraw, 0);
-        return d;
-      }, (e) => { v.failed = true; throw e; }),
-      onEquip: (eq) => go(recUrl(eq)) });
-    inspMapV = v;
-  }
-  host.appendChild(inspMapV.el);
-  if (inspMapV.f !== inspFocusNo) { inspMapV.f = inspFocusNo; inspMapV.api.focusItem(inspFocusNo); } else inspMapV.api.redraw();
+/** 点検のタブの図：ホームから入った時と同じ、画面いっぱいの図。上の絞り込み（種類・頻度）のまま。no を渡すと、その点検の機器だけを濃く */
+function inspOpenMap(bid, no) {
+  if (typeof fpOpen !== "function") return;
+  const b = ((inspData.meta && inspData.meta.buildings) || []).find((x) => x.id === bid) || { name: bid };
+  const api = fpOpen({ title: b.name + "：点検", load: () => fpLoad(bid), noPlan: true, ...fpPinOpts(bid),
+    filter: (eq, st) => (st.item ? inspOk(st.item) : !inspFiltered()),
+    hint: inspFiltered() ? "点検のタブで選んだ「種類」「頻度」の絞り込みのまま出ています。ピンを押すと、点検の状態が出ます。" : "ピンを押すと、点検の状態が出ます。点検のタブの上で、種類・頻度を絞れます。",
+    equipAction: "点検を記録する",
+    onEquip: (eq, close) => { close(); go(`#/insp/rec/${encodeURIComponent(fpItemId(eq.insp))}/${encodeURIComponent(bid)}?eq=${encodeURIComponent(eq.id)}`); } });
+  if (no) api.focusItem(no);
 }
 
 /* ---------- 記録の入力 ---------- */
