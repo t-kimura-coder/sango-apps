@@ -18,6 +18,10 @@
  *     filter(eq, s)   … 渡すと、絞り込みはアプリ側で決める（false のピンはうすく）。図の中の頻度のボタンは出さない
  *     hint            … 図の下の説明（凡例のあとの文）を差し替える
  *     onExpand()      … mount の時に、右上に「大きく見る」を出す。押した時に呼ぶ（アプリが、画面いっぱいの図を開く）
+ *     pickRoom(sel)   … 部屋を選ぶ図にする（症例の場所）。floors[].rooms＝[{ name, pts:[[x,y]…] }]（0〜1）を、押せる形で重ねる。
+ *                       機器のピンは出さない（status を渡さない）。sel＝{ floor, room } を渡すと、その部屋を選んだ状態で開く。
+ *                       「この場所にする」で onPick({ floor, floorLabel, room }) を呼んで閉じる
+ *     roomView        … { floor, floorLabel, room }：その部屋に色を付けて見せるだけ（症例の詳細の「図で場所を見る」）。押しても変わらない
  *   戻り値 { close, redraw(), focusItem(no) } … redraw＝ピンを描き直す（絞り込み・記録が変わった時）
  *                                             focusItem＝その点検の機器だけを濃く（null で戻す）。その機器がある階に切り替える
  * 「全体」は、図の白い余白を除いた、建物の部分が画面の中央に来るように合わせる（階を切り替えても、真ん中がそろう）
@@ -55,6 +59,10 @@
     + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
     + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
     + ".fpBack.fpInline{position:relative;inset:auto;z-index:auto;height:min(56vh,520px);border:1px solid #d9d4c5;border-radius:14px;overflow:hidden;margin:0 0 12px}.fpInline .fpHead{display:none}.fpInline .fpTabs{padding:6px 10px}.fpInline .fpNote{padding:6px 10px;font-size:12px}.fpInline .fpCard{bottom:8px;max-height:calc(100% - 16px);overflow:auto}"
+    + ".fpRooms{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.fpRooms polygon{fill:rgba(36,79,55,0);stroke:transparent;stroke-width:3;cursor:pointer;vector-effect:non-scaling-stroke}"
+    + ".fpRooms polygon:hover{fill:rgba(36,79,55,.10)}.fpRooms polygon.on{fill:rgba(194,122,30,.30);stroke:#c27a1e;stroke-width:3}"
+    + ".fpPick{position:absolute;left:10px;right:62px;bottom:10px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #244f37;border-radius:12px;padding:8px 10px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:14px;color:#244f37;font-weight:700}"
+    + ".fpPick span{flex:1;min-width:0}.fpPick button{flex:none;border:0;border-radius:10px;background:#244f37;color:#fff;font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}.fpPick button:disabled{opacity:.35}"
     + ".fpBig{position:absolute;right:10px;top:10px;border:1px solid #244f37;background:#244f37;color:#fff;border-radius:18px;padding:7px 14px;font-size:14px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
     + ".fpMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#5a645d;font-size:15px}";
   function addCss() { if (document.getElementById("fpCss")) return; var s = document.createElement("style"); s.id = "fpCss"; s.textContent = CSS; document.head.appendChild(s); }
@@ -196,6 +204,7 @@
       if (im.complete && im.naturalWidth) setTimeout(onImg, 0); else im.addEventListener("load", onImg);
       st.inner.style.width = st.w + "px"; st.inner.style.height = st.h + "px";
       drawEquip(floor);
+      if (o.pickRoom || o.roomView) drawRooms(floor);
       if (o.mount && o.onExpand) {   // 埋め込みの図：画面いっぱいで見る
         var big = document.createElement("button"); big.className = "fpBig"; big.textContent = "⤢ 大きく見る";
         big.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); big.onclick = function () { o.onExpand(); };
@@ -204,6 +213,39 @@
       stage.querySelectorAll(".fpCtl button").forEach(function (b) { b.onclick = function () { var z = b.dataset.z, cx = stage.clientWidth / 2, cy = stage.clientHeight / 2; if (z === "fit") fit(); else zoomAt(z === "in" ? 1.5 : 1 / 1.5, cx, cy); }; b.addEventListener("pointerdown", function (e) { e.stopPropagation(); }); });
       fit();
       Array.prototype.forEach.call(tabs.querySelectorAll(".fpTab"), function (t) { t.classList.toggle("on", t.dataset.f === floor.id); });
+    }
+
+    // ---- 部屋を選ぶ（症例の場所）。部屋の形を、押せる透明の形として重ねる ----
+    function drawRooms(floor) {
+      var old = stage.querySelector(".fpPick"); if (old) old.remove();
+      var rs = floor.rooms || [];
+      var svg = '<svg class="fpRooms" viewBox="0 0 1 1" preserveAspectRatio="none">' + rs.map(function (r, i) {
+        return '<polygon data-i="' + i + '" points="' + r.pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ") + '"' + (st.room && st.room.floor === floor.id && st.room.room === r.name ? ' class="on"' : "") + "><title>" + esc(r.name) + "</title></polygon>";
+      }).reverse().join("") + "</svg>";   // 小さい部屋を後ろに書く＝上に来る（先に書いた部屋ほど優先）
+      st.pins.insertAdjacentHTML("beforebegin", svg);
+      if (o.roomView) {   // 見せるだけ：押せない。下に場所の名前
+        st.inner.querySelector(".fpRooms").style.pointerEvents = "none";
+        var fb = document.createElement("div"); fb.className = "fpFocus";
+        var here = rs.some(function (r) { return r.name === o.roomView.room; }) && floor.id === o.roomView.floor;
+        fb.textContent = here ? "場所：" + (o.roomView.floorLabel || floor.label) + "・" + o.roomView.room : "場所は " + (o.roomView.floorLabel || o.roomView.floor) + " です（上のボタンで階を切り替え）";
+        stage.appendChild(fb); return;
+      }
+      st.inner.querySelectorAll(".fpRooms polygon").forEach(function (pg) {
+        pg.addEventListener("click", function (e) { e.stopPropagation(); if (st.moved > 8) return; var r = rs[+pg.dataset.i]; st.room = { floor: floor.id, floorLabel: floor.label || floor.id, room: r.name }; refreshRooms(floor); });
+      });
+      var bar = document.createElement("div"); bar.className = "fpPick";
+      bar.innerHTML = '<span></span><button>この場所にする</button>';
+      bar.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      bar.querySelector("button").onclick = function () { if (st.room && o.onPick) { o.onPick(st.room); close(); } };
+      stage.appendChild(bar);
+      refreshRooms(floor);
+    }
+    function refreshRooms(floor) {
+      var rs = floor.rooms || [];
+      st.inner.querySelectorAll(".fpRooms polygon").forEach(function (pg) { var r = rs[+pg.dataset.i]; pg.classList.toggle("on", !!(st.room && st.room.floor === floor.id && st.room.room === r.name)); });
+      var bar = stage.querySelector(".fpPick"); if (!bar) return;
+      bar.querySelector("span").textContent = !rs.length ? "この階は、まだ部屋を選べません" : st.room ? "選んだ場所：" + st.room.floorLabel + "・" + st.room.room : "部屋を押して、場所を選んでください";
+      bar.querySelector("button").disabled = !st.room;
     }
 
     // ---- 機器のピン・絞り込み・詳しい札 ----
@@ -272,7 +314,7 @@
     st.moved = 0;
     stage.addEventListener("pointerdown", function (e) {
       if (!st.inner) return;
-      var onPin = !!(e.target.closest && e.target.closest(".fpEq"));
+      var onPin = !!(e.target.closest && e.target.closest(".fpEq, .fpRooms polygon"));   // ピン・部屋の上から始めた時は、指を捕まえない（押した扱いが届くように）
       // ピンの上から始めた時は、指を捕まえない（捕まえると、ピンを押しても反応しない端末がある）。動かすのは、どちらでもできる
       if (!onPin) { try { stage.setPointerCapture(e.pointerId); } catch (er) { /* 捕まえられなくても、動かせるように */ } }
       if (!ptrs.size) st.moved = 0;
@@ -305,10 +347,13 @@
       tabs.querySelectorAll(".fpTab").forEach(function (b) { b.onclick = function () { show(fl.filter(function (f) { return f.id === b.dataset.f; })[0]); }; });
       if (fl.length < 2) tabs.hidden = true;
       st.floors = fl;
+      if (o.pickRoom && o.pickRoom.floor) st.room = Object.assign({}, o.pickRoom);
+      if (o.roomView) st.room = Object.assign({}, o.roomView);
       var withEq = !!o.status && fl.some(function (f) { return (f.equip || []).length; });
       note.innerHTML = (withEq && o.focus ? "" : withEq ? '<div class="fpLeg"><span class="over">期限超過</span><span class="soon">期限が近い</span><span class="done">済（下の日付は次の期限）</span><span class="none">まだ記録なし</span></div>' + (o.hint != null ? esc(o.hint) : "ピンを押すと、点検の状態が出ます。下のボタンで、毎月・年1回などに絞れます。") : "")
-        + esc(d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + (withEq ? "" : "　（機器のピンは、現地確認のあと、ここに入ります）");
-      show(floorOf(st.focus) || fl[0]);   // 点検の記録の画面から：その点検の機器がある階から
+        + esc(d.note || "設計時点の図です。実際と違う所は、現地確認で直します。") + (withEq || o.pickRoom || o.roomView ? "" : "　（機器のピンは、現地確認のあと、ここに入ります）");
+      if (o.pickRoom && o.hint) note.innerHTML = esc(o.hint);   // 部屋を選ぶ時は、選び方の説明だけ
+      show(floorOf(st.focus) || (st.room && fl.filter(function (f) { return f.id === st.room.floor; })[0]) || fl[0]);   // 点検の記録の画面から：その点検の機器がある階から
     }).catch(function (e) { stage.innerHTML = '<div class="fpMsg">平面図を読み込めませんでした。<br>電波のある所で、もう一度開いてください。<br><small>' + esc(String((e && e.message) || e).slice(0, 80)) + "</small></div>"; });
     function floorOf(no) { return no ? st.floors.filter(function (f) { return (f.equip || []).some(function (e) { return e.insp === no; }); })[0] : null; }
     return {

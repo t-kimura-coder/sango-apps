@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -55,7 +55,7 @@ const canEdit = () => meAdmin() || getLS("edit") === "1";
 const str = (v) => (v == null ? "" : String(v));
 function norm(r, sender) {
   return {
-    id: str(r.id), src: r.source === "past" ? "past" : "new", req: r.kind === "request", urgent: r.urgent === true || r.urgent === "true", buildingId: r.building_id || "", building: r.building || "", categoryId: r.category_id || "", category: r.category || "",
+    id: str(r.id), src: r.source === "past" ? "past" : "new", req: r.kind === "request", urgent: r.urgent === true || r.urgent === "true", buildingId: r.building_id || "", building: r.building || "", place: r.place && r.place.room ? r.place : null, categoryId: r.category_id || "", category: r.category || "",
     what: str(r.what), how: str(r.how), vendor: str(r.vendor), reporter: str(r.reporter), sender: str(sender).trim(), t: Date.parse(r.created_at) || 0,
     updated: Date.parse(r.updated_at || r.created_at) || 0, done: r.done_at ? Date.parse(r.done_at) || 0 : 0, photos: Array.isArray(r.photos) ? r.photos.map((p) => p && p.file).filter(Boolean) : [], amount0: r.amount == null ? "" : r.amount, cause0: str(r.cause), memo0: str(r.memo),
   };
@@ -542,7 +542,7 @@ async function renderPreview() {
   if (!r) { box.innerHTML = `<div class="note">症例を選ぶと、ここに内容が出ます。</div>`; return; }
   const a = adm(r);
   box.innerHTML = `<div class="pvHero">${bldImg(r.buildingId)}${stateChip(r)}</div>
-    <dl class="facts"><dt>建物</dt><dd>${esc(r.building)}</dd><dt>分類</dt><dd>${esc(r.category)}</dd><dt>件名</dt><dd>${esc(titleOf(r))}</dd><dt>報告日</dt><dd>${fmtDate(r.t)} ${fmtTime(r.t)}</dd><dt>報告した人</dt><dd>${esc(r.reporter || "—")}</dd><dt>担当リーダー</dt><dd>${esc(r.sender || "—")}</dd><dt>現場の状況</dt><dd>${esc(fieldState(r))}</dd></dl>
+    <dl class="facts"><dt>建物</dt><dd>${esc(r.building)}</dd>${r.place ? `<dt>場所</dt><dd>${esc(placeText(r.place))}</dd>` : ""}<dt>分類</dt><dd>${esc(r.category)}</dd><dt>件名</dt><dd>${esc(titleOf(r))}</dd><dt>報告日</dt><dd>${fmtDate(r.t)} ${fmtTime(r.t)}</dd><dt>報告した人</dt><dd>${esc(r.reporter || "—")}</dd><dt>担当リーダー</dt><dd>${esc(r.sender || "—")}</dd><dt>現場の状況</dt><dd>${esc(fieldState(r))}</dd></dl>
     <div class="sub">何が起きたか</div><div class="pvText">${esc(r.what)}</div>
     ${r.how ? `<div class="sub">どう対応したか</div><div class="pvText">${esc(r.how)}</div>` : ""}
     ${r.photos.length ? `<div class="sub">写真 ${r.photos.length}枚</div><div class="thumbs" id="pvThumbs"></div>` : ""}
@@ -554,6 +554,19 @@ async function renderPreview() {
   if (th) for (const name of r.photos.slice(0, 3)) { const u = await photoUrl(name); if (!u) continue; const im = document.createElement("img"); im.alt = ""; im.src = u; im.onclick = () => showLightbox(u); th.appendChild(im); if (F.sel !== r.id) return; }
 }
 function showLightbox(src) { if (!src) return; const lb = $("lightbox"); lb.innerHTML = `<img src="${src}" alt="">`; lb.hidden = false; lb.onclick = () => { lb.hidden = true; lb.innerHTML = ""; }; }
+
+
+/* ---------- 症例の場所（リーダーが図で選んだ部屋）。「図で場所を見る」で、その部屋に色を付けた図を開く ---------- */
+const placeText = (p) => (p ? (p.floor_label ? p.floor_label + "・" : "") + p.room : "");
+const placeHtml = (r) => (r && r.place && r.place.room ? `<div class="placeLine">場所：<b>${esc(placeText(r.place))}</b><button type="button" class="btn placeBtn" data-place="${esc(r.id)}">図で場所を見る</button></div>` : "");
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-place]");
+  if (!b || typeof fpOpen !== "function") return;
+  e.preventDefault(); e.stopPropagation();
+  const r = S.records.find((x) => x.id === b.dataset.place);
+  if (!r || !r.place) return;
+  fpOpen({ title: r.building + "：場所", load: () => fpaLoad(r.buildingId), noPlan: true, roomView: { floor: r.place.floor, floorLabel: r.place.floor_label, room: r.place.room } });
+});
 
 /* ---------- 症例の詳細 ---------- */
 /** 手配の状況（本社が入れた内容のうち、山郷に見せてよいものだけ）。依頼の症例の詳細に出す */
@@ -579,7 +592,7 @@ async function viewDetail(main, id) {
   queueMicrotask(() => fillReqStatus(id)); // 下の main.innerHTML のあとに、手配の状況を読む
   main.innerHTML = `<div class="detailTop"><a class="backLink" href="#/list">← 一覧に戻る</a></div>
     <div class="detailLayout"><div>
-      <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>
+      <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>${placeHtml(r)}
         <div class="dFacts"><div><span>分類</span>${esc(r.category)}</div><div><span>件名</span>${esc(titleOf(r))}</div><div><span>報告日</span>${fmtDate(r.t)} ${fmtTime(r.t)}</div><div><span>報告した人</span>${esc(r.reporter || "—")}</div><div><span>担当リーダー</span>${esc(r.sender || "—")}</div><div><span>対応した業者</span>${esc(r.vendor || "—")}</div><div><span>現場の状況</span>${esc(fieldState(r))}</div></div></div></div></div>
       ${r.req && r.src === "new" && S.api && !S.demo ? `<div class="panel" id="reqBox" style="margin-bottom:12px"><h3>手配の状況</h3><div class="note">読み込んでいます…</div></div>` : ""}
       <div class="two"><div class="panel"><h3>何が起きたか</h3><div class="pvText">${esc(r.what)}</div></div><div class="panel"><h3>どう対応したか</h3><div class="pvText">${esc(r.how || "（まだ書かれていません）")}</div></div></div>
@@ -738,6 +751,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-25", type: "feature", text: "症例に「場所」（リーダーが図で選んだ部屋）が出るようになりました。「図で場所を見る」で、その部屋が色付きで出ます。" },
   { date: "2026-10-25", type: "fix", text: "建物の一覧から「LARCH（バックヤード）」を外しました（店舗にまとめました）。業者の分類に「外装（屋根・外壁）」が増えました。" },
   { date: "2026-10-20", type: "fix", text: "点検の「図で場所を見る」で、管理者の図は見るだけなのに「ピンを押して、印を付けられます」と出ていたのを直しました。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図の読み込みを速くしました（一度開いた図は端末に控え、マップで建物を押した時に先に受け取ります）。" },

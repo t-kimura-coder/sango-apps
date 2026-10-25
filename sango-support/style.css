@@ -361,3 +361,7 @@ textarea { min-height: 84px; }
 .vendorCard.hold .vName .tag{margin-left:8px;vertical-align:2px}
 .vHold{display:flex;gap:6px;align-items:flex-start;background:#f8ecd9;color:#6b4a1e;border-radius:10px;padding:8px 10px;font-size:13.5px;line-height:1.5;margin:6px 0 8px}.vHold svg{flex:none;width:16px;height:16px;margin-top:2px}
 .callBtn.held{background:#fff;color:#6b4a1e;border:2px dashed #b07a3f;width:100%;cursor:pointer;font:inherit;font-weight:800}
+
+/* 症例の場所（図で部屋を選ぶ） */
+.pickRow .pickClear{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:16px;background:#eef3ec;color:#244f37}.pickRow .pickClear svg{width:16px;height:16px}
+.pickLabel .opt{margin-left:6px}

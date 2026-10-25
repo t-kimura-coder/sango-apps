@@ -76,7 +76,7 @@ async function mDetail(main, id) {
   if (!r) { main.innerHTML = `<div class="empty panel">その症例は見つかりません。<br><a class="btn" href="#/list">一覧へ</a></div>`; return; }
   const a = adm(r), edit = canEdit(), tok = viewTok;
   const STATE = { "": r.req ? "依頼中" : "未整理", doing: "対応中", done: r.req ? "完了" : "整理済み" };
-  main.innerHTML = `<div class="mBox"><div class="mTop"><b>${esc(r.building)}｜${esc(r.category)}</b><span class="mDate">${fmtDate(r.t)} ${fmtTime(r.t)}</span></div><div class="mMeta">${stateChip(r)}<span>${esc(r.sender)}${r.reporter ? "（報告した人：" + esc(r.reporter) + "）" : ""}</span></div></div>
+  main.innerHTML = `<div class="mBox"><div class="mTop"><b>${esc(r.building)}｜${esc(r.category)}</b><span class="mDate">${fmtDate(r.t)} ${fmtTime(r.t)}</span></div>${placeHtml(r)}<div class="mMeta">${stateChip(r)}<span>${esc(r.sender)}${r.reporter ? "（報告した人：" + esc(r.reporter) + "）" : ""}</span></div></div>
     <div class="mBox"><div class="mH">何が起きたか</div><div class="mText">${esc(r.what)}</div></div>
     <div class="mBox"><div class="mH">どう対応したか</div><div class="mText">${esc(r.how || "（まだ書かれていません）")}</div>${r.vendor ? `<div class="mH" style="margin-top:8px">業者</div><div class="mText">${esc(r.vendor)}</div>` : ""}</div>
     ${r.photos.length ? `<div class="mBox"><div class="mH">写真 ${r.photos.length}枚</div><div class="photoGrid" id="mPhotos"></div></div>` : ""}

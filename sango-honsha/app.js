@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -349,6 +349,19 @@ const STEP_ICONS = ["order", "arrange", "schedule", "done", "invoice"];
 const icn = (n, c) => `<img class="${c || "ic"}" src="art/ic-${n}.webp" alt="" onerror="this.remove()">`;
 const stepIdx = (r) => { const it = item(r); return it.billed ? 4 : it.progress === "done" ? 3 : it.progress === "scheduled" ? 2 : it.progress === "arranged" ? 1 : 0; };
 let viewTok = 0, saveBusy = false;
+
+/* ---------- 症例の場所（リーダーが図で選んだ部屋）。「図で場所を見る」で、その部屋に色を付けた図を開く ---------- */
+const placeText = (p) => (p ? (p.floor_label ? p.floor_label + "・" : "") + p.room : "");
+const placeHtml = (r) => (r && r.place && r.place.room ? `<div class="placeLine">場所：<b>${esc(placeText(r.place))}</b><button type="button" class="btn placeBtn" data-place="${esc(r.id)}">図で場所を見る</button></div>` : "");
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-place]");
+  if (!b || typeof fpOpen !== "function") return;
+  e.preventDefault(); e.stopPropagation();
+  const r = S.records.find((x) => x.id === b.dataset.place);
+  if (!r || !r.place) return;
+  fpOpen({ title: r.building + "：場所", load: () => fphLoad(r.building_id), noPlan: true, roomView: { floor: r.place.floor, floorLabel: r.place.floor_label, room: r.place.room } });
+});
+
 function viewDetail(main, id) {
   const r = S.records.find((x) => x.id === id);
   if (!r) { main.innerHTML = `<div class="empty">${S.loaded ? "その依頼は見つかりません。" : "読み込んでいます…"}<br><br><a class="btn" href="#/list">一覧へ戻る</a></div>`; return; }
@@ -357,7 +370,7 @@ function viewDetail(main, id) {
   const vendors = [...new Set(Object.values(S.items).map((x) => x.vendor).filter(Boolean))];
   const en = entryOf(r), cands = en && !en.none ? (en.companies || []) : [];
   main.innerHTML = `<p><a href="${F.bld ? "#/b/" + encodeURIComponent(F.bld) : "#/list"}" class="note">← ${F.bld ? "建物の画面" : "依頼の一覧"}</a></p>
-    <div class="hero">${bldImg(r.building_id)}<div class="heroText"><div class="heroSub">${catImg(r.category_id)}${esc(r.category)}</div><h2>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}</h2></div></div>
+    <div class="hero">${bldImg(r.building_id)}<div class="heroText"><div class="heroSub">${catImg(r.category_id)}${esc(r.category)}</div><h2>${r.urgent ? `<span class="chip urgent">急ぎ</span> ` : ""}${esc(r.building)}</h2>${placeHtml(r)}</div></div>
     <ol class="steps">${STEPS.map((l, i) => `<li class="${i < si ? "done" : i === si ? "now" : ""}">${icn(STEP_ICONS[i], "stepIc")}<span>${i + 1}</span>${l}</li>`).join("")}</ol>
     <div class="panel"><h3>依頼の内容　<span class="chip">山郷：${esc(SANGO_STATUS[r.sango_status] || "依頼中")}</span></h3>
       <dl class="kv"><dt>日付</dt><dd>${fmtDate(r.t)}</dd><dt>送った人</dt><dd>${esc(r.sender)}</dd><dt>何が起きたか</dt><dd>${esc(r.what)}</dd><dt>対応・希望</dt><dd>${esc(r.how || "—")}</dd><dt>山郷が見た業者</dt><dd>${esc(r.vendor || "—")}</dd></dl>

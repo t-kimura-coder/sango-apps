@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-25", type: "feature", text: "症例に「場所」を足しました。症例を書く時、「場所（任意）」から建物の中の図を開いて、部屋を押して選べます（トイレが2つある時なども、どちらか分かります）。症例の詳細の「図で場所を見る」で、その部屋が色付きで出ます。" },
   { date: "2026-10-21", type: "fix", text: "見える建物が決まっている人の画面を直しました。見える建物の外の症例を開いた時も、建物の名前がそのまま出ます（選び直さなくても保存できます）。点検の一覧も、見える建物だけになります。" },
   { date: "2026-10-21", type: "feature", text: "合言葉ごとに「見える建物」を決められるようにしました。決まっている人は、その建物だけがホーム・症例・点検に出ます（設定の「あなたの合言葉」に、見える建物が出ます）。" },
   { date: "2026-10-21", type: "feature", text: "まだ山郷からの修繕の実績がない業者に「本社経由」と出るようにしました。電話番号を押すと、本社への電話か、症例で「対応を依頼する」に進みます。最初は本社（木村）から業者へつなぎ、実績ができたら直接電話できるようになります。" },
@@ -476,7 +477,7 @@ function askReport(rec) {
 
 /* ---------- LINEで連絡する（文章＋写真。管理ページには載らない） ---------- */
 function lineText(r, nPhotos) {
-  const L = [`【症例】${r.buildingName}／${r.categoryName || "分類なし"}　${fmtDate(r.createdAt)}`, `何が起きた：${r.what}`];
+  const L = [`【症例】${r.buildingName}／${r.categoryName || "分類なし"}　${fmtDate(r.createdAt)}`, ...(r.place && r.place.room ? [`場所：${placeText(r.place)}`] : []), `何が起きた：${r.what}`];
   if (r.how) L.push(`対応：${r.how}`);
   if (r.vendor) L.push(`対応した業者：${r.vendor}`);
   if (r.reporter) L.push(`連絡元：${r.reporter}`);
@@ -589,7 +590,7 @@ async function fillRecList(box, recs, emptyText) {
     btn.innerHTML = `<div class="recThumb">${p && p.thumb ? `<img src="${blobUrl(p.thumb)}" alt="">` : icon("image")}</div>
       <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${stateTag(r)}</div>
       <div class="recTitle">${esc(r.what || "（内容なし）")}</div>
-      <div class="recSub">${esc([r.buildingName, r.how].filter(Boolean).join(" ／ "))}</div></div>${icon("chevron")}`;
+      <div class="recSub">${esc([r.buildingName + (r.place && r.place.room ? "・" + r.place.room : ""), r.how].filter(Boolean).join(" ／ "))}</div></div>${icon("chevron")}`;
     btn.lastElementChild.style.cssText = "width:18px;height:18px;color:var(--muted);flex:none";
     btn.onclick = () => go("#/r/" + encodeURIComponent(r.id));
     box.appendChild(btn);
@@ -610,7 +611,7 @@ async function viewForm(main, r) {
       if (!rec) { goReplace("#/mine"); return; }
       const ps = (await photosOf(editId)).sort((a, b) => a.takenAt - b.takenAt);
       const full = await Promise.all(ps.map(async (p) => ({ id: p.id, takenAt: p.takenAt, thumb: p.thumb, blob: ((await dbGet("images", p.id)) || {}).blob || p.thumb, saved: true })));
-      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, kind: rec.kind === "request" ? "request" : "report", urgent: !!rec.urgent, photos: full, removed: [] };
+      form = { key: location.hash, id: rec.id, isNew: false, createdAt: rec.createdAt, sentAt: rec.sentAt, buildingId: rec.buildingId, categoryId: rec.categoryId, what: rec.what, how: rec.how, vendor: rec.vendor, reporter: rec.reporter || "", buildingName: rec.buildingName || "", categoryName: rec.categoryName || "", place: rec.place || null, doneAt: rec.doneAt || null, lineAt: rec.lineAt || null, kind: rec.kind === "request" ? "request" : "report", urgent: !!rec.urgent, photos: full, removed: [] };
     } else {
       form = { key: location.hash, id: uid(), isNew: true, createdAt: Date.now(), sentAt: null, buildingId: r.q.get("b") || "", categoryId: r.q.get("c") || "", what: takePrefill(), how: "", vendor: "", reporter: "", kind: "report", urgent: false, photos: [], removed: [] };
     }
@@ -620,6 +621,7 @@ async function viewForm(main, r) {
   const draw = () => {
     main.innerHTML = `
       <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
+      ${placeRowHtml()}
       <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
       <div class="formCard"><div class="fieldLabel">報告の種類</div><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>
       <div class="formCard"><div class="fieldLabel">何が起きたか<span class="req">必須</span></div><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
@@ -637,6 +639,8 @@ async function viewForm(main, r) {
     $("fRep").oninput = (e) => { form.reporter = e.target.value; };
     $("fHow").oninput = (e) => { form.how = e.target.value; $("cHow").textContent = form.how.length; };
     $("pkB").onclick = pickBuilding; $("pkC").onclick = pickCategory; $("pkV").onclick = pickVendor;
+    const pp = $("pkP"); if (pp) pp.onclick = pickPlace;
+    const px = $("pkPx"); if (px) px.onclick = (e) => { e.stopPropagation(); form.place = null; draw(); };
     $("fDraft").onclick = () => saveForm(true);
     $("fSave").onclick = () => saveForm(false);
   };
@@ -656,9 +660,22 @@ async function viewForm(main, r) {
     add("撮影済みを選ぶ", "image", $("pickInput"));
   };
   window.__formDraw = draw;
+  /** 場所（任意）：建物の中の図で部屋を選ぶ。図のある建物だけ出す */
+  const hasPlan = () => !!(form.buildingId && FP.info && FP.info.buildings && FP.info.buildings[form.buildingId]);
+  function placeRowHtml() {
+    if (!hasPlan()) return "";
+    const p = form.place;
+    return `<button class="pickRow" id="pkP"><div class="pickIcon"><img src="art/ic-map.webp?v=4" alt="" width="34" height="34"></div><div class="pickText"><div class="pickLabel">場所<span class="opt">任意</span></div><div class="pickValue${p ? "" : " ph"}">${p ? esc(p.floorLabel + "・" + p.room) : "図で部屋を選ぶ"}</div></div>${p ? `<span class="pickClear" id="pkPx" title="場所を外す">${icon("close")}</span>` : icon("chevron")}</button>`;
+  }
+  const pickPlace = () => {
+    const bid = form.buildingId, bn = b() ? b().name : "";
+    fpOpen({ title: bn + "：場所を選ぶ", load: () => fpLoad(bid), noPlan: true, pickRoom: form.place && form.place.b === bid ? form.place : true,
+      hint: "部屋を押して、場所を選んでください。設計時点の図です（実際と違う時は、近い部屋を選んで、メモに書いてください）。",
+      onPick: (p) => { form.place = { b: bid, floor: p.floor, floorLabel: p.floorLabel, room: p.room }; draw(); } });
+  };
   const pickBuilding = () => openSheet("建物を選ぶ", (body, close) => {
     body.innerHTML = `<div class="optList">${master.buildings.map((x) => `<button class="optBtn${x.id === form.buildingId ? " sel" : ""}" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>`;
-    body.querySelectorAll(".optBtn").forEach((el) => (el.onclick = () => { if (form.buildingId !== el.dataset.id) form.vendor = ""; form.buildingId = el.dataset.id; close(); draw(); }));
+    body.querySelectorAll(".optBtn").forEach((el) => (el.onclick = () => { if (form.buildingId !== el.dataset.id) { form.vendor = ""; form.place = null; } form.buildingId = el.dataset.id; close(); draw(); }));
   });
   const pickCategory = () => openSheet("分類を選ぶ", (body, close) => {
     body.innerHTML = `<div class="catPickGrid">${master.categories.map((x) => `<button class="optBtn${x.id === form.categoryId ? " sel" : ""}" data-id="${esc(x.id)}"><span class="catIcon" style="width:36px;height:36px;font-size:16px">${catIconHtml(x)}</span>${esc(x.label)}</button>`).join("")}</div>`;
@@ -687,6 +704,7 @@ async function viewForm(main, r) {
     const f = form;
     const rec = {
       id: f.id, buildingId: f.buildingId, buildingName: b() ? b().name : f.buildingName || "", categoryId: f.categoryId, categoryName: c() ? c().label : f.categoryName || "",
+      place: f.place && f.place.b === f.buildingId ? f.place : null,   // 場所（図で選んだ部屋）。{ b, floor, floorLabel, room }
       what: f.what.trim(), how: f.how.trim(), vendor: f.vendor, reporter: f.reporter.trim(), draft, createdAt: f.createdAt, updatedAt: Date.now(), sentAt: null, doneAt: f.doneAt || null, lineAt: f.lineAt || null, kind: f.kind === "request" ? "request" : "report", urgent: f.kind === "request" && !!f.urgent, by: getSetting("name"),
     };
     try {
@@ -772,6 +790,10 @@ async function fillReqStatus(id) {
 }
 
 /* ---------- 症例の詳細 ---------- */
+/** 場所（図で選んだ部屋）の表示：「1階・WC」 */
+const placeText = (p) => (p.floorLabel ? p.floorLabel + "・" : "") + p.room;
+/** 症例の場所を、建物の中の図で見せる（その部屋に色。見るだけ） */
+function showPlace(bid, bname, p) { fpOpen({ title: bname + "：場所", load: () => fpLoad(bid), noPlan: true, roomView: p }); }
 async function viewDetail(main, id) {
   const r = await dbGet("records", id);
   if (!r) { goReplace("#/mine"); return; }
@@ -780,7 +802,7 @@ async function viewDetail(main, id) {
   main.innerHTML = `
     <div class="formCard">
       <div class="recMeta" style="margin-bottom:8px"><span>${fmtDate(r.createdAt)}</span>${reqTags(r)}${r.draft ? `<span class="tag warn">下書き</span>` : r.sentAt ? `<span class="tag">報告済み ${fmtDate(r.sentAt)}</span>${changedAfterSent(r) ? `<span class="tag gray">変更は未報告</span>` : ""}` : `<span class="tag gray">未報告</span>`}${r.lineAt ? `<span class="tag line">LINE連絡済み ${fmtDate(r.lineAt)}</span>` : ""}${r.doneAt ? `<span class="tag done">完了 ${fmtDate(r.doneAt)}</span>` : ""}</div>
-      <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd><dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
+      <dl class="kv"><dt>建物</dt><dd>${esc(r.buildingName)}</dd>${r.place && r.place.room ? `<dt>場所</dt><dd>${esc(placeText(r.place))}　<button class="btn" id="dPlace" style="min-height:30px;padding:2px 10px">図で場所を見る</button></dd>` : ""}<dt>分類</dt><dd>${esc(r.categoryName || "—")}</dd><dt>何が起きたか</dt><dd>${esc(r.what || "—")}</dd><dt>どう対応したか</dt><dd>${esc(r.how || "—")}</dd><dt>対応した業者</dt><dd>${esc(r.vendor || "—")}</dd>${r.reporter ? `<dt>報告した人</dt><dd>${esc(r.reporter)}</dd>` : ""}</dl>
       ${ps.length ? `<div class="detailPhotos" id="dPhotos"></div>` : ""}
     </div>
     ${r.kind === "request" && r.sentAt && hasApi() ? `<div class="formCard" id="reqBox"><div class="mutedText">手配の状況を読んでいます…</div></div>` : ""}
@@ -796,6 +818,7 @@ async function viewDetail(main, id) {
   const box = $("dPhotos");
   if (box) ps.forEach((p) => { const im = document.createElement("img"); im.src = blobUrl(p.thumb); im.onclick = async () => { const img = await dbGet("images", p.id); showLightbox(img ? img.blob : p.thumb); }; box.appendChild(im); });
   $("dEdit").onclick = () => { form = null; go(`#/new?id=${encodeURIComponent(id)}`); };
+  const dp = $("dPlace"); if (dp) dp.onclick = () => showPlace(r.buildingId, r.buildingName, r.place);
   const ds = $("dSend"); if (ds) ds.onclick = () => sendRecords([r]);
   const dl = $("dLine"); if (dl) dl.onclick = () => sendLine(r);
   const dm = $("dMail"); if (dm) dm.onclick = () => sendByMail([r]);
@@ -843,7 +866,7 @@ async function buildReport(list) {
       bytes += img.blob.size;
       outPhotos.push({ file: name, taken_at: new Date(p.takenAt).toISOString() });
     }
-    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", kind: r.kind === "request" ? "request" : "", urgent: !!r.urgent, done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
+    outRecs.push({ id: r.id, building_id: r.buildingId, building: r.buildingName, category_id: r.categoryId, category: r.categoryName, place: r.place && r.place.room ? { floor: r.place.floor, floorLabel: r.place.floorLabel, room: r.place.room } : null, what: r.what, how: r.how, vendor: r.vendor, reporter: r.reporter || "", kind: r.kind === "request" ? "request" : "", urgent: !!r.urgent, done_at: r.doneAt ? new Date(r.doneAt).toISOString() : "", created_at: new Date(r.createdAt).toISOString(), updated_at: new Date(r.updatedAt || r.createdAt).toISOString(), photos: outPhotos });
   }
   const payload = { kind: "sango-support-records", schema: 1, app_version: APP_VERSION, master_version: master ? master.version : "", sent_at: new Date().toISOString(), sender: getSetting("name"), sender_id: deviceId(), records: outRecs };
   const hms = (() => { const d = new Date(); return pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()); })();

@@ -326,3 +326,6 @@ body.mobileMode .settingBox { max-width: none; }
 /* 症例一覧：何が起きたか（件名・本文）は、1行で切らずに、2行まで折り返す */
 .cWhat b, .cWhat span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
 .cWhat span { -webkit-line-clamp: 1; line-clamp: 1; }
+
+/* 症例の場所 */
+.placeLine{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:6px 0;font-size:14px}.placeLine .placeBtn{min-height:30px;padding:2px 10px;font-size:13px}

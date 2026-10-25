@@ -199,3 +199,6 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .vChk input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
 .btn.small { padding: 4px 10px; font-size: 13px; }
 @media (max-width: 720px) { .vRow { grid-template-columns: 1fr 1fr; } .vMain, .vAct { grid-column: 1 / -1; } }
+
+/* 症例の場所 */
+.placeLine{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:6px 0;font-size:14px}.placeLine .placeBtn{min-height:30px;padding:2px 10px;font-size:13px}
