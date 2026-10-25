@@ -61,8 +61,8 @@
     + ".fpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}.fpLeg span:before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;background:var(--c)}"
     + ".fpLeg .over{--c:#a3322a}.fpLeg .soon{--c:#c27a1e}.fpLeg .done{--c:#2f6b45}.fpLeg .none{--c:#8a8f84}"
     + ".fpBack.fpInline{position:relative;inset:auto;z-index:auto;height:min(56vh,520px);border:1px solid #d9d4c5;border-radius:14px;overflow:hidden;margin:0 0 12px}.fpInline .fpHead{display:none}.fpInline .fpTabs{padding:6px 10px}.fpInline .fpNote{padding:6px 10px;font-size:12px}.fpInline .fpCard{bottom:8px;max-height:calc(100% - 16px);overflow:auto}"
-    + ".fpRooms{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.fpRooms polygon{fill:rgba(36,79,55,0);stroke:transparent;stroke-width:3;cursor:pointer;vector-effect:non-scaling-stroke}"
-    + ".fpRooms polygon:hover{fill:rgba(36,79,55,.10)}.fpRooms polygon.on{fill:rgba(194,122,30,.30);stroke:#c27a1e;stroke-width:3}"
+    + ".fpRooms{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}.fpRooms polygon{fill:rgba(36,79,55,0);stroke:transparent;stroke-width:calc(3px * var(--rs,1));stroke-linejoin:miter;cursor:pointer}"
+    + ".fpRooms polygon:hover{fill:rgba(36,79,55,.10)}.fpRooms polygon.on{fill:rgba(194,122,30,.30);stroke:#c27a1e;stroke-width:calc(3px * var(--rs,1))}"
     + ".fpPick{position:absolute;left:10px;right:62px;bottom:10px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #244f37;border-radius:12px;padding:8px 10px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:14px;color:#244f37;font-weight:700}"
     + ".fpPick span{flex:1;min-width:0}.fpPick button{flex:none;border:0;border-radius:10px;background:#244f37;color:#fff;font-weight:800;font-size:14px;padding:8px 12px;cursor:pointer}.fpPick button:disabled{opacity:.35}.fpPick{flex-wrap:wrap}.fpPick button.sub{background:#fff;color:#244f37;border:1px solid #244f37}"
     + ".fpBig{position:absolute;right:10px;top:10px;border:1px solid #244f37;background:#244f37;color:#fff;border-radius:18px;padding:7px 14px;font-size:14px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}"
@@ -174,6 +174,7 @@
         var ps = Math.max(0.5, Math.min(1, (stage.clientWidth / 900) * (st.sc / (st.min || st.sc))));
         if (st.nnd) ps = Math.max(0.5, Math.min(ps, st.nnd * st.sc / 46));   // ピンが混み合う階は、となりのピンとの間に合わせて小さく（拡大すると元の大きさ）
         st.pins.style.setProperty("--inv", String(ps / st.sc));
+        st.inner.style.setProperty("--rs", String(1 / st.sc));   // 部屋の枠の太さ：拡大しても、画面で3px
         st.pins.classList.toggle("small", ps < 0.75);
       }
     }
@@ -221,8 +222,8 @@
     function drawRooms(floor) {
       var old = stage.querySelector(".fpPick"); if (old) old.remove();
       var rs = floor.rooms || [];
-      var svg = '<svg class="fpRooms" viewBox="0 0 1 1" preserveAspectRatio="none">' + rs.map(function (r, i) {
-        return '<polygon data-i="' + i + '" points="' + r.pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ") + '"' + (st.room && st.room.floor === floor.id && st.room.room === r.name ? ' class="on"' : "") + "><title>" + esc(r.name) + "</title></polygon>";
+      var svg = '<svg class="fpRooms" viewBox="0 0 ' + floor.w + " " + floor.h + '">' + rs.map(function (r, i) {   // 図の px のまま描く（iPhone の Safari は、縮めた座標＋線の太さ固定で、線がずれるため）
+        return '<polygon data-i="' + i + '" points="' + r.pts.map(function (p) { return (p[0] * floor.w).toFixed(1) + "," + (p[1] * floor.h).toFixed(1); }).join(" ") + '"' + (st.room && st.room.floor === floor.id && st.room.room === r.name ? ' class="on"' : "") + "><title>" + esc(r.name) + "</title></polygon>";
       }).reverse().join("") + "</svg>";   // 小さい部屋を後ろに書く＝上に来る（先に書いた部屋ほど優先）
       st.pins.insertAdjacentHTML("beforebegin", svg);
       if (o.roomView) {   // 見せるだけ：押せない。下に場所の名前
