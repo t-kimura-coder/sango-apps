@@ -377,6 +377,12 @@ textarea { min-height: 84px; }
 .hubCard>svg{flex:none;width:22px;height:22px;color:#244f37}
 
 /* 症例の入力：建物・分類を横に並べ、手順に番号 */
-.pickPair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}.pickPair .pickRow{margin:0;min-width:0;padding:10px 10px}.pickPair .pickIcon{width:40px;height:40px;flex:none}.pickPair .pickValue{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pickPair .pickRow>svg{display:none}
+.pickPair{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}.pickPair .pickRow{margin:0;min-width:0}.pickPair .pickValue{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pickRow.need{border:2px solid #c27a1e;background:#fdf6ec}.pickRow.need .pickValue{color:#9a5a12;font-weight:700}   /* 必須でまだ選んでいない（建物・分類） */
 .pickLabel .req,.formStep .req{margin-left:6px}
 .formStep{margin-top:16px}.formStep .opt,.formStep .req{margin-left:8px}.stepSub{margin:-4px 4px 8px;font-size:12.5px}
+
+/* 点検タブの絞り込み：横に流れる行のスクロールバーを出さない（指で押す所とかぶるため）。行の間を広げ、頻度は折り返して全部見せる */
+.inspFlts .chips{padding:2px 0 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}.inspFlts .chips::-webkit-scrollbar{display:none}
+.inspFlts .fRow+.fRow{margin-top:8px}
+.inspFlts .chips.wrap{flex-wrap:wrap;overflow:visible;row-gap:6px}

@@ -2,7 +2,7 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 58;
+const APP_VERSION = 59;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
@@ -656,8 +656,8 @@ async function viewForm(main, r) {
     const step = (title, tag, sub) => `<div class="stepHead formStep"><span class="stepNo">${++no}</span><h3>${title}</h3>${tag === "req" ? `<span class="req">必須</span>` : tag ? `<span class="opt">${tag}</span>` : ""}</div>${sub ? `<div class="mutedText stepSub">${sub}</div>` : ""}`;
     main.innerHTML = `
       <div class="pickPair">
-      <button class="pickRow half" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物<span class="req">必須</span></div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
-      <button class="pickRow half" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類<span class="req">必須</span></div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow half${b() || form.buildingName ? "" : " need"}" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物<span class="req">必須</span></div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow half${c() || form.categoryName ? "" : " need"}" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類<span class="req">必須</span></div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
       </div>
       ${step("報告の種類", "req", "記録として残すか、本社に対応を頼むか")}
       <div class="formCard"><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>

@@ -178,7 +178,7 @@ async function viewInspect(main, r) {
       <div class="fRow"><span class="fLbl">建物</span><div class="chips">${chip("data-bb", "", inspBld, "すべて")}${blds.map((b) => chip("data-bb", b.id, inspBld, esc(b.name))).join("")}</div></div>
       <div class="fRow"><span class="fLbl">種類</span><div class="chips">${chip("data-gg", "", inspGrp, "すべて")}${groups.map((g) => chip("data-gg", g.id, inspGrp, esc(g.name))).join("")}</div></div>
       ${gItems.length > 1 ? `<div class="fRow sub"><span class="fLbl"></span><div class="chips">${chip("data-ii", "", inspItemFilter, "ぜんぶ")}${gItems.map((it) => chip("data-ii", it.id, inspItemFilter, esc(short(it.title)))).join("")}</div></div>` : ""}
-      <div class="fRow"><span class="fLbl">頻度</span><div class="chips">${chip("data-ff", "", inspFreq, "すべて")}${freqs.map(([k, l]) => chip("data-ff", k, inspFreq, l)).join("")}</div></div>
+      <div class="fRow"><span class="fLbl">頻度</span><div class="chips wrap">${chip("data-ff", "", inspFreq, "すべて")}${freqs.map(([k, l]) => chip("data-ff", k, inspFreq, l)).join("")}</div></div>
     </div>`;
     const mapPart = !inspBld ? `<div class="inspMap" id="inspMapRow" hidden><div class="inspMapHd"><img src="art/ic-map.webp?v=4" alt="" width="36" height="36"><span><b>建物を選ぶと、建物の中の図で見られます</b><small>点検する機器がピンで出ます。ピンから記録できます</small></span></div><div class="inspMapList" id="inspMapChips"></div></div>`
       : planOk ? `<button class="fpEntry" id="inspBigMap"><img src="art/ic-map.webp?v=4" alt="" width="40" height="40"><span class="fpT"><b>建物の中の図で見る</b><small>${inspFiltered() ? "上の絞り込みのまま、" : ""}点検する機器がピンで出ます。ピンから記録できます</small></span>${icon("chevron")}</button>` : "";
