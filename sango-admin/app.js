@@ -3,11 +3,11 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
-const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "larch-back", "gaiko"];
+const BLD_ORDER = ["haru", "kou", "wa", "chi", "u", "larch", "haruka", "botanical", "kumajirushi", "reception", "gaiko"];
 const P = "sango-admin-";
 
 const $ = (id) => document.getElementById(id);
@@ -738,6 +738,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-10-25", type: "fix", text: "建物の一覧から「LARCH（バックヤード）」を外しました（店舗にまとめました）。業者の分類に「外装（屋根・外壁）」が増えました。" },
   { date: "2026-10-20", type: "fix", text: "点検の「図で場所を見る」で、管理者の図は見るだけなのに「ピンを押して、印を付けられます」と出ていたのを直しました。" },
   { date: "2026-10-20", type: "fix", text: "建物の中の図の読み込みを速くしました（一度開いた図は端末に控え、マップで建物を押した時に先に受け取ります）。" },
   { date: "2026-10-20", type: "feature", text: "点検の一覧で、点検の履歴に「図で場所を見る」を足しました（スマホ表示にも）。その点検の機器だけが図で濃く出ます。" },
