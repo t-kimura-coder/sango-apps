@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-26", type: "fix", text: "症例の入力画面を、書く順に番号を付けて整理しました。建物と分類を上に並べ、①報告の種類 ②場所（どの部屋か）③何が起きたか ④写真 ⑤どう対応したか ⑥報告した人 の順です。建物の中の図で、階段と踊り場を1つ（階段）にまとめました。" },
   { date: "2026-10-26", type: "fix", text: "建物の中の図で、部屋を指で押しても選べなかったのを直しました。分類のページは、記入欄をやめて「症例を書く」ボタンだけにしました（何が起きたかは、次の画面で書きます）。" },
   { date: "2026-10-26", type: "feature", text: "画面の作りを整理しました。建物を選ぶと「症例」か「点検」かを選びます。下のタブに「症例」を足しました（建物を選ぶと、連絡先と、建物の中の部屋の図。部屋を押すと、その部屋の症例を書けます）。「自分の症例」は、症例タブの中にあります。点検の図は、画面いっぱいで開くようにしました。" },
   { date: "2026-10-25", type: "feature", text: "症例に「場所」を足しました。症例を書く時、「場所（任意）」から建物の中の図を開いて、部屋を押して選べます（トイレが2つある時なども、どちらか分かります）。症例の詳細の「図で場所を見る」で、その部屋が色付きで出ます。" },
@@ -651,16 +652,25 @@ async function viewForm(main, r) {
   $("topTitle").textContent = form.isNew ? "症例を入力" : "症例を編集";
   const b = () => bById(form.buildingId), c = () => cById(form.categoryId);
   const draw = () => {
+    let no = 0;
+    const step = (title, tag, sub) => `<div class="stepHead formStep"><span class="stepNo">${++no}</span><h3>${title}</h3>${tag === "req" ? `<span class="req">必須</span>` : tag ? `<span class="opt">${tag}</span>` : ""}</div>${sub ? `<div class="mutedText stepSub">${sub}</div>` : ""}`;
     main.innerHTML = `
-      <button class="pickRow" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物</div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
-      ${placeRowHtml()}
-      <button class="pickRow" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類</div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
-      <div class="formCard"><div class="fieldLabel">報告の種類</div><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>
-      <div class="formCard"><div class="fieldLabel">何が起きたか<span class="req">必須</span></div><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
-      <div class="formCard"><div class="fieldLabel">どう対応したか<span class="opt">対応中なら空欄でOK</span></div><textarea id="fHow" maxlength="500" placeholder="例）業者へ連絡。トラップを清掃し、排水は改善。">${esc(form.how)}</textarea><div class="counter"><span id="cHow">${form.how.length}</span>/500</div></div>
-      <div class="formCard"><div class="fieldLabel">写真<span class="opt">複数枚OK</span></div><div class="photoStrip" id="strip"></div></div>
+      <div class="pickPair">
+      <button class="pickRow half" id="pkB"><div class="pickIcon">${b() ? bldImg(b()) : icon("build")}</div><div class="pickText"><div class="pickLabel">建物<span class="req">必須</span></div><div class="pickValue${b() || form.buildingName ? "" : " ph"}">${b() ? esc(b().name) : form.buildingName ? esc(form.buildingName) + `<small class="mutedText">（見える建物の外）</small>` : "選んでください"}</div></div>${icon("chevron")}</button>
+      <button class="pickRow half" id="pkC"><div class="pickIcon">${c() ? catIconHtml(c()) : icon("tool")}</div><div class="pickText"><div class="pickLabel">分類<span class="req">必須</span></div><div class="pickValue${c() || form.categoryName ? "" : " ph"}">${c() ? esc(c().label) : form.categoryName ? esc(form.categoryName) : "選んでください"}</div></div>${icon("chevron")}</button>
+      </div>
+      ${step("報告の種類", "req", "記録として残すか、本社に対応を頼むか")}
+      <div class="formCard"><div class="chips" id="kindChips" style="margin-bottom:6px"><button class="chip${form.kind === "request" ? "" : " on"}" data-k="report">報告のみ</button><button class="chip${form.kind === "request" ? " on" : ""}" data-k="request">対応を依頼する</button></div>${form.kind === "request" ? `<label class="urgentRow"><input type="checkbox" id="fUrgent"${form.urgent ? " checked" : ""}> 急ぎ（すぐ対応してほしい）</label><div class="mutedText">保存して「管理者に報告する」を押すと、本社に連絡が届きます。</div>` : `<div class="mutedText">記録として残します（本社への連絡はありません）。</div>`}</div>
+      ${placeRowHtml() ? step("場所（どの部屋か）", "任意", "建物の中の図で、部屋を押して選びます") + placeRowHtml() : ""}
+      ${step("何が起きたか", "req")}
+      <div class="formCard"><textarea id="fWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい">${esc(form.what)}</textarea><div class="counter"><span id="cWhat">${form.what.length}</span>/500</div></div>
+      ${step("写真", "任意・複数枚OK")}
+      <div class="formCard"><div class="photoStrip" id="strip"></div></div>
+      ${step("どう対応したか", "任意・対応中なら空欄でOK")}
+      <div class="formCard"><textarea id="fHow" maxlength="500" placeholder="例）業者へ連絡。トラップを清掃し、排水は改善。">${esc(form.how)}</textarea><div class="counter"><span id="cHow">${form.how.length}</span>/500</div></div>
       <button class="pickRow" id="pkV"><div class="pickIcon">${icon("person")}</div><div class="pickText"><div class="pickLabel">対応した業者</div><div class="pickValue${form.vendor ? "" : " ph"}">${form.vendor ? esc(form.vendor) : "選んでください（任意）"}</div></div>${icon("chevron")}</button>
-      <div class="formCard"><div class="fieldLabel">報告した人<span class="opt">LINEで受けた報告なら名前</span></div><input class="textInput" id="fRep" maxlength="40" placeholder="例）佐藤さん（自分で見つけた時は空欄）" value="${esc(form.reporter)}"></div>
+      ${step("報告した人", "任意", "LINEで受けた報告なら、その人の名前（自分で見つけた時は空欄）")}
+      <div class="formCard"><input class="textInput" id="fRep" maxlength="40" placeholder="例）佐藤さん（自分で見つけた時は空欄）" value="${esc(form.reporter)}"></div>
       <div class="infoBar">${icon("info")}この症例はこの端末に保存されます。管理者へは、保存した直後か「自分の症例」から報告できます。</div>
       <div class="formActions"><button class="btn" id="fDraft">下書き保存</button><button class="btn btnPrimary" id="fSave">保存する</button></div>`;
     fillIcons(main);
@@ -697,7 +707,7 @@ async function viewForm(main, r) {
   function placeRowHtml() {
     if (!hasPlan()) return "";
     const p = form.place;
-    return `<button class="pickRow" id="pkP"><div class="pickIcon"><img src="art/ic-map.webp?v=4" alt="" width="34" height="34"></div><div class="pickText"><div class="pickLabel">場所<span class="opt">任意</span></div><div class="pickValue${p ? "" : " ph"}">${p ? esc(p.floorLabel + "・" + p.room) : "図で部屋を選ぶ"}</div></div>${p ? `<span class="pickClear" id="pkPx" title="場所を外す">${icon("close")}</span>` : icon("chevron")}</button>`;
+    return `<button class="pickRow" id="pkP"><div class="pickIcon"><img src="art/ic-map.webp?v=4" alt="" width="34" height="34"></div><div class="pickText"><div class="pickValue${p ? "" : " ph"}">${p ? esc(p.floorLabel + "・" + p.room) : "図で部屋を選ぶ"}</div></div>${p ? `<span class="pickClear" id="pkPx" title="場所を外す">${icon("close")}</span>` : icon("chevron")}</button>`;
   }
   const pickPlace = () => {
     const bid = form.buildingId, bn = b() ? b().name : "";

@@ -375,3 +375,8 @@ textarea { min-height: 84px; }
 .caseBld .im{width:88px;height:60px;border-radius:8px;overflow:hidden;background:#f4f1e8;display:block}.caseBld .im img{width:100%;height:100%;object-fit:cover}.caseBld .chipN{font-size:11px;padding:0 6px}
 .fpEntry.off{opacity:.55}
 .hubCard>svg{flex:none;width:22px;height:22px;color:#244f37}
+
+/* 症例の入力：建物・分類を横に並べ、手順に番号 */
+.pickPair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}.pickPair .pickRow{margin:0;min-width:0;padding:10px 10px}.pickPair .pickIcon{width:40px;height:40px;flex:none}.pickPair .pickValue{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pickPair .pickRow>svg{display:none}
+.pickLabel .req,.formStep .req{margin-left:6px}
+.formStep{margin-top:16px}.formStep .opt,.formStep .req{margin-left:8px}.stepSub{margin:-4px 4px 8px;font-size:12.5px}
