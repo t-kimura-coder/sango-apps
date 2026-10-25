@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-26", type: "fix", text: "建物の中の図で、部屋を指で押しても選べなかったのを直しました。分類のページは、記入欄をやめて「症例を書く」ボタンだけにしました（何が起きたかは、次の画面で書きます）。" },
   { date: "2026-10-26", type: "feature", text: "画面の作りを整理しました。建物を選ぶと「症例」か「点検」かを選びます。下のタブに「症例」を足しました（建物を選ぶと、連絡先と、建物の中の部屋の図。部屋を押すと、その部屋の症例を書けます）。「自分の症例」は、症例タブの中にあります。点検の図は、画面いっぱいで開くようにしました。" },
   { date: "2026-10-25", type: "feature", text: "症例に「場所」を足しました。症例を書く時、「場所（任意）」から建物の中の図を開いて、部屋を押して選べます（トイレが2つある時なども、どちらか分かります）。症例の詳細の「図で場所を見る」で、その部屋が色付きで出ます。" },
   { date: "2026-10-21", type: "fix", text: "見える建物が決まっている人の画面を直しました。見える建物の外の症例を開いた時も、建物の名前がそのまま出ます（選び直さなくても保存できます）。点検の一覧も、見える建物だけになります。" },
@@ -482,20 +483,16 @@ async function viewCategory(main, bid, cid) {
     <div class="catHead"><div class="catIcon big">${catIconHtml(c)}</div><div><div class="catHeadName">${esc(c.label)}</div><div class="mutedText">${esc(b.name)}</div></div></div>
     <div class="stepHead"><span class="stepNo">1</span><h3>何が起きましたか？</h3></div>
     <div class="formCard">
-      <textarea id="cWhat" maxlength="500" placeholder="例）洗面の排水がつまって水が流れにくい"></textarea>
-      <div class="mutedText" style="margin:6px 0 10px">LINEで受けた報告も、ここに書いて残せます。写真や対応は次の画面で付けられます。</div>
       <button class="btn btnPrimary wide" id="cAdd">${icon("plus")}症例を書く</button>
+      <div class="mutedText" style="margin:8px 2px 0">何が起きたか・写真・対応は、次の画面で書きます。LINEで受けた報告も、ここから残せます。</div>
     </div>
     <div class="stepHead"><span class="stepNo">2</span><h3>連絡先</h3></div>
     ${contactHtml(bid, cid)}
     <div class="stepHead"><span class="stepNo">3</span><h3>${esc(c.label)}の症例</h3><span class="count">${recs.length}件</span></div>
     <div class="mutedText" style="margin:0 4px 8px">この端末で、あなたが残した症例と写真です。新しいものが上に並びます。</div>
     <div class="recList" id="cRecs"></div>`;
-  $("cAdd").onclick = () => {
-    try { sessionStorage.setItem(P + "prefill", $("cWhat").value.trim()); } catch (e) {}
-    go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`);
-  };
-  await fillRecList($("cRecs"), recs, `${c.label}の症例はまだありません。上に書いて残すと、ここにたまっていきます。`);
+  $("cAdd").onclick = () => go(`#/new?b=${encodeURIComponent(bid)}&c=${encodeURIComponent(cid)}`);
+  await fillRecList($("cRecs"), recs, `${c.label}の症例はまだありません。「症例を書く」で残すと、ここにたまっていきます。`);
 }
 /* 保存した直後に「管理者へ報告しますか？」 */
 function askReport(rec) {
