@@ -22,7 +22,7 @@ description: sango-apps（現場ナビ・見守り）の動作チェック。テ
 
 1. 準備（`tests` フォルダで）
    - `node_modules` が無ければ `npm install`。
-   - クラウド（Chrome が入っていない所）では `npx playwright install chromium` をして、以降のテストは `TEST_BROWSER=chromium` を付ける。
+   - クラウド（Chrome が入っていない所）では、テストに `TEST_BROWSER=chromium` を付ける。ブラウザのダウンロード（`npx playwright install`）はしない（クラウドは外に出られず失敗する。最初から入っている `/opt/pw-browsers` の Chromium を設定が自動で使う）。
 2. 前回からの変更を見る
    - `node tools/check-report.js last` → 前回チェックした時のコミット（空なら初回）。
    - `git log --oneline <前回>..HEAD` と `git diff --stat <前回>..HEAD`。
