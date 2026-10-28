@@ -26,7 +26,7 @@ description: sango-apps（現場ナビ・見守り）の動作チェック。テ
 2. 前回からの変更を見る
    - `node tools/check-report.js last` → 前回チェックした時のコミット（空なら初回）。
    - `git log --oneline <前回>..HEAD` と `git diff --stat <前回>..HEAD`。
-   - **夜で、変更が `tests/` 以外に無ければ**、テストは動かさず「変更なし」の報告だけ置いて終わる。昼はいつも動かす。
+   - **夜で、前回からコミットが1件も無ければ**、テストは動かさず「変更なし」の報告だけ置いて終わる。昼はいつも動かす。
 3. テストを動かす：`npx playwright test` → `node tools/summarize.js`
 4. 落ちたテストがあれば
    - summarize の出力と、関係するアプリの所だけを読んで、原因の見当をつける（どのコミットで、何が変わったから、か）。
