@@ -47,9 +47,13 @@ if (cmd === "last") {
       for (const f of fs.readdirSync(dir)) if (f !== ".git") fs.rmSync(path.join(dir, f), { recursive: true, force: true });
       fs.writeFileSync(path.join(dir, "README.md"), "# 動作チェックの報告\n\n`reports/` に1回ごとの報告。`last.txt` は最後にチェックした main のコミット。アプリの本体は main にある。\n");
     }
-    const d = new Date();
-    const p2 = (n) => String(n).padStart(2, "0");
-    const name = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}_${who}.md`;
+    // クラウドは世界標準時で動くので、日本の時刻で名前を付ける
+    const t = Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+        .formatToParts(new Date())
+        .map((p) => [p.type, p.value])
+    );
+    const name = `${t.year}-${t.month}-${t.day}_${t.hour}${t.minute}_${who}.md`;
     fs.mkdirSync(path.join(dir, "reports"), { recursive: true });
     fs.copyFileSync(src, path.join(dir, "reports", name));
     fs.writeFileSync(path.join(dir, "last.txt"), head + "\n");
