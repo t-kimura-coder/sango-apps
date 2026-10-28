@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(npm install)",
+      "Bash(npm ci)",
+      "Bash(npx playwright test:*)",
+      "Bash(npx playwright install chromium)",
+      "Bash(TEST_BROWSER=chromium npx playwright test:*)",
+      "Bash(node tools/summarize.js)",
+      "Bash(node tools/check-report.js:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git status:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rev-parse:*)",
+      "Edit(/tests/test-results/**)",
+      "Write(/tests/test-results/**)"
+    ],
+    "deny": [
+      "Bash(git push origin main:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force:*)"
+    ]
+  }
+}

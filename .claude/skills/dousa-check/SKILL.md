@@ -17,6 +17,9 @@ description: sango-apps（現場ナビ・見守り）の動作チェック。テ
 
 ## 手順
 
+コマンドは **最初に1回 `cd tests` してから、1つずつ**動かす（`&&` や `;` でつながない。つなぐと毎回「許可しますか」が出る）。
+決まったコマンド（`.claude/settings.json` に書いたもの）は聞かずに通る。
+
 1. 準備（`tests` フォルダで）
    - `node_modules` が無ければ `npm install`。
    - クラウド（Chrome が入っていない所）では `npx playwright install chromium` をして、以降のテストは `TEST_BROWSER=chromium` を付ける。
@@ -33,7 +36,7 @@ description: sango-apps（現場ナビ・見守り）の動作チェック。テ
    - 版数（`APP_VERSION`・`?v=`・`APP_SHELL`・`CACHE_VERSION`）の上げ忘れ（テストでも見ている）
    - 消し忘れの `console.log`、書きかけ、明らかな打ち間違い
 6. 報告を書いて置く
-   - 下の「報告の形」で、`tests/test-results/report.md` に書く（このフォルダは git に入らない）。
+   - 下の「報告の形」で、`tests/test-results/report.md` に書く（ファイルを書く道具で。`cat <<EOF` は使わない。このフォルダは git に入らない）。
    - `node tools/check-report.js save test-results/report.md 昼`（夜は `夜`）
 7. 昼は、画面に報告の要点を3〜5行で出して終わる。
 
