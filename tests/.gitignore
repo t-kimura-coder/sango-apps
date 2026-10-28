@@ -1,0 +1,6 @@
+node_modules/
+test-results/
+playwright-report/
+# 上の階層で *.json を外しているので、テストの設定だけは入れる
+!package.json
+!package-lock.json
