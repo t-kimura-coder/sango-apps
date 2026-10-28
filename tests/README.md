@@ -1,4 +1,4 @@
-# 動作テスト（現場ナビ・見守り）
+﻿# 動作テスト（現場ナビ・見守り）
 
 アプリを見えないブラウザ（iPhone の画面の大きさ）で動かして、決まった手順が今までどおり動くかを確かめる。
 
@@ -7,7 +7,7 @@
 ```
 cd tests
 npm install          # 初回だけ
-npx playwright test  # 全部（30秒ほど）
+npx playwright test  # 全部（15秒ほど）
 ```
 
 - 木村さんの PC では、入っている Chrome を使う。
@@ -27,6 +27,13 @@ npx playwright test  # 全部（30秒ほど）
 |---|---|
 | `specs/genba-manual.basic.spec.js` | 開く・エラーが無い／合言葉でマニュアルを受け取る／検索（項目名・チェックの文・ひらがな・言い換え）／現場の登録（工事番号は大文字） |
 | `specs/genba-manual.report.spec.js` | 週の報告を Box へ送る：報告 JSON の中身（schema 8・お客様向けの印・項目名・チェックの固定番号・お客様向けの材料・上司へのメモ）、写真の名前がそろう、送ったあとの報告済み・お客様向けの番号、取り消して送り直すと同じ report_id |
+| `specs/genba-manual.version.spec.js` | 版数のそろい（`APP_VERSION`・`index.html` の `?v=`・`APP_SHELL`）、お知らせが新しい順 |
+| `tools/summarize.js` | 結果を短くまとめる（落ちたテストと理由） |
+| `tools/check-report.js` | 動作チェックの報告を GitHub の `check-reports` の枝に置く／前回チェックしたコミットを返す |
+
+## 動作チェック（昼は `test1`、夜はクラウド）
+
+手順はスキル `../.claude/skills/dousa-check/SKILL.md`。報告は `check-reports` の枝の `reports/` にたまる（main には入れない）。
 
 ## これから足すもの
 
