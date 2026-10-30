@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 125;
+const APP_VERSION = 126;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-10-30", type: "fix", text: "チェックを付けた直後に工事番号を入れると、上司の見守りや朝のまとめに、番号なしの同じ現場が残って2つ並ぶことがあるのを直しました（現場ナビの画面や記録には影響ありません）" },
   { date: "2026-10-22", type: "fix", text: "同じ現場の人がチェックや品質写真を付けた時、ホームと写真要の一覧にもすぐ反映されるようにしました。「済み」を外した時に「済みにしました」と出ていたのを直しました" },
   { date: "2026-10-17", type: "feature", text: "週の報告を送ったあとの「お客様メール用の写真」の案内を分かりやすくしました（上司への報告はそこで済み、PC でメールを作るなら保存は不要）。慣れたら「次から出さない」で出さないようにできます（設定の「週の報告」で戻せます）" },
   { date: "2026-10-16", type: "feature", text: "同じ現場（同じ工事番号）の人がチェックを付けたり品質写真を撮ったりしていたら、自分の画面でも「済み」として数えるようにしました（工程の✓完了・ホームの進み具合と次の項目・撮り忘れ・写真要の一覧）。相手のチェックは薄い✓で「○○さんが確認済み」と出ます。自分でも確かめたい時は、今までどおり自分で付けられます。チェックの記録は付けた本人のものだけで、上司の見守りの人ごとの進み具合も本人の分だけです" },
@@ -1577,11 +1578,14 @@ async function editSiteInfo(site) {
   const { coverFile, ...info } = res;
   const oldKey = stateKeyOf(site);
   Object.assign(site, info);
+  const movedAt = new Date().toISOString();
+  // 番号を変えた時刻。これより前に作った同期の中身が後から GAS に届いても、古い番号の記録を生き返らせない（チェックの直後に番号を入れると送信が前後する）
+  if (oldKey !== stateKeyOf(site)) site.keyAt = movedAt;
   await dbPut("sites", site);
   await saveCover(site.id, coverFile);
   if (oldKey !== stateKeyOf(site) && oldKey.startsWith("k:")) dismissSharedOffer(oldKey.slice(2)); // 前の番号の現場を、共有の候補にまた出さない
   if (gasOn() && oldKey !== stateKeyOf(site)) {
-    gasCall({ action: "putStates", states: [{ key: oldKey, kouji_no: oldKey.startsWith("k:") ? oldKey.slice(2) : "", site_id: site.id, site: site.name, updated_at: new Date().toISOString(), state: JSON.stringify({ v: 1, deleted: true, moved: stateKeyOf(site), site: { id: site.id, name: site.name }, items: {} }) }] }).catch(() => {});
+    gasCall({ action: "putStates", states: [{ key: oldKey, kouji_no: oldKey.startsWith("k:") ? oldKey.slice(2) : "", site_id: site.id, site: site.name, updated_at: movedAt, state: JSON.stringify({ v: 1, deleted: true, moved: stateKeyOf(site), movedAt, site: { id: site.id, name: site.name }, items: {} }) }] }).catch(() => {});
     scheduleStatePush(); // 新しい番号で送り直す
   }
   await refreshSites();
@@ -5430,7 +5434,7 @@ async function buildSiteState(site) {
     items[r.itemId] = it;
     if ((r.updatedAt || "") > updated) updated = r.updatedAt || "";
   });
-  const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [] };
+  const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [], keyAt: site.keyAt || "" };
   // 段階ごとの進み具合（週の報告の progress と同じ形）
   let progress = null;
   if (manualMeta) {
