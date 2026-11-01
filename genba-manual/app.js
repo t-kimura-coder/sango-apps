@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 127;
+const APP_VERSION = 128;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,7 +10,8 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
-  { date: "2026-11-02", type: "feature", text: "報告タブを「今週の報告」1枚の流れに作り直しました。上から ① 写真を入れる（必須：「撮る」「取り込む」を押して、先に工程を選び、撮影メモを見ながらまとめて入れます。工程は前回の続きから選ばれていて、あとで写真ごとに選び直せます）② 工程ごとの様子（任意：「完了・一部完了・作業中」を1タップと一言。書いておくと、お客様への報告メールにそのまま使えます）③ 送る（来週の予定を書いて「N 枚を送る」。写真以外にやったこと・上司へのメモは「＋ 書き足す」から）。入れた写真は最初から全部送り、送らない写真だけ押して外します。「今週は報告なし」は一番下にあります。報告の中の工程のページはなくなり、写真タブは見返す・保存する専用になりました（「送る写真に入れる」は報告タブの流れに変わりました）" },
+  { date: "2026-11-01", type: "fix", text: "同じ人が PC と iPhone など2台で使っている時、報告を送っていない方の端末で、報告済みの週が「遅れ」と出ていたのを直しました（報告した端末が新しい版で一度同期すると直ります）" },
+  { date: "2026-11-01", type: "feature", text: "報告タブを「今週の報告」1枚の流れに作り直しました。上から ① 写真を入れる（必須：「撮る」「取り込む」を押して、先に工程を選び、撮影メモを見ながらまとめて入れます。工程は前回の続きから選ばれていて、あとで写真ごとに選び直せます）② 工程ごとの様子（任意：「完了・一部完了・作業中」を1タップと一言。書いておくと、お客様への報告メールにそのまま使えます）③ 送る（来週の予定を書いて「N 枚を送る」。写真以外にやったこと・上司へのメモは「＋ 書き足す」から）。入れた写真は最初から全部送り、送らない写真だけ押して外します。「今週は報告なし」は一番下にあります。報告の中の工程のページはなくなり、写真タブは見返す・保存する専用になりました（「送る写真に入れる」は報告タブの流れに変わりました）" },
   { date: "2026-10-30", type: "fix", text: "チェックを付けた直後に工事番号を入れると、上司の見守りや朝のまとめに、番号なしの同じ現場が残って2つ並ぶことがあるのを直しました（現場ナビの画面や記録には影響ありません）" },
   { date: "2026-10-22", type: "fix", text: "同じ現場の人がチェックや品質写真を付けた時、ホームと写真要の一覧にもすぐ反映されるようにしました。「済み」を外した時に「済みにしました」と出ていたのを直しました" },
   { date: "2026-10-17", type: "feature", text: "週の報告を送ったあとの「お客様メール用の写真」の案内を分かりやすくしました（上司への報告はそこで済み、PC でメールを作るなら保存は不要）。慣れたら「次から出さない」で出さないようにできます（設定の「週の報告」で戻せます）" },
@@ -575,14 +576,15 @@ async function togglePause(site) {
 // 週の決まりを入れた週。これより前の週は「遅れ」に数えない（前のやり方で報告していた週が、まとめて遅れに出ないように）
 const WEEK_RULE_START = "2026-09-28";
 // どの週が報告済みか。週の印（week）がある報告はその週だけ、印の無い古い報告は作った日（金〜翌木）で判断する
-function weekReportedFn(reports) {
-  const tagged = new Set((reports || []).map((r) => r.week).filter(Boolean));
+// remoteWeeks：別の端末で報告した週（同期で受け取った site.remoteWeeks）
+function weekReportedFn(reports, remoteWeeks = []) {
+  const tagged = new Set([...(reports || []).map((r) => r.week), ...remoteWeeks].filter(Boolean));
   const untagged = (reports || []).filter((r) => !r.week).map((r) => (r.createdAt ? toDateKey(new Date(r.createdAt)) : r.end)).filter(Boolean);
   return (mon) => tagged.has(mon) || untagged.some((k) => k >= addDays(mon, 4) && k <= addDays(mon, 10));
 }
 // 報告済みにする時に付ける週：今週の金曜より前で、先週がまだなら先週。それ以外は今週
 function tagWeek(site, reports, today = todayKey()) {
-  const isReported = weekReportedFn(reports);
+  const isReported = weekReportedFn(reports, site.remoteWeeks);
   const thisMon = weekMon(today);
   const prevMon = addDays(thisMon, -7);
   const startMon = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
@@ -592,7 +594,7 @@ function tagWeek(site, reports, today = todayKey()) {
 }
 
 function reportWeek(site, reports, today = todayKey()) {
-  const isReported = weekReportedFn(reports);
+  const isReported = weekReportedFn(reports, site.remoteWeeks);
   const thisMon = weekMon(today);
   const prevMon = addDays(thisMon, -7);
   const created = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
@@ -5575,7 +5577,9 @@ async function buildSiteState(site) {
     });
   }
   // 最近の報告の要約（写真なし。スマホの見守りで「いつ・どの工程・どんな様子」を見るため）
-  const reps = (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => ((a.createdAt || "") < (b.createdAt || "") ? 1 : -1)).slice(0, 3);
+  const allReps = await dbGetAll("reports", "siteId", site.id);
+  const weeks = [...new Set(allReps.map((r) => r.week).filter(Boolean))].sort(); // 報告した週の一覧（別の端末で「報告済み」に数えるため）
+  const reps = allReps.sort((a, b) => ((a.createdAt || "") < (b.createdAt || "") ? 1 : -1)).slice(0, 3);
   const reports = reps.map((r) => {
     const counts = {};
     sitePhotos.filter((ph) => ph.reportId === r.id).forEach((ph) => {
@@ -5590,7 +5594,7 @@ async function buildSiteState(site) {
     return { start: r.start, end: r.end, week: r.week || "", at: r.createdAt || "", kind: r.kind || "sent", memo: r.memo || "", processes: procs, customer: { done_other: (d.doneOther || "").trim(), next: (d.next || "").trim() }, photos: counts };
   });
   if (reports.length && reports[0].at > updated) updated = reports[0].at; // 報告したら送り直す
-  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items, progress, reports }) };
+  return { key: stateKeyOf(site), kouji_no: normKoujiNo(site.koujiNo), site_id: site.id, site: site.name, updated_at: updated, state: JSON.stringify({ v: 1, site: info, items, progress, reports, weeks }) };
 }
 // 自分の記録を送る（中身が前回と同じ現場は送らない）
 async function pushStates(force = false) {
@@ -5692,7 +5696,16 @@ async function syncStates(manual = false) {
           keyToSite[x.key] = site;
           added++;
         }
-        if (site) merged += await mergeMine(site, st);
+        if (site) {
+          // 別の端末で報告した週（報告の記録は送った端末にしか無いので、週だけ受け取って「報告済み」に数える）
+          const weeks = [...new Set([...(st.weeks || []), ...(st.reports || []).map((r) => r.week)].filter(Boolean))].sort();
+          if (weeks.join() !== (site.remoteWeeks || []).join()) {
+            site.remoteWeeks = weeks;
+            await dbPut("sites", site);
+            merged++;
+          }
+          merged += await mergeMine(site, st);
+        }
       } else {
         const at = {};
         const ph = {};
