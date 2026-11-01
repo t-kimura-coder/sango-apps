@@ -1248,7 +1248,7 @@ img.imgBroken { visibility: hidden; }
 .btn.btnText { background: none; border: none; box-shadow: none; color: var(--color-text-sub); font-size: var(--fs-sm); text-decoration: underline; }
 
 /* ---------- 報告タブ：今週の報告（① 写真を入れる → ② 工程ごとの様子 → ③ 送る） ---------- */
-.flowCard { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-md); }
+.reportFlowCard { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-md); }
 .flowHead { display: flex; align-items: center; gap: 8px; }
 .flowNo { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--color-primary); color: var(--color-primary-text); font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
 .flowTitle { font-size: var(--fs-lg); font-weight: 800; color: var(--color-heading); }
@@ -1269,18 +1269,18 @@ img.imgBroken { visibility: hidden; }
 .photoCard.unsent .photoCardImg::after { content: "送らない"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 2px 8px; border-radius: 8px; background: var(--color-text-sub); color: var(--color-surface); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .flowField { display: flex; flex-direction: column; gap: 4px; }
 .flowLabel { margin: var(--space-sm) 0 0; font-weight: 700; color: var(--color-heading); }
-.flowCard > .btnDashed, .flowMore .btnDashed { width: 100%; min-height: 52px; }
+.reportFlowCard > .btnDashed, .flowMore .btnDashed { width: 100%; min-height: 52px; }
 .flowMore { display: flex; flex-direction: column; gap: var(--space-sm); }
 .flowMore[hidden], #reportMoreBtn[hidden] { display: none; }
-.flowCard .btn:disabled { opacity: 0.5; }
+.reportFlowCard .btn:disabled { opacity: 0.5; }
 .flowSubLinks { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-lg); }
 .flowSubLinks .linkBtn { min-height: 44px; }
 /* 写真を入れるシート */
 .intakeList, .intakeMore, .intakeDyn { display: flex; flex-direction: column; gap: var(--space-sm); }
 .intakeMore[hidden] { display: none; }
 .intakeGuide .memoHead { font-size: var(--fs-md); }
-.flowCard { align-items: stretch; text-align: left; }
+.reportFlowCard { align-items: stretch; text-align: left; }
 .flowHead { justify-content: flex-start; }
 .flowField { align-items: stretch; }
 .flowField .fieldLabel { display: block; width: 100%; }
-.flowCard .btnRow .btn { white-space: nowrap; font-size: var(--fs-md); padding: 0 8px; gap: 6px; }
+.reportFlowCard .btnRow .btn { white-space: nowrap; font-size: var(--fs-md); padding: 0 8px; gap: 6px; }

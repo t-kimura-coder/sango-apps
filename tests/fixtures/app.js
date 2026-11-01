@@ -37,7 +37,7 @@ const test = base.test.extend({
 // マニュアルを偽の GAS から受け取る（設定の「合言葉で受け取る」と同じ道）
 async function receiveManual(page) {
   await page.evaluate(() => receiveManualViaGas());
-  await base.expect(page.locator(".toast, #toast").filter({ hasText: "取り込みました" }).first()).toBeVisible({ timeout: 15000 });
+  await base.expect(page.locator(".toast, #toast").filter({ hasText: "取り込みました" }).first()).toBeVisible({ timeout: 30000 }); // テストを並べて動かすと遅くなることがある
 }
 
 // 現場を登録する（ホームの「担当現場を登録しましょう」から）

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 128;
+const APP_VERSION = 129;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-01", type: "fix", text: "新しい報告タブの細かい不具合を直しました：更新前に入れた今週の写真が「送らない」になっていた、「アプリ外で報告」を取り消すと写真が送れなかった、取り消した週が報告済みのまま残ることがあった、報告を書いている途中に画面が作り直されてキーボードが閉じることがあった" },
   { date: "2026-11-01", type: "fix", text: "同じ人が PC と iPhone など2台で使っている時、報告を送っていない方の端末で、報告済みの週が「遅れ」と出ていたのを直しました（報告した端末が新しい版で一度同期すると直ります）" },
   { date: "2026-11-01", type: "feature", text: "報告タブを「今週の報告」1枚の流れに作り直しました。上から ① 写真を入れる（必須：「撮る」「取り込む」を押して、先に工程を選び、撮影メモを見ながらまとめて入れます。工程は前回の続きから選ばれていて、あとで写真ごとに選び直せます）② 工程ごとの様子（任意：「完了・一部完了・作業中」を1タップと一言。書いておくと、お客様への報告メールにそのまま使えます）③ 送る（来週の予定を書いて「N 枚を送る」。写真以外にやったこと・上司へのメモは「＋ 書き足す」から）。入れた写真は最初から全部送り、送らない写真だけ押して外します。「今週は報告なし」は一番下にあります。報告の中の工程のページはなくなり、写真タブは見返す・保存する専用になりました（「送る写真に入れる」は報告タブの流れに変わりました）" },
   { date: "2026-10-30", type: "fix", text: "チェックを付けた直後に工事番号を入れると、上司の見守りや朝のまとめに、番号なしの同じ現場が残って2つ並ぶことがあるのを直しました（現場ナビの画面や記録には影響ありません）" },
@@ -2441,7 +2442,7 @@ async function checkPendingShot() {
     await openGroup(groupOfProcess(it.cat).id, it.id);
   } else if (p.processId) {
     goReport();
-    await openIntake({ pid: p.processId });
+    await openIntake({ pid: p.processId, itemId: p.reportItemId || null });
   }
   return true;
 }
@@ -2463,7 +2464,7 @@ function startRecordLibrary(it, key) {
 function startCamera(pid) {
   recordTarget = null;
   shootProcessId = pid;
-  markPendingShot({ processId: pid });
+  markPendingShot({ processId: pid, reportItemId }); // 項目ページから入った時は、読み込み直しのあとも項目を付ける
   $("cameraInput").click();
 }
 
@@ -2646,7 +2647,7 @@ async function renderReport() {
 
   /* ① 写真を入れる【必須】 */
   const s1 = document.createElement("section");
-  s1.className = "card flowCard";
+  s1.className = "card reportFlowCard";
   s1.innerHTML =
     flowHead(1, "写真を入れる", "必須", "must") +
     `<div class="psHint">今週の工事の写真を入れます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
@@ -2659,7 +2660,7 @@ async function renderReport() {
 
   /* ② 工程ごとの様子【任意】 */
   const s2 = document.createElement("section");
-  s2.className = "card flowCard";
+  s2.className = "card reportFlowCard";
   s2.innerHTML =
     flowHead(2, "工程ごとの様子", "任意", "opt") +
     `<div class="psHint">書いておくと、お客様への報告メールにそのまま使えます。</div>` +
@@ -2764,7 +2765,7 @@ async function renderReport() {
   /* ③ 送る */
   const draft = draftOf(site);
   const s3 = document.createElement("section");
-  s3.className = "card flowCard";
+  s3.className = "card reportFlowCard";
   s3.innerHTML = flowHead(3, "送る", "", "");
   const field = (id, key, labelHtml, rows, hintText) => {
     const wrap = document.createElement("div");
@@ -2996,6 +2997,18 @@ async function makeIntake({ pid = null, itemId = null, mode = "camera" } = {}) {
   const week = site ? weekProcessIds(site, cands) : [];
   const first = [pid, getSetting(LAST_PROC_KEY), week[0]].find((id) => id && PROCESSES.some((p) => p.id === id)) || null;
   return { pid: first, files: [], cands, extra: [], mode };
+}
+
+// v127（入れた写真は最初から送る）の前に入れて、まだ送っていない報告写真のうち、先週以降に撮ったものを「送る」にする（1回だけ）。
+// それより古い写真は、前のやり方で送らないと決めたものかもしれないので、そのまま
+async function migrateSendPicks() {
+  const FLAG = "genba-photo-sendpick-v127";
+  if (getSetting(FLAG)) return;
+  const from = addDays(weekMon(todayKey()), -7);
+  const list = (await dbGetAll("photos")).filter((p) => !p.reportId && !isRecordPhoto(p) && p.sendPick === undefined && (p.dateKey || "") >= from);
+  list.forEach((p) => (p.sendPick = true));
+  if (list.length) await dbPutMany("photos", list);
+  setSetting(FLAG, "1");
 }
 
 // 報告タブの「撮る」「取り込む」、項目ページの「報告写真」から。opts: { pid, itemId, mode: "camera"|"library" }
@@ -3587,6 +3600,7 @@ async function undoReport(r) {
   if (r.week) site.redoWeek = r.week; // 送り直す時に元の週の報告として扱う
   restoreDraftFromReport(site, r);
   if (r.memo) site.reportDraft = { ...(site.reportDraft || {}), memo: r.memo };
+  await forgetWeek(site, r.week);
   await dbPut("sites", site);
   toast(`報告を取り消しました（写真${photos.length}枚を「送る写真」に戻しました）`);
   goReport();
@@ -3597,18 +3611,30 @@ function weekReportOf(wk, reports) {
   return (reports || []).filter((r) => r.week === wk.mon || (!r.week && made(r) >= addDays(wk.mon, 4) && made(r) <= addDays(wk.mon, 10))).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] || null;
 }
 
+// 取り消した週を、同期で受け取った「別の端末で報告した週」からも外す（自分の報告も置き場所を通って戻ってくるため）
+async function forgetWeek(site, week) {
+  if (!week) return;
+  const left = (await dbGetAll("reports", "siteId", site.id)).some((x) => x.week === week);
+  if (left) return;
+  site.remoteWeeks = (site.remoteWeeks || []).filter((w) => w !== week);
+  site.forgotWeeks = [...new Set([...(site.forgotWeeks || []), week])];
+  scheduleStatePush();
+}
+
 async function cancelWeekOther(r) {
   if (!confirm(`${fmtDate(r.start)}〜${fmtDate(r.end)}の「${r.kind === "external" ? "アプリ外で報告" : "報告なし"}」を取り消しますか？`)) return;
   await dbDeleteMany("reports", [r.id]);
   const site = currentSite();
   if (site) {
     const photos = (await getSitePhotos(site.id)).filter((p) => p.reportId === r.id);
-    photos.forEach((p) => (p.reportId = null));
+    photos.forEach((p) => {
+      p.reportId = null;
+      if (!isRecordPhoto(p)) p.sendPick = true; // 報告タブに「送る写真」として戻す（undoReport と同じ）
+    });
     if (photos.length) await dbPutMany("photos", photos);
-    if (r.procNotes || r.reportDraft) {
-      restoreDraftFromReport(site, r);
-      await dbPut("sites", site);
-    }
+    if (r.procNotes || r.reportDraft) restoreDraftFromReport(site, r);
+    await forgetWeek(site, r.week);
+    await dbPut("sites", site);
   }
   toast("取り消しました");
   renderReport();
@@ -5697,14 +5723,17 @@ async function syncStates(manual = false) {
           added++;
         }
         if (site) {
-          // 別の端末で報告した週（報告の記録は送った端末にしか無いので、週だけ受け取って「報告済み」に数える）
-          const weeks = [...new Set([...(st.weeks || []), ...(st.reports || []).map((r) => r.week)].filter(Boolean))].sort();
-          if (weeks.join() !== (site.remoteWeeks || []).join()) {
-            site.remoteWeeks = weeks;
-            await dbPut("sites", site);
+          // 別の端末で報告した週（報告の記録は送った端末にしか無いので、週だけ受け取って「報告済み」に数える）。
+          // この端末で取り消した週（forgotWeeks）は、置き場所が新しくなるまで受け取らない
+          const fresh = (await dbGet("sites", site.id)) || site; // 通信の間に書いた書きかけなどを、古い site で上書きしない
+          const forgot = fresh.forgotWeeks || [];
+          const weeks = [...new Set([...(st.weeks || []), ...(st.reports || []).map((r) => r.week)].filter((w) => w && !forgot.includes(w)))].sort();
+          if (weeks.join() !== (fresh.remoteWeeks || []).join()) {
+            fresh.remoteWeeks = weeks;
+            await dbPut("sites", fresh);
             merged++;
           }
-          merged += await mergeMine(site, st);
+          merged += await mergeMine(fresh, st);
         }
       } else {
         const at = {};
@@ -5722,12 +5751,19 @@ async function syncStates(manual = false) {
       localStorage.setItem(OTHERS_KEY, JSON.stringify(others));
     } catch (e) {}
     const sent = await pushStates(manual);
+    // 取り消した週は置き場所からも消えたので、次からは普通に受け取る
+    for (const s of (await getSites()).filter((x) => (x.forgotWeeks || []).length)) {
+      delete s.forgotWeeks;
+      await dbPut("sites", s);
+    }
     setSetting("stateSyncAt", new Date().toISOString());
     if ($("stateStatus")) $("stateStatus").textContent = `最後に同期：${fmtDateTime(new Date().toISOString())}`;
     if (merged || added) {
       await refreshSites();
       await loadSiteChecks();
-      rerenderCurrentView();
+      // 報告タブで書いている途中は作り直さない（入力欄が作り直されてキーボードが閉じ、書きかけが古く見えるため）
+      const typing = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName) && document.activeElement.closest("#reportView");
+      if (!typing) rerenderCurrentView();
     } else if (othersChanged && ["groupView", "dashView", "requiredView"].includes(currentView)) {
       rerenderCurrentView(); // 同じ現場の人のチェック・写真で、済み・次の項目・撮り忘れが変わる
     }
@@ -7503,6 +7539,7 @@ function init() {
     }
   });
   loadManualMeta().then(async () => {
+    await migrateSendPicks();
     goDash();
     if (await checkPendingShot()) return;
     if (tourShouldStart()) startTour();
