@@ -1279,3 +1279,8 @@ img.imgBroken { visibility: hidden; }
 .intakeList, .intakeMore, .intakeDyn { display: flex; flex-direction: column; gap: var(--space-sm); }
 .intakeMore[hidden] { display: none; }
 .intakeGuide .memoHead { font-size: var(--fs-md); }
+.flowCard { align-items: stretch; text-align: left; }
+.flowHead { justify-content: flex-start; }
+.flowField { align-items: stretch; }
+.flowField .fieldLabel { display: block; width: 100%; }
+.flowCard .btnRow .btn { white-space: nowrap; font-size: var(--fs-md); padding: 0 8px; gap: 6px; }

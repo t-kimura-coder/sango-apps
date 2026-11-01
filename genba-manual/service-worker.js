@@ -2,7 +2,7 @@
 const CACHE_VERSION = 140;
 const CACHE_NAME = `genba-photo-v${CACHE_VERSION}`;
 
-const APP_SHELL = ['./', 'index.html', 'app.js?v=127', 'style.css?v=82', 'icon-96.png?v=2', 'icon-180.png?v=2', 'icon-512.png', 'hero-frame.webp?v=1', 'art/g1.webp?v=1', 'art/g2.webp?v=1', 'art/g3.webp?v=1', 'art/g4.webp?v=1', 'art/g5.webp?v=1', 'art/g6.webp?v=1', 'art/report-icon.webp?v=1', 'art/report-photos.webp?v=1', 'art/hero-sky.webp?v=1', 'art/report-wood.webp?v=1', 'art/manual-hero.webp?v=1', 'art/album-hero.webp?v=1', 'art/kind-house.webp?v=1', 'art/kind-reform.webp?v=1', 'art/kind-shop.webp?v=1'];
+const APP_SHELL = ['./', 'index.html', 'app.js?v=127', 'style.css?v=83', 'icon-96.png?v=2', 'icon-180.png?v=2', 'icon-512.png', 'hero-frame.webp?v=1', 'art/g1.webp?v=1', 'art/g2.webp?v=1', 'art/g3.webp?v=1', 'art/g4.webp?v=1', 'art/g5.webp?v=1', 'art/g6.webp?v=1', 'art/report-icon.webp?v=1', 'art/report-photos.webp?v=1', 'art/hero-sky.webp?v=1', 'art/report-wood.webp?v=1', 'art/manual-hero.webp?v=1', 'art/album-hero.webp?v=1', 'art/kind-house.webp?v=1', 'art/kind-reform.webp?v=1', 'art/kind-shop.webp?v=1'];
 // マニュアル（社内データ）はアプリに含めず、JSONで取り込んでIndexedDBに保存する
 
 self.addEventListener('install', (event) => {
