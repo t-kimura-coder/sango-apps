@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -568,6 +568,40 @@ document.addEventListener("click", (e) => {
   fpOpen({ title: r.building + "：場所", load: () => fpaLoad(r.buildingId), noPlan: true, roomView: { floor: r.place.floor, floorLabel: r.place.floor_label, room: r.place.room } });
 });
 
+
+/* ---------- 「報告のみ」の症例を、本社への依頼にする（管理者） ----------
+ * 業者の手配が要るのに「報告のみ」で届いた症例を、管理者が本社に回す。窓口の adminRequest：症例を依頼にして、本社にメール（初めての時だけ）。
+ * ひとことは、管理者のメモの頭に【本社へ依頼】として残る。依頼にしたあとは、手配の状況がこの画面に出る */
+const hqAskHtml = (r, mobile) => (!r.req && r.src === "new" && S.api && !S.demo && canEdit()
+  ? `<div class="${mobile ? "mBox" : "panel"} hqAsk"${mobile ? "" : ' style="margin-bottom:12px"'}><${mobile ? 'div class="mH"' : "h3"}>本社に依頼する</${mobile ? "div" : "h3"}><div class="note">「報告のみ」で届いた症例です。業者の手配や、本社の確認が必要なら、本社に依頼できます（本社にメールが届き、この画面に「手配の状況」が出るようになります）。</div><button type="button" class="btn primary" data-hqreq="${esc(r.id)}">本社に依頼する</button></div>`
+  : "");
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-hqreq]");
+  if (!b) return;
+  const r = S.records.find((x) => x.id === b.dataset.hqreq);
+  if (!r) return;
+  const dlg = document.createElement("div"); dlg.className = "hqDlgBack";
+  dlg.innerHTML = `<div class="hqDlg" role="dialog"><h3>本社に依頼する</h3><div class="note">${esc(r.building)}｜${esc(r.category)}${r.place ? "｜" + esc(placeText(r.place)) : ""}<br>${esc(titleOf(r))}</div>
+    <label class="hqChk"><input type="checkbox" id="hqUrg"> 急ぎ（お客様に影響がある・すぐ見てほしい）</label>
+    <label class="hqLbl">本社へのひとこと（任意）</label><textarea id="hqNote" maxlength="300" placeholder="例）11/5 に現地確認します。業者の手配をお願いします"></textarea>
+    <div class="hqBtns"><button class="btn" id="hqNo">やめる</button><button class="btn primary" id="hqGo">本社に依頼する</button></div></div>`;
+  document.body.appendChild(dlg);
+  const close = () => dlg.remove();
+  dlg.onclick = (ev) => { if (ev.target === dlg) close(); };
+  dlg.querySelector("#hqNo").onclick = close;
+  dlg.querySelector("#hqGo").onclick = async () => {
+    const go = dlg.querySelector("#hqGo"); go.disabled = true; go.textContent = "送っています…";
+    try {
+      const j = await apiCall({ action: "adminRequest", id: r.id, urgent: dlg.querySelector("#hqUrg").checked, note: dlg.querySelector("#hqNote").value.trim(), by: getLS("name") }, 40000);
+      const res = j.result || {};
+      close();
+      toast(res.already ? "この症例は、もう本社への依頼になっています" : "本社に依頼しました" + (res.notified ? "（本社にメールを送りました）" : ""));
+      await loadApiRecords(true);
+      if (typeof render === "function") render();
+    } catch (err) { go.disabled = false; go.textContent = "本社に依頼する"; alert("依頼できませんでした。\n（" + String((err && err.message) || err) + "）"); }
+  };
+}, true);
+
 /* ---------- 症例の詳細 ---------- */
 /** 手配の状況（本社が入れた内容のうち、山郷に見せてよいものだけ）。依頼の症例の詳細に出す */
 const REQ_STEPS = [["received", "依頼を受けた"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
@@ -594,7 +628,7 @@ async function viewDetail(main, id) {
     <div class="detailLayout"><div>
       <div class="panel"><div class="dHead"><div class="pvHero">${bldImg(r.buildingId)}</div><div><h2>${esc(r.building)} ${stateChip(r)}</h2>${placeHtml(r)}
         <div class="dFacts"><div><span>分類</span>${esc(r.category)}</div><div><span>件名</span>${esc(titleOf(r))}</div><div><span>報告日</span>${fmtDate(r.t)} ${fmtTime(r.t)}</div><div><span>報告した人</span>${esc(r.reporter || "—")}</div><div><span>担当リーダー</span>${esc(r.sender || "—")}</div><div><span>対応した業者</span>${esc(r.vendor || "—")}</div><div><span>現場の状況</span>${esc(fieldState(r))}</div></div></div></div></div>
-      ${r.req && r.src === "new" && S.api && !S.demo ? `<div class="panel" id="reqBox" style="margin-bottom:12px"><h3>手配の状況</h3><div class="note">読み込んでいます…</div></div>` : ""}
+      ${r.req && r.src === "new" && S.api && !S.demo ? `<div class="panel" id="reqBox" style="margin-bottom:12px"><h3>手配の状況</h3><div class="note">読み込んでいます…</div></div>` : hqAskHtml(r, false)}
       <div class="two"><div class="panel"><h3>何が起きたか</h3><div class="pvText">${esc(r.what)}</div></div><div class="panel"><h3>どう対応したか</h3><div class="pvText">${esc(r.how || "（まだ書かれていません）")}</div></div></div>
       ${r.photos.length ? `<div class="panel" style="margin-top:12px"><h3>写真 <span class="note">計 ${r.photos.length} 枚</span></h3><div class="photoGrid" id="dPhotos"></div></div>` : ""}
       <div class="panel" style="margin-top:12px"><h3>管理者による整理${edit ? "" : "　<span class=\"note\">（閲覧専用です。編集は山郷側の管理者のPCで行います）</span>"}</h3>
@@ -751,6 +785,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-11-01", type: "feature", text: "「報告のみ」で届いた症例を、管理者が「本社に依頼する」で本社に回せるようになりました（症例の詳細にボタン。急ぎ・ひとことも付けられます）。本社にメールが届き、この画面に「手配の状況」が出るようになります。" },
   { date: "2026-10-25", type: "feature", text: "症例に「場所」（リーダーが図で選んだ部屋）が出るようになりました。「図で場所を見る」で、その部屋が色付きで出ます。" },
   { date: "2026-10-25", type: "fix", text: "建物の一覧から「LARCH（バックヤード）」を外しました（店舗にまとめました）。業者の分類に「外装（屋根・外壁）」が増えました。" },
   { date: "2026-10-20", type: "fix", text: "点検の「図で場所を見る」で、管理者の図は見るだけなのに「ピンを押して、印を付けられます」と出ていたのを直しました。" },
