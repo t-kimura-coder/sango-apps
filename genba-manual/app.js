@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 126;
+const APP_VERSION = 127;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-02", type: "feature", text: "報告タブを「今週の報告」1枚の流れに作り直しました。上から ① 写真を入れる（必須：「撮る」「取り込む」を押して、先に工程を選び、撮影メモを見ながらまとめて入れます。工程は前回の続きから選ばれていて、あとで写真ごとに選び直せます）② 工程ごとの様子（任意：「完了・一部完了・作業中」を1タップと一言。書いておくと、お客様への報告メールにそのまま使えます）③ 送る（来週の予定を書いて「N 枚を送る」。写真以外にやったこと・上司へのメモは「＋ 書き足す」から）。入れた写真は最初から全部送り、送らない写真だけ押して外します。「今週は報告なし」は一番下にあります。報告の中の工程のページはなくなり、写真タブは見返す・保存する専用になりました（「送る写真に入れる」は報告タブの流れに変わりました）" },
   { date: "2026-10-30", type: "fix", text: "チェックを付けた直後に工事番号を入れると、上司の見守りや朝のまとめに、番号なしの同じ現場が残って2つ並ぶことがあるのを直しました（現場ナビの画面や記録には影響ありません）" },
   { date: "2026-10-22", type: "fix", text: "同じ現場の人がチェックや品質写真を付けた時、ホームと写真要の一覧にもすぐ反映されるようにしました。「済み」を外した時に「済みにしました」と出ていたのを直しました" },
   { date: "2026-10-17", type: "feature", text: "週の報告を送ったあとの「お客様メール用の写真」の案内を分かりやすくしました（上司への報告はそこで済み、PC でメールを作るなら保存は不要）。慣れたら「次から出さない」で出さないようにできます（設定の「週の報告」で戻せます）" },
@@ -487,7 +488,7 @@ function isRecordPhoto(p) {
 function isCustomerPhoto(p) {
   return !isRecordPhoto(p) && !p.custOff;
 }
-// お客様向けの写真を、AI の下書きと同じ順（工程の順 → 撮った順）に「写真01_…」の名前で保存する
+// お客様向けの写真を、お客様メールの下書きと同じ順（工程の順 → 撮った順）に「写真01_…」の名前で保存する
 async function shareCustomerPhotos(site, photos) {
   // 送った時に残した名前と番号があれば、それを使う（送ったあとに工程を変えた・1枚消した・片付けた時も、下書きの番号とずれないように）
   if (photos.length && photos.every((p) => p.sentName)) {
@@ -738,6 +739,7 @@ async function makePhotoRecord(file, siteId, processId, takenAt, extra = {}) {
     thumb,
     reportId: null,
     kind: "report",
+    sendPick: (extra.kind || "report") !== "record", // 報告写真は入れた時から「送る」（送らない写真だけ外す）
     ...extra,
   };
 }
@@ -782,7 +784,6 @@ const VIEW_TABS = {
   requiredView: "photos",
   shotView: "report",
   reportView: "report",
-  reportProcView: "report",
   reportPastView: "report",
   siteManageView: "",
   settingsView: "",
@@ -1825,7 +1826,6 @@ function editSiteSheet(site) {
 
 // いま表示している画面を、現場が変わった内容で描き直す。siteChanged：別の現場に切り替えた時
 function rerenderCurrentView(siteChanged = false) {
-  if (siteChanged && currentView === "reportProcView") return goReport(); // 前の現場の工程のページは開いたままにしない
   if (siteChanged && currentView === "groupView") return openGroup(currentGroupId); // 新しい現場で最後に見ていた項目を開く（前の現場の項目で上書きしない）
   const fns = {
     dashView: renderDash,
@@ -1833,7 +1833,6 @@ function rerenderCurrentView(siteChanged = false) {
     albumView: renderAlbum,
     requiredView: () => renderRequired(true),
     reportView: renderReport,
-    reportProcView: renderReportProc,
     reportPastView: goReport,
     siteManageView: renderSiteManage,
     groupView: () => openGroup(currentGroupId, groupItems[currentItemIdx] && groupItems[currentItemIdx].id),
@@ -2360,7 +2359,7 @@ async function renderAlbum() {
   if (!albumPhotos.length) {
     empty.innerHTML = all.length
       ? '<div class="emptyText">この条件の写真はありません。</div>'
-      : '<div class="emptyTitle">まだ写真がありません</div><div class="emptyText">品質写真は工程マニュアルの「写真要」のチェック横、報告写真は報告タブの工程ページから撮れます。</div>';
+      : '<div class="emptyTitle">まだ写真がありません</div><div class="emptyText">品質写真は工程マニュアルの「写真要」のチェック横、報告写真は報告タブの「写真を入れる」から入れられます。</div>';
   }
   [...albumSel].forEach((id) => {
     if (!all.some((p) => p.id === id)) albumSel.delete(id);
@@ -2368,46 +2367,13 @@ async function renderAlbum() {
   updateAlbumBar();
 }
 
-function albumSelAllPicked() {
-  const sel = albumPhotos.filter((p) => albumSel.has(p.id) && !p.reportId);
-  return sel.length > 0 && sel.every((p) => p.sendPick);
-}
-
 function updateAlbumBar() {
   $("albumBar").hidden = albumSel.size === 0;
   $("albumSelCount").textContent = albumSel.size;
-  $("albumUseLabel").textContent = albumSelAllPicked() ? "送る写真から外す" : "送る写真に入れる";
 }
 
 async function albumSelected() {
   return (await Promise.all([...albumSel].map((id) => dbGet("photos", id)))).filter(Boolean);
-}
-
-// 選んだ写真を「送る写真」にする（品質写真も報告に使えるようにする）
-async function albumUseForReport() {
-  if (albumSelAllPicked()) {
-    const picked = (await albumSelected()).filter((p) => !p.reportId);
-    picked.forEach((p) => {
-      p.sendPick = false;
-      if (isRecordPhoto(p)) p.forReport = false;
-    });
-    await dbPutMany("photos", picked);
-    albumSel.clear();
-    await renderAlbum();
-    toast(`${picked.length}枚を報告から外しました`);
-    return;
-  }
-  const photos = await albumSelected();
-  const usable = photos.filter((p) => !p.reportId);
-  usable.forEach((p) => {
-    if (isRecordPhoto(p)) p.forReport = true;
-    p.sendPick = true;
-  });
-  await dbPutMany("photos", usable);
-  const skipped = photos.length - usable.length;
-  albumSel.clear();
-  await renderAlbum();
-  toast(`${usable.length}枚を報告の「送る写真」にしました` + (skipped ? `（報告済みの${skipped}枚は除きました）` : ""));
 }
 
 function albumRetag() {
@@ -2432,9 +2398,6 @@ async function albumDelete() {
 
 let shootProcessId = null;
 let lastShotId = null;
-let libraryProcessId = null;
-let shotFrom = "report"; // 撮影を始めた画面（今は報告の工程ページだけ）
-let lastSavedProcessId = null; // 撮影直後の画面で最後に保存した写真の工程（「終わる」の戻り先）
 
 // 品質写真の撮影先（工程マニュアルの「写真要」チェックから撮るとき）。通常の撮影では null
 let recordTarget = null;
@@ -2474,7 +2437,10 @@ async function checkPendingShot() {
   if (it) {
     currentMTab = "check";
     await openGroup(groupOfProcess(it.cat).id, it.id);
-  } else if (p.processId) await openReportProc(p.processId);
+  } else if (p.processId) {
+    goReport();
+    await openIntake({ pid: p.processId });
+  }
   return true;
 }
 
@@ -2499,11 +2465,6 @@ function startCamera(pid) {
   $("cameraInput").click();
 }
 
-function startLibrary(pid) {
-  libraryProcessId = pid;
-  $("libraryInput").click();
-}
-
 async function onCameraPicked() {
   const input = $("cameraInput");
   const file = input.files[0];
@@ -2521,7 +2482,6 @@ async function onCameraPicked() {
     const rec = await makePhotoRecord(file, currentSiteId, shootProcessId, new Date(), fromItem ? { itemId: fromItem.id } : {});
     await dbPut("photos", rec);
     lastShotId = rec.id;
-    lastSavedProcessId = shootProcessId;
     await renderShot(rec);
     showView("shotView");
   } catch (e) {
@@ -2599,62 +2559,36 @@ async function undoLastShot() {
 }
 
 function pickOtherProcess() {
-  const site = currentSite();
-  if (!site) return;
-  openSheet("どの工程を撮りますか", (body, close) => {
-    site.processes.forEach((pid) => {
-      const p = processOf(pid);
-      const b = document.createElement("button");
-      b.className = "pickItem" + (pid === shootProcessId ? " picked" : "");
-      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span>${icon(ICONS.camera, 20)}`;
-      b.addEventListener("click", () => {
-        close();
-        startCamera(pid);
-      });
-      body.appendChild(b);
-    });
-    body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+  if (!currentSite()) return;
+  pickProcessSheet("どの工程を撮りますか", (pid) => {
+    setSetting(LAST_PROC_KEY, pid);
+    startCamera(pid);
   });
 }
 
 function leaveShot() {
   releaseUrls("shot");
   lastShotId = null;
-  openReportProc(lastSavedProcessId || reportProcId || shootProcessId);
+  goReport();
 }
 
+// 写真を選んだら、「写真を入れる」のシートに枚数を出す（工程を確かめてから「○○に N 枚入れる」で入れる）
 async function onLibraryPicked() {
   const input = $("libraryInput");
   const files = Array.from(input.files || []);
   input.value = "";
-  if (!files.length || !libraryProcessId || !currentSiteId) return;
-  let ok = 0;
-  let failed = 0;
-  for (let i = 0; i < files.length; i++) {
-    setProcessing(true, `取り込み中... ${i + 1} / ${files.length}`);
-    try {
-      const file = files[i];
-      const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
-      const fromItem = reportItemFor(libraryProcessId);
-      const rec = await makePhotoRecord(file, currentSiteId, libraryProcessId, taken, fromItem ? { itemId: fromItem.id } : {});
-      await dbPut("photos", rec);
-      ok++;
-    } catch (e) {
-      console.error(e);
-      failed++;
-    }
-  }
-  setProcessing(false);
-  toast(`${ok}枚を取り込みました` + (failed ? `（${failed}枚は読み込めませんでした）` : ""));
-  if (currentView === "reportProcView") renderReportProc();
+  if (!files.length || !currentSiteId) return;
+  if (!intake) intake = await makeIntake({ itemId: reportItemId });
+  intake.files = files;
+  renderIntakeSheet();
 }
 
-/* ---------- 報告タブ：今回の期間の工程一覧 ---------- */
-// 報告に使う写真（報告候補）＝報告写真 ＋ 写真タブで「報告に使う」を付けた品質写真。そのうち sendPick の付いたものを送る
+/* ---------- 報告タブ：今週の報告（1枚の流れ） ---------- */
+// ① 写真を入れる（必須）→ ② 工程ごとの様子（任意）→ ③ 送る。
+// 報告に入る写真（報告候補）＝報告写真 ＋ 古い版で「報告に使う」を付けた品質写真。
+// 今週入れた写真は最初から全部送る（sendPick が true）。送らない写真だけ押して外す
 
-let reportProcId = null;
 let reportPastId = null;
-let reportCache = { site: null, all: [] }; // 報告タブを描いた時の写真（「写真を保存」をタップの中ですぐ共有するため）
 let pastPhotos = [];                        // 過去の報告の画面に出している写真
 
 function sendPicks(photos) {
@@ -2666,6 +2600,17 @@ function goReport() {
   showView("reportView");
 }
 
+// 書きかけ（来週の予定・写真以外・上司へのメモ）。入力の途中で保存待ちのものがあれば、そちらが最新
+function draftOf(site) {
+  const src = pendingSiteSave && pendingSiteSave.id === site.id ? pendingSiteSave : site;
+  return src.reportDraft || {};
+}
+
+// 今週の報告に並べる工程：今週の写真がある工程 ＋ 「工程を追加」で入れた工程
+function weekProcessIds(site, cands) {
+  return [...new Set([...(site.processes || []), ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
+}
+
 async function renderReport() {
   const gen = ++renderGen.report;
   const site = await refreshSites();
@@ -2673,64 +2618,217 @@ async function renderReport() {
   const reports = site ? (await dbGetAll("reports", "siteId", site.id)).sort((a, b) => (a.end < b.end ? 1 : -1)) : [];
   if (gen !== renderGen.report) return;
   releaseUrls("report");
-  reportCache = { site, all };
   const body = $("reportBody");
   body.innerHTML = "";
   if (!site) {
-    body.innerHTML = '<div class="emptyState"><div class="emptyTitle">担当現場を登録しましょう</div><div class="emptyText">上の「今の現場」から現場を登録すると、工程ごとに報告写真を撮れます。</div></div>';
-    $("reportBar").hidden = true;
+    body.innerHTML = '<div class="emptyState"><div class="emptyTitle">担当現場を登録しましょう</div><div class="emptyText">上の「今の現場」から現場を登録すると、今週の報告写真を入れられます。</div></div>';
     return;
   }
   const cands = unreported(all);
-  const picks = cands.filter((p) => p.sendPick);
   const wk = reportWeek(site, reports);
   // 対象の週より前に撮った、まだ報告していない報告写真があれば知らせる
   const older = cands.filter((p) => !isRecordPhoto(p) && p.dateKey < wk.mon).length;
-  let html =
-    `<div class="periodBar withArt">${reportWeekHtml(wk)}</div>` +
+  const bar = document.createElement("div");
+  bar.className = "periodBar withArt";
+  bar.innerHTML = reportWeekHtml(wk);
+  body.appendChild(bar);
+  if (older) {
+    const h = document.createElement("div");
+    h.className = "hint";
+    h.textContent = `${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。`;
+    body.appendChild(h);
+  }
 
-    (older ? `<div class="hint">${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。</div>` : "") +
-    `<div class="sectionLabel">今回の工程（タップで報告写真のページへ）</div>`;
-  body.innerHTML = html;
-  const list = document.createElement("div");
-  list.className = "processCards";
-  const pids = [...new Set([...site.processes, ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
-  if (!pids.length) list.innerHTML = '<div class="hint">今回実施した工程を「工程を追加」から選ぶか、工程マニュアルの「この工程の報告写真」から始めてください。</div>';
+  const flowHead = (no, title, tag, tagCls) =>
+    `<div class="flowHead"><span class="flowNo">${no}</span><span class="flowTitle">${title}</span>${tag ? `<span class="reqTag ${tagCls}">${tag}</span>` : ""}</div>`;
+
+  /* ① 写真を入れる【必須】 */
+  const s1 = document.createElement("section");
+  s1.className = "card flowCard";
+  s1.innerHTML =
+    flowHead(1, "写真を入れる", "必須", "must") +
+    `<div class="psHint">今週の工事の写真を入れます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
+    `<div class="btnRow"><button id="reportShootBtn" class="btn btnPrimary btnLarge" type="button">${icon(ICONS.camera, 20)}撮る</button>` +
+    `<button id="reportImportBtn" class="btn btnSecondary btnLarge" type="button">${icon(ICONS.photo, 20)}取り込む</button></div>` +
+    `<div class="flowStat" id="reportPhotoStat"></div>`;
+  s1.querySelector("#reportShootBtn").addEventListener("click", () => openIntake({ mode: "camera" }));
+  s1.querySelector("#reportImportBtn").addEventListener("click", () => openIntake({ mode: "library" }));
+  body.appendChild(s1);
+
+  /* ② 工程ごとの様子【任意】 */
+  const s2 = document.createElement("section");
+  s2.className = "card flowCard";
+  s2.innerHTML =
+    flowHead(2, "工程ごとの様子", "任意", "opt") +
+    `<div class="psHint">書いておくと、お客様への報告メールにそのまま使えます。</div>` +
+    `<div class="psHint">写真は最初から全部送ります。送らない写真だけ、押して外してください（もう一度押すと送ります）。</div>`;
+  body.appendChild(s2);
+  const statEls = [];
+  const updateCounts = () => {
+    const picks = cands.filter((p) => p.sendPick).length;
+    $("reportPhotoStat").innerHTML = cands.length ? `入れた写真 <b>${cands.length}</b> 枚・送る <b>${picks}</b> 枚` : "まだ写真がありません。「撮る」か「取り込む」から入れてください。";
+    statEls.forEach(({ pid, el }) => {
+      const inP = cands.filter((p) => p.processId === pid);
+      el.innerHTML = `${icon(ICONS.camSmall, 16)}写真 <b>${inP.length}</b> 枚・送る <b>${inP.filter((p) => p.sendPick).length}</b> 枚`;
+    });
+    const btn = $("reportSendBtn");
+    if (btn) {
+      btn.disabled = picks === 0;
+      btn.textContent = picks ? `${picks} 枚を送る` : "送る写真がありません";
+    }
+  };
+  const pids = weekProcessIds(site, cands);
+  if (!pids.length) {
+    const h = document.createElement("div");
+    h.className = "hint";
+    h.textContent = "写真を入れると、工程ごとにここに並びます。写真が無い工程の様子を書きたい時は、下の「工程を追加」から選べます。";
+    s2.appendChild(h);
+  }
   pids.forEach((pid) => {
     const p = processOf(pid);
-    const inProc = cands.filter((ph) => ph.processId === pid);
-    const sel = inProc.filter((ph) => ph.sendPick).length;
-    const pn = procNoteOf(site, pid);
-    const card = document.createElement("div");
-    card.className = "processCard reportProcCard";
-    // 左の絵：いちばん新しい写真、なければ大分類のイラスト
-    const latest = inProc.sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1))[0];
-    const thumb = latest ? `<img src="${blobUrl("report", latest.thumb)}" alt="">` : groupArt(groupOfProcess(pid), 46);
-    card.innerHTML =
-      `<button class="reportProcOpen"><span class="procThumb${latest ? " photo" : ""}">${thumb}</span>` +
-      `<span class="procBody"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
-      `<span class="procStat">${icon(ICONS.camSmall, 16)}写真 <b>${inProc.length}</b> 枚</span>` +
-      `<span class="procStat send">${icon(ICONS.report, 16)}送る <b>${sel}</b> 枚</span>` +
-      (pn.status || pn.text ? `<span class="procNoteLine">${pn.status ? `<span class="psTag ${pn.status}">${procStatusLabel(pn.status)}</span>` : ""}${esc((pn.text || "").replace(/\s*\n\s*/g, " ／ "))}</span>` : "") +
-      `</span>` +
-      `<span class="chev">${icon(ICONS.chevron, 18)}</span></button>` +
-      `<button class="iconBtn removeProcessBtn" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button>`;
-    card.querySelector(".reportProcOpen").addEventListener("click", () => openReportProc(pid));
-    card.querySelector(".removeProcessBtn").addEventListener("click", () =>
-      openSheet(p.name, (body, close) => {
-        body.appendChild(
+    const inProc = cands.filter((ph) => ph.processId === pid).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
+    const blk = document.createElement("div");
+    blk.className = "flowProc";
+    blk.dataset.pid = pid;
+    blk.innerHTML =
+      `<div class="flowProcHead"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
+      `<button class="iconBtn removeProcessBtn" type="button" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button></div>` +
+      `<div class="procStat"></div>`;
+    statEls.push({ pid, el: blk.querySelector(".procStat") });
+    blk.querySelector(".removeProcessBtn").addEventListener("click", () =>
+      openSheet(p.name, (sb, close) => {
+        sb.appendChild(
           sheetButton("今回の工程から外す", "btnDanger", () => {
             close();
             removeProcess(pid, inProc.length);
           })
         );
-        body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+        sb.appendChild(sheetButton("キャンセル", "btnSecondary", close));
       })
     );
-    list.appendChild(card);
+    if (inProc.length) {
+      const grid = document.createElement("div");
+      grid.className = "photoGrid captioned";
+      inProc.forEach((ph) => {
+        const card = photoCard(ph, {
+          bucket: "report",
+          compact: true,
+          custToggle: true,
+          actions: (x) => photoActions(x, renderReport),
+          onTap: async (x, cell) => {
+            x.sendPick = !x.sendPick;
+            cell.classList.toggle("unsent", !x.sendPick);
+            updateCounts();
+            await dbPut("photos", x);
+          },
+        });
+        card.classList.toggle("unsent", !ph.sendPick);
+        grid.appendChild(card);
+      });
+      blk.appendChild(grid);
+    }
+    const note = procNoteOf(site, pid);
+    const seg = document.createElement("div");
+    seg.className = "segRow";
+    seg.innerHTML = PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("");
+    seg.querySelectorAll(".segBtn").forEach((b) =>
+      b.addEventListener("click", () => {
+        const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
+        saveProcNote(site, pid, { status: st }, true);
+        seg.querySelectorAll(".segBtn").forEach((x) => x.classList.toggle("active", x.dataset.st === st));
+      })
+    );
+    blk.appendChild(seg);
+    const txt = document.createElement("textarea");
+    txt.className = "sheetTextarea psText";
+    txt.rows = 2;
+    txt.maxLength = 400;
+    txt.setAttribute("aria-label", `${shortProcessName(p)}の一言`);
+    txt.placeholder = "一言（例：土間配筋 JIO検査 10/7 合格）";
+    txt.value = note.text || "";
+    txt.addEventListener("input", () => saveProcNote(site, pid, { text: txt.value }));
+    txt.addEventListener("change", () => saveProcNote(site, pid, { text: txt.value }, true));
+    blk.appendChild(txt);
+    s2.appendChild(blk);
   });
-  body.appendChild(list);
-  body.appendChild(sheetButton("＋ 工程を追加", "btnDashed", openProcessPicker));
+  if (pids.length) {
+    const hint = document.createElement("div");
+    hint.className = "psHint";
+    hint.textContent = "一言は「何を・いつ・どうなった」を1行に1つ。来週以降に残りの作業がある工程は「一部完了」にします。写真の「︙」で、拡大・工程の変更・削除ができます。";
+    s2.appendChild(hint);
+  }
+  s2.appendChild(sheetButton("＋ 工程を追加", "btnDashed", openProcessPicker));
+
+  /* ③ 送る */
+  const draft = draftOf(site);
+  const s3 = document.createElement("section");
+  s3.className = "card flowCard";
+  s3.innerHTML = flowHead(3, "送る", "", "");
+  const field = (id, key, labelHtml, rows, hintText) => {
+    const wrap = document.createElement("div");
+    wrap.className = "flowField";
+    const l = document.createElement("label");
+    l.className = "fieldLabel flowLabel";
+    l.htmlFor = id;
+    l.innerHTML = labelHtml;
+    const t = document.createElement("textarea");
+    t.id = id;
+    t.className = "sheetTextarea";
+    t.rows = rows;
+    t.value = draft[key] || "";
+    const save = (now) => {
+      site.reportDraft = { ...(site.reportDraft || {}), [key]: t.value };
+      saveSiteSoon(site, now);
+    };
+    t.addEventListener("input", () => save(false));
+    t.addEventListener("change", () => save(true));
+    wrap.append(l, t);
+    if (hintText) {
+      const h = document.createElement("div");
+      h.className = "psHint";
+      h.textContent = hintText;
+      wrap.appendChild(h);
+    }
+    return wrap;
+  };
+  s3.appendChild(field("draftNext", "next", `来週の予定・お客様への連絡<span class="reqTag opt">任意</span>`, 3, "お客様への報告メールの「来週の予定」になります。例：10/8 塗り壁の材料が納品。来週は設備の試運転"));
+  const more = document.createElement("div");
+  more.className = "flowMore";
+  more.hidden = !(draft.doneOther || draft.memo);
+  more.appendChild(field("draftDoneOther", "doneOther", `写真以外で今週やったこと<span class="reqTag opt">任意</span>`, 2, "お客様への報告メールに使います。例：ガスボンベ・灯油タンクの設置が完了"));
+  more.appendChild(field("draftMemo", "memo", `上司へのメモ<span class="reqTag opt">任意</span>`, 2, "お客様には使いません。上司だけが読みます。気づいたこと・相談など"));
+  const moreBtn = sheetButton("＋ 書き足す（写真以外にやったこと・上司へのメモ）", "btnDashed", () => {
+    more.hidden = false;
+    moreBtn.hidden = true;
+  });
+  moreBtn.id = "reportMoreBtn";
+  moreBtn.hidden = !more.hidden;
+  s3.appendChild(moreBtn);
+  s3.appendChild(more);
+  const send = document.createElement("button");
+  send.id = "reportSendBtn";
+  send.type = "button";
+  send.className = "btn btnPrimary btnLarge";
+  send.addEventListener("click", sendToBox);
+  s3.appendChild(send);
+  const subs = document.createElement("div");
+  subs.className = "flowSubLinks";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.id = "reportSkipBtn";
+  skip.className = "linkBtn";
+  skip.textContent = "今週は報告なし";
+  skip.addEventListener("click", reportSkipWeek);
+  const other = document.createElement("button");
+  other.type = "button";
+  other.id = "reportOtherBtn";
+  other.className = "linkBtn";
+  other.textContent = wk.state === "done" ? "報告済みの記録を見る・取り消す" : "ほかの記録のしかた";
+  other.addEventListener("click", chooseReportedKind);
+  subs.append(skip, other);
+  s3.appendChild(subs);
+  body.appendChild(s3);
+  updateCounts();
 
   if (reports.length) {
     const past = document.createElement("div");
@@ -2748,12 +2846,17 @@ async function renderReport() {
     });
     body.appendChild(past);
   }
-  $("reportBar").hidden = false;
-  $("sendCount").textContent = picks.length;
-  const doneBtn = $("markReportedBtn");
-  doneBtn.textContent = wk.state === "done" ? `✓ ${wk.isPrev ? "先週" : "今週"}は報告済み` : "報告済みにする";
-  doneBtn.classList.toggle("doneState", wk.state === "done");
 }
+
+// 「今週は報告なし」（旧「報告済みにする」→「今週は報告なし」と同じ記録）。済んでいる週は、何で済んだかと取り消しを見せる
+async function reportSkipWeek() {
+  const site = currentSite();
+  if (!site) return;
+  const reps = await dbGetAll("reports", "siteId", site.id);
+  if (reportWeek(site, reps).state === "done") return chooseReportedKind();
+  markWeekOther(site, tagWeek(site, reps), "skip", unreported(await getSitePhotos(site.id)));
+}
+
 
 function openProcessPicker() {
   const site = currentSite();
@@ -2873,144 +2976,198 @@ function restoreDraftFromReport(site, r) {
   if (r.procNotes) site.procNotes = r.procNotes;
   if (r.reportDraft) site.reportDraft = r.reportDraft;
 }
-function renderProcStatusCard(site, pid) {
-  const box = $("reportProcStatus");
-  const note = procNoteOf(site, pid);
-  box.innerHTML =
-    `<div class="psHead">今週のこの工程<span class="psSub">お客様への報告メールの材料（任意）</span></div>` +
-    `<div class="segRow">${PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("")}</div>` +
-    `<div class="psHint">この工程で来週以降に残りの作業があれば「一部完了」。一言は「何を・いつ・どうなった」を1行に1つ。</div>` +
-    `<textarea class="sheetTextarea psText" rows="3" maxlength="400" placeholder="例：&#10;埋め戻し 10/8 完了&#10;土間配筋 JIO検査 10/7 合格&#10;基礎断熱 メッシュの上にモルタル塗り（写真は塗った後）&#10;お風呂の基礎は来週">${esc(note.text || "")}</textarea>`;
-  box.querySelectorAll(".segBtn").forEach((b) =>
-    b.addEventListener("click", () => {
-      const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
-      saveProcNote(site, pid, { status: st }, true);
-      box.querySelectorAll(".segBtn").forEach((x) => x.classList.toggle("active", x.dataset.st === st));
-    })
-  );
-  const txt = box.querySelector(".psText");
-  txt.addEventListener("input", () => saveProcNote(site, pid, { text: txt.value }));
-  txt.addEventListener("change", () => saveProcNote(site, pid, { text: txt.value }, true));
-}
-
-/* ---------- 報告：工程のページ ---------- */
-
-// 工程マニュアルの「この工程の報告写真」や、報告タブの工程から開く。
+/* ---------- 報告：写真を入れる（撮る・取り込む） ---------- */
+// 先に工程を選び、撮影メモを見ながらまとめて撮る・取り込む。工程はあとで写真ごとに選び直せる（写真の「︙」→「工程を変更」）。
 // 項目ページから開いた時は itemId を覚え、ここで撮った・取り込んだ報告写真にその項目を記録する（メールの材料で、写真がどの項目の場面か分かるように）
+const LAST_PROC_KEY = "genba-photo-last-proc"; // 前回、写真を入れた工程
 let reportItemId = null;
 function reportItemFor(pid) {
   const it = reportItemId && manualMeta && manualMeta.items.find((x) => x.id === reportItemId);
   return it && it.cat === pid ? it : null; // 別の工程に切り替えた時は記録しない
 }
-async function openReportProc(pid, itemId = null) {
+let intake = null; // 写真を入れる途中の状態 { pid, files, cands, extra, mode }
+
+async function makeIntake({ pid = null, itemId = null, mode = "camera" } = {}) {
+  const site = currentSite();
+  const cands = site ? unreported(await getSitePhotos(site.id)) : [];
   reportItemId = itemId;
+  const week = site ? weekProcessIds(site, cands) : [];
+  const first = [pid, getSetting(LAST_PROC_KEY), week[0]].find((id) => id && PROCESSES.some((p) => p.id === id)) || null;
+  return { pid: first, files: [], cands, extra: [], mode };
+}
+
+// 報告タブの「撮る」「取り込む」、項目ページの「報告写真」から。opts: { pid, itemId, mode: "camera"|"library" }
+async function openIntake(opts = {}) {
   const site = await refreshSites();
   if (!site) {
     toast("先に「今の現場」を登録してください");
     openSiteSwitcher();
     return;
   }
-  reportProcId = pid;
-  if (!site.processes.includes(pid)) {
-    site.processes = PROCESSES.filter((p) => p.id === pid || site.processes.includes(p.id)).map((p) => p.id);
-    await dbPut("sites", site);
-  }
-  await renderReportProc();
-  showView("reportProcView");
+  intake = await makeIntake(opts);
+  renderIntakeSheet();
 }
 
-async function renderReportProc() {
-  releaseUrls("reportProc");
+function renderIntakeSheet() {
+  const it = intake;
   const site = currentSite();
-  if (!site || !reportProcId) return;
-  const p = processOf(reportProcId);
-  const g = groupOfProcess(reportProcId);
-  $("reportProcTitle").textContent = `${shortProcessName(p)}の報告`;
-  const all = await getSitePhotos(site.id);
-  const cands = unreported(all);
-  const list = cands.filter((ph) => ph.processId === reportProcId).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
-  $("reportProcPeriodBar").className = "periodBar withArt";
-  $("reportProcPeriodBar").innerHTML = reportWeekHtml(reportWeek(site, await dbGetAll("reports", "siteId", site.id)));
-  $("reportProcCard").innerHTML =
-    `<span class="procHeroArt">${groupArt(g, 44)}</span>` +
-    `<span class="procHeroText"><span class="procHeroName">${esc(p.name)}<span class="kindLabel report">報告写真</span></span>` +
-    `<span class="procHeroSub">${esc(g.name)}・${esc(g.sub)}</span>` +
-    (reportItemFor(reportProcId) ? `<span class="procHeroItem">項目「${esc(reportItemFor(reportProcId).name)}」の写真として残します<button class="miniLink" type="button" id="reportItemClear">外す</button></span>` : "") +
-    `</span>`;
-  if ($("reportItemClear"))
-    $("reportItemClear").addEventListener("click", () => {
-      reportItemId = null;
-      renderReportProc();
-    });
-  renderProcStatusCard(site, reportProcId);
-  $("reportProcGuide").innerHTML =
-    `<div class="memoHead">${icon(ICONS.camSmall, 22)}撮影メモ</div>` +
-    `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
-    `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>` +
-    `<div class="memoSub">上司にだけ見せたい細かい写真も送れます。写真の下の札を「上司だけ」にすると、お客様への報告メールには使いません（最初は「お客様にも」）。</div>`;
-  const grid = $("reportProcGrid");
-  grid.innerHTML = "";
-  const picked = new Set(list.filter((ph) => ph.sendPick).map((ph) => ph.id));
-  const updateCounts = () => {
-    const custN = list.filter((ph) => picked.has(ph.id) && isCustomerPhoto(ph)).length;
-    $("reportProcCount").innerHTML = `選択数 <b>${picked.size}</b>/${list.length}` + (picked.size ? `<span class="custCount">（お客様にも ${custN}）</span>` : "");
-    $("procBarCount").textContent = picked.size;
-    const thumbs = $("procBarThumbs");
-    thumbs.innerHTML = "";
-    (urlBuckets.procBar || []).forEach((u) => URL.revokeObjectURL(u));
-    urlBuckets.procBar = [];
-    list
-      .filter((ph) => picked.has(ph.id))
-      .slice(0, 3)
-      .forEach((ph) => {
-        const im = document.createElement("img");
-        im.src = blobUrl("procBar", ph.thumb);
-        thumbs.appendChild(im);
+  if (!it || !site) return;
+  openSheet("写真を入れる", (body, close) => {
+    const lead = document.createElement("div");
+    lead.className = "psHint";
+    lead.textContent = "先に、どの工程の写真かを選びます。まとめて入れたあとでも、写真ごとに工程を選び直せます。";
+    body.appendChild(lead);
+    const label = document.createElement("div");
+    label.className = "pickGroupLabel";
+    label.textContent = "今週の工程";
+    body.appendChild(label);
+    const rows = [];
+    const dyn = document.createElement("div");
+    dyn.className = "intakeDyn";
+    const weekIds = weekProcessIds(site, it.cands);
+    const list = document.createElement("div");
+    list.className = "intakeList";
+    const more = document.createElement("div");
+    more.className = "intakeMore";
+    more.hidden = true;
+    const countOf = (id) => it.cands.filter((p) => p.processId === id).length;
+    const mkRow = (p) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pickItem";
+      b.dataset.pid = p.id;
+      const n = countOf(p.id);
+      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}${n ? `<span class="mutedText">　写真${n}枚</span>` : ""}</span><span class="pickMark"></span>`;
+      b.addEventListener("click", () => {
+        it.pid = p.id;
+        if (!weekIds.includes(p.id) && !it.extra.includes(p.id)) it.extra.push(p.id);
+        more.hidden = true;
+        moreBtn.hidden = false;
+        fillList();
+        paint();
       });
-  };
-  list.forEach((ph) =>
-    grid.appendChild(
-      photoCard(ph, {
-        bucket: "reportProc",
-        selected: picked,
-        compact: true,
-        custToggle: true,
-        onCustToggle: () => updateCounts(),
-        actions: (x) => photoActions(x, renderReportProc),
-        onTap: async (x, cell) => {
-          x.sendPick = !x.sendPick;
-          if (x.sendPick) picked.add(x.id);
-          else picked.delete(x.id);
-          cell.classList.toggle("selected", x.sendPick);
-          updateCounts();
-          await dbPut("photos", x);
-        },
+      return b;
+    };
+    const fillList = () => {
+      list.innerHTML = "";
+      const ids = [...new Set([...weekIds, ...it.extra, ...(it.pid ? [it.pid] : [])])].sort((a, b) => processOf(a).no - processOf(b).no);
+      if (!ids.length) list.innerHTML = '<div class="hint">まだ今週の工程がありません。下の「ほかの工程を探す」から選んでください。</div>';
+      ids.forEach((id) => list.appendChild(mkRow(processOf(id))));
+    };
+    const moreBtn = sheetButton("ほかの工程を探す", "btnDashed", () => {
+      more.hidden = false;
+      moreBtn.hidden = true;
+    });
+    PROCESSES.forEach((p) => {
+      const g = groupOfProcess(p.id);
+      if (g.cats[0] === p.id) {
+        const gl = document.createElement("div");
+        gl.className = "pickGroupLabel";
+        gl.textContent = g.name;
+        more.appendChild(gl);
+      }
+      more.appendChild(mkRow(p));
+    });
+    body.appendChild(list);
+    body.appendChild(moreBtn);
+    body.appendChild(more);
+    body.appendChild(dyn);
+
+    function paint() {
+      [...list.querySelectorAll(".pickItem"), ...more.querySelectorAll(".pickItem")].forEach((b) => {
+        const on = b.dataset.pid === it.pid;
+        b.classList.toggle("picked", on);
+        b.querySelector(".pickMark").innerHTML = on ? icon(ICONS.check, 20) : "";
+      });
+      drawDyn();
+    }
+    function drawDyn() {
+      dyn.innerHTML = "";
+      if (!it.pid) {
+        dyn.innerHTML = '<div class="hint">工程を選ぶと、撮影メモと「撮影する」「写真を選ぶ」が出ます。</div>';
+        return;
+      }
+      const p = processOf(it.pid);
+      const name = shortProcessName(p);
+      const g = document.createElement("div");
+      g.className = "memoCard intakeGuide";
+      g.innerHTML =
+        `<div class="memoHead">${icon(ICONS.camSmall, 22)}${esc(name)}の撮影メモ</div>` +
+        `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
+        `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
+      dyn.appendChild(g);
+      const item = reportItemFor(it.pid);
+      if (item) {
+        const l = document.createElement("div");
+        l.className = "procHeroItem";
+        l.innerHTML = `項目「${esc(item.name)}」の写真として残します<button class="miniLink" type="button">外す</button>`;
+        l.querySelector(".miniLink").addEventListener("click", () => {
+          reportItemId = null;
+          drawDyn();
+        });
+        dyn.appendChild(l);
+      }
+      const picked = it.files.length > 0;
+      const cam = sheetButton("撮影する", picked || it.mode === "library" ? "btnSecondary" : "btnPrimary btnLarge", () => {
+        setSetting(LAST_PROC_KEY, it.pid);
+        close();
+        startCamera(it.pid);
+      });
+      const lib = sheetButton(picked ? "選び直す" : "写真を選ぶ（まとめて）", picked || it.mode === "camera" ? "btnSecondary" : "btnPrimary btnLarge", () => $("libraryInput").click());
+      if (picked) {
+        const n = it.files.length;
+        const sel = document.createElement("div");
+        sel.className = "summaryBox";
+        sel.textContent = `選んだ写真：${n}枚`;
+        dyn.appendChild(sel);
+        dyn.appendChild(sheetButton(`${name}に${n}枚入れる`, "btnPrimary btnLarge", () => commitIntake(close)));
+        dyn.appendChild(lib);
+        dyn.appendChild(cam);
+      } else {
+        dyn.appendChild(it.mode === "library" ? lib : cam);
+        dyn.appendChild(it.mode === "library" ? cam : lib);
+      }
+    }
+    fillList();
+    paint();
+    body.appendChild(
+      sheetButton("やめる", "btnText", () => {
+        it.files = [];
+        close();
       })
-    )
-  );
-  updateCounts();
-  $("reportProcEmpty").hidden = list.length > 0;
-  const setPick = async (id, on) => {
-    const x = list.find((p) => p.id === id);
-    if (!x || !!x.sendPick === on) return;
-    x.sendPick = on;
-    if (on) picked.add(id);
-    else picked.delete(id);
-    const card = grid.querySelector(`[data-id="${id}"]`);
-    if (card) card.classList.toggle("selected", on);
-    updateCounts();
-    await dbPut("photos", x);
-  };
-  attachDragSelect(grid, (id) => picked.has(id), setPick);
-  const allBtn = $("reportProcAllBtn");
-  allBtn.hidden = !list.length;
-  allBtn.textContent = list.length && picked.size === list.length ? "全部外す" : "全部選ぶ";
-  allBtn.onclick = async () => {
-    const on = picked.size !== list.length;
-    for (const ph of list) await setPick(ph.id, on);
-    allBtn.textContent = on ? "全部外す" : "全部選ぶ";
-  };
+    );
+  });
 }
+
+// 選んだ写真を、選んだ工程に入れる（入れた写真は最初から「送る」）
+async function commitIntake(close) {
+  const it = intake;
+  if (!it || !it.pid || !it.files.length || !currentSiteId) return;
+  const { pid, files } = it;
+  close();
+  setSetting(LAST_PROC_KEY, pid);
+  let ok = 0;
+  let failed = 0;
+  for (let i = 0; i < files.length; i++) {
+    setProcessing(true, `取り込み中... ${i + 1} / ${files.length}`);
+    try {
+      const file = files[i];
+      const taken = (await readExifDate(file)) || (file.lastModified ? new Date(file.lastModified) : new Date());
+      const fromItem = reportItemFor(pid);
+      const rec = await makePhotoRecord(file, currentSiteId, pid, taken, fromItem ? { itemId: fromItem.id } : {});
+      await dbPut("photos", rec);
+      ok++;
+    } catch (e) {
+      console.error(e);
+      failed++;
+    }
+  }
+  setProcessing(false);
+  it.files = [];
+  toast(`「${shortProcessName(processOf(pid))}」に${ok}枚入れました` + (failed ? `（${failed}枚は読み込めませんでした）` : ""));
+  if (currentView === "reportView") renderReport();
+}
+
 
 /* ---------- 報告：過去の報告 ---------- */
 
@@ -3164,19 +3321,15 @@ async function buildCheckSummary(siteId, start, end) {
   return out.sort((a, b) => allManualItems().findIndex((x) => x.name === a.item) - allManualItems().findIndex((x) => x.name === b.item));
 }
 
-function shareSelected() {
-  if (!reportCache.site) return;
-  sharePhotos(reportCache.site, sendPicks(reportCache.all));
-}
-
 async function sendToBox() {
   const site = currentSite();
   if (!site) return;
+  if (pendingSiteSave) await flushSiteDraft(pendingSiteSave); // 報告タブで打っている途中の来週の予定・メモを、先に保存する
   const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const picks = sendPicks(all);
   if (!picks.length) {
-    toast("工程のページで、送る写真をタップして選んでください");
+    toast("送る写真がありません。報告タブの「撮る」「取り込む」から写真を入れてください");
     return;
   }
   const email = getBoxEmail();
@@ -3265,42 +3418,16 @@ async function sendToBox() {
       warn.textContent = warnMsg;
       body.appendChild(warn);
     }
-    // お客様向け（報告メールの材料）と上司向けを分けて書く。書きかけは現場に残す（金〜月に分けて書けるように）
-    const draft = site.reportDraft || {};
-    const field = (labelText, key, placeholder, rows) => {
-      const l = document.createElement("label");
-      l.className = "fieldLabel";
-      l.textContent = labelText;
-      const t = document.createElement("textarea");
-      t.className = "sheetTextarea";
-      t.rows = rows;
-      t.placeholder = placeholder;
-      t.value = draft[key] || "";
-      const save = (now) => {
-        site.reportDraft = { ...(site.reportDraft || {}), [key]: t.value };
-        saveSiteSoon(site, now);
-      };
-      t.addEventListener("input", () => save(false));
-      t.addEventListener("change", () => save(true));
-      body.appendChild(l);
-      body.appendChild(t);
-      return t;
-    };
-    const custHead = document.createElement("div");
-    custHead.className = "sendSecHead";
+    // 工程の様子・来週の予定・上司へのメモは、報告タブに書いたものがそのまま送られる（ここでは確かめるだけ）
+    const draft = draftOf(site);
+    const filled = (k) => (draft[k] || "").trim();
     const noted = processes.filter((p) => p.status || p.note);
-    custHead.innerHTML =
-      `お客様への報告メールの材料<span class="psSub">任意</span>` +
-      `<div class="mutedText">AI でメールの下書きを作る時の材料です（試験中）。下書きは、お客様に送る前に必ず人が読んで直します。</div>` +
-      `<div class="mutedText">${noted.length ? `工程の様子：${esc(noted.map((p) => `${shortProcessName(p)}${p.status ? "（" + p.status + "）" : ""}`).join("・"))}` : "工程ごとの「完了・作業中」と一言は、各工程のページで書けます。"}</div>`;
-    body.appendChild(custHead);
-    const doneOther = field("写真以外で今週やったこと", "doneOther", "例：ガスボンベ・灯油タンクの設置が完了。レンジフードの高さを調整", 2);
-    const nextPlan = field("来週の予定・お客様への連絡", "next", "例：10/8 塗り壁の材料が納品。来週は設備の試運転", 2);
-    const bossHead = document.createElement("div");
-    bossHead.className = "sendSecHead";
-    bossHead.innerHTML = `上司へ<span class="psSub">任意・お客様には使いません</span>`;
-    body.appendChild(bossHead);
-    const memo = field("上司へのメモ：気づいたこと・相談など", "memo", "", 2);
+    const recap = document.createElement("div");
+    recap.className = "mutedText";
+    recap.textContent =
+      `お客様への報告メールの材料：工程の様子 ${noted.length}工程／来週の予定 ${filled("next") ? "あり" : "なし"}／写真以外にやったこと ${filled("doneOther") ? "あり" : "なし"}。` +
+      `上司へのメモ：${filled("memo") ? "あり" : "なし"}（お客様には使いません）。書き直す時は、いったん閉じて報告タブで直してください。`;
+    body.appendChild(recap);
     const note = document.createElement("div");
     note.className = "mutedText";
     note.textContent = PC_SAVE
@@ -3312,6 +3439,7 @@ async function sendToBox() {
 
     body.appendChild(
       sheetButton(PC_SAVE ? "社内報告フォルダに保存する" : "送信する", "btnPrimary btnLarge", async () => {
+        const dr = draftOf(site);
         const payload = {
           kind: "genba-photo-report",
           report_id: site.draftReportId,
@@ -3334,8 +3462,8 @@ async function sendToBox() {
           period: { start, end },
           week: wk.mon, // この報告の週（月曜）
           processes,
-          memo: memo.value.trim(),
-          customer: { done_other: doneOther.value.trim(), next: nextPlan.value.trim() },
+          memo: (dr.memo || "").trim(),
+          customer: { done_other: (dr.doneOther || "").trim(), next: (dr.next || "").trim() },
           photos: entries.map((e) => ({
             id: e.photo.id,
             file: e.file.name,
@@ -3365,9 +3493,9 @@ async function sendToBox() {
         const sentPhotos = entries.map((e) => Object.assign(e.photo, { sentName: e.file.name, sentCustNo: noOf.get(e.photo.id) || null }));
         await dbPutMany("photos", sentPhotos);
         close();
-        const memoText = memo.value.trim();
+        const memoText = (dr.memo || "").trim();
         if (confirmDelivered(res, "OK で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon });
-        else toast(res.how === "saved" ? "報告済みにはしていません。保存先を確かめて、よければ「報告済みにする」を押してください" : "報告済みにはしていません。送れたら「報告済みにする」を押してください");
+        else toast(res.how === "saved" ? "報告済みにはしていません。保存先を確かめて、よければ報告タブの「ほかの記録のしかた」から報告済みにしてください" : "報告済みにはしていません。送れたら報告タブの「ほかの記録のしかた」から報告済みにしてください");
       })
     );
     if (PC_SAVE) body.appendChild(pickDirButton());
@@ -3442,7 +3570,7 @@ async function undoReport(r) {
   if (site0.draftReportId && r.sentReportId && site0.draftReportId !== r.sentReportId && !confirm("送信の途中（報告済みにしていない）の報告があります。それより前の報告を取り消して送り直しますか？")) return;
   const msg =
     `${fmtDate(r.start)}〜${fmtDate(r.end)}の報告を取り消して、写真を「送る写真」に戻しますか？\n` +
-    `上司にはもう届いています。直して「Boxへ送信」で送り直すと、見守りでは新しい方に置き換わります。`;
+    `上司にはもう届いています。直して報告タブの「送る」で送り直すと、見守りでは新しい方に置き換わります。`;
   if (!confirm(msg)) return;
   const site = currentSite();
   if (!site) return;
@@ -3500,7 +3628,7 @@ async function chooseReportedKind() {
       box.innerHTML =
         `${fmtDate(w.mon)}〜${fmtDate(w.sat)}の報告は済んでいます。` +
         (r ? `<br>${r.kind === "external" ? "アプリ外で報告" : r.kind === "skip" ? "報告なし" : "アプリから送信"}（${esc(fmtDateTime(r.createdAt))}）${r.memo ? "<br>" + esc(r.memo) : ""}` : "") +
-        `<br><span class="mutedText">写真を撮り足して追加で送る時は、そのまま「Boxへ送信」から送れます。</span>`;
+        `<br><span class="mutedText">写真を入れ足して追加で送る時は、そのまま報告タブの「送る」から送れます。</span>`;
       body.appendChild(box);
       if (extra.length)
         body.appendChild(
@@ -3596,7 +3724,7 @@ function offerCustomerPhotos(site, photos) {
       `上司への報告は、これで済みです。` +
       `iPhone でお客様へのメールを作る時は、お客様向けの写真（${n}枚）をここで手元に保存できます（どこにも送りません）。` +
       `PC で作る時は不要です。会社の PC が、Box の報告のフォルダの中に「お客様向け」フォルダとして自動で用意します。` +
-      `保存する時は共有画面の「"ファイル"に保存」を選ぶと、AI の下書きと同じ「写真01_…」の名前が残ります。後からでも「過去の報告」から保存できます。`;
+      `保存する時は共有画面の「"ファイル"に保存」を選ぶと、お客様への報告メールの下書きと同じ「写真01_…」の名前が残ります。後からでも「過去の報告」から保存できます。`;
     body.appendChild(p);
     body.appendChild(sheetButton("iPhone に保存する", "btnPrimary", () => {
       close();
@@ -4133,7 +4261,7 @@ async function renderItem() {
   const doneBtn = box.querySelector("[data-itemdone]");
   if (doneBtn) doneBtn.addEventListener("click", () => toggleItemDone(it));
   const toReport = box.querySelector("[data-toreport]");
-  if (toReport) toReport.addEventListener("click", () => openReportProc(it.cat));
+  if (toReport) toReport.addEventListener("click", () => openIntake({ pid: it.cat }));
   const go = box.querySelector("[data-go]");
   if (go) go.addEventListener("click", () => switchMTab(go.dataset.go));
   box.querySelectorAll("[data-flow]").forEach((el) =>
@@ -5752,7 +5880,7 @@ async function deleteMemo(it, id) {
 // 右上のカメラ：今開いている項目の工程（17分類）の報告写真のページへ
 function shootFromGroup() {
   const it = groupItems[currentItemIdx];
-  openReportProc(it ? it.cat : groupOf(currentGroupId).cats[0], it ? it.id : null);
+  openIntake({ pid: it ? it.cat : groupOf(currentGroupId).cats[0], itemId: it ? it.id : null });
 }
 
 /* ---------- 工程の検索 ---------- */
@@ -6891,13 +7019,13 @@ const TOUR_STEPS = [
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="manual"]'),
-    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。週の報告で送る報告写真は、工程マニュアルの右上の「報告写真」から撮れます（お客様メールにも使う写真と、上司だけに見せる写真を分けられます）。",
+    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。週の報告で送る報告写真は、「報告」タブの「撮る」「取り込む」から入れます（お客様メールにも使う写真と、上司だけに見せる写真を分けられます）。",
     next: true,
   },
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="report"]'),
-    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。送る写真を選んで「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
+    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。写真を入れて「N 枚を送る」を押し、確認の画面で「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
     next: true,
     nextLabel: "完了",
   },
@@ -7227,7 +7355,6 @@ function init() {
   );
   if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(getSetting(THEME_KEY) || "auto"));
   $("shotCloseBtn").innerHTML = icon(ICONS.x, 24);
-  $("reportProcBackBtn").innerHTML = icon(ICONS.back, 26);
   $("reportPastBackBtn").innerHTML = icon(ICONS.back, 26);
   $("requiredBackBtn").innerHTML = icon(ICONS.back, 26);
   $("requiredBackBtn").addEventListener("click", () => (requiredFrom === "dashView" ? goDash() : requiredFrom === "manualView" ? goManual() : goAlbum()));
@@ -7248,23 +7375,15 @@ function init() {
     albumState.sort = e.target.value;
     renderAlbum();
   });
-  $("albumUseBtn").addEventListener("click", albumUseForReport);
   $("albumColsBtn").addEventListener("click", () => {
     albumState.cols = albumState.cols === 2 ? 3 : 2;
     setSetting(ALBUM_COLS_KEY, String(albumState.cols));
     renderAlbum();
   });
-  $("procBarDoneBtn").addEventListener("click", goReport);
   $("albumRetagBtn").addEventListener("click", albumRetag);
   $("albumSaveBtn").addEventListener("click", () => sharePhotos(currentSite(), albumPhotos.filter((p) => albumSel.has(p.id))));
   $("albumDeleteBtn").addEventListener("click", albumDelete);
-  $("reportProcBackBtn").addEventListener("click", goReport);
   $("reportPastBackBtn").addEventListener("click", goReport);
-  $("reportShootBtn").addEventListener("click", () => {
-    shotFrom = "report";
-    startCamera(reportProcId);
-  });
-  $("reportImportBtn").addEventListener("click", () => startLibrary(reportProcId));
   $("pastShareBtn").addEventListener("click", () => sharePhotos(currentSite(), pastPhotos));
   $("pastCustShareBtn").addEventListener("click", () => shareCustomerPhotos(currentSite(), pastPhotos));
   $("recordLibraryInput").addEventListener("change", onRecordLibraryPicked);
@@ -7292,8 +7411,6 @@ function init() {
   });
   updateBellDot();
   $("dashSitesMore").addEventListener("click", openSiteManage);
-  $("sendBoxBtn").addEventListener("click", sendToBox);
-  $("shareSelectedBtn").addEventListener("click", shareSelected);
   $("groupShootBtn").innerHTML = `${icon(ICONS.camera, 18)}<span class="hsb"><b>報告写真</b><small>週の報告用</small></span>`;
   document.querySelectorAll(".openSearchBtn").forEach((b) => b.addEventListener("click", openSearch));
   $("searchInput").addEventListener("input", renderSearch);
@@ -7339,7 +7456,6 @@ function init() {
     tourIdx++;
     renderTourStep();
   });
-  $("markReportedBtn").addEventListener("click", chooseReportedKind);
   $("deleteReportPhotosBtn").addEventListener("click", deleteReportPhotos);
   $("undoReportBtn").addEventListener("click", async () => {
     const r = await dbGet("reports", reportPastId);

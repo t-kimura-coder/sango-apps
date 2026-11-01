@@ -1246,3 +1246,36 @@ img.imgBroken { visibility: hidden; }
 
 /* 文字だけのボタン（シートの「次から出さない」など） */
 .btn.btnText { background: none; border: none; box-shadow: none; color: var(--color-text-sub); font-size: var(--fs-sm); text-decoration: underline; }
+
+/* ---------- 報告タブ：今週の報告（① 写真を入れる → ② 工程ごとの様子 → ③ 送る） ---------- */
+.flowCard { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-md); }
+.flowHead { display: flex; align-items: center; gap: 8px; }
+.flowNo { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--color-primary); color: var(--color-primary-text); font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.flowTitle { font-size: var(--fs-lg); font-weight: 800; color: var(--color-heading); }
+.reqTag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; vertical-align: middle; }
+.flowHead .reqTag { margin-left: 0; }
+.reqTag.must { background: var(--color-danger-soft); color: var(--color-danger); }
+.reqTag.opt { background: var(--color-surface-sub); color: var(--color-text-sub); border: 1px solid var(--color-border); }
+.flowStat { font-size: var(--fs-sm); color: var(--color-text-sub); }
+.flowStat b { font-size: var(--fs-lg); color: var(--color-heading); }
+.flowProc { display: flex; flex-direction: column; gap: var(--space-sm); padding-top: var(--space-md); border-top: 1px solid var(--color-border); }
+.flowProcHead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.flowProcHead .processName { flex: 1; min-width: 0; }
+.flowProc .removeProcessBtn { flex: none; width: 44px; height: 44px; }
+.flowProc .segBtn { min-height: 48px; font-size: var(--fs-md); }
+.flowProc .photoGrid.captioned { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* 送らない写真：薄くして「送らない」と出す（押すと戻る） */
+.photoCard.unsent .photoCardImg img { opacity: 0.35; }
+.photoCard.unsent .photoCardImg::after { content: "送らない"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 2px 8px; border-radius: 8px; background: var(--color-text-sub); color: var(--color-surface); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.flowField { display: flex; flex-direction: column; gap: 4px; }
+.flowLabel { margin: var(--space-sm) 0 0; font-weight: 700; color: var(--color-heading); }
+.flowCard > .btnDashed, .flowMore .btnDashed { width: 100%; min-height: 52px; }
+.flowMore { display: flex; flex-direction: column; gap: var(--space-sm); }
+.flowMore[hidden], #reportMoreBtn[hidden] { display: none; }
+.flowCard .btn:disabled { opacity: 0.5; }
+.flowSubLinks { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-lg); }
+.flowSubLinks .linkBtn { min-height: 44px; }
+/* 写真を入れるシート */
+.intakeList, .intakeMore, .intakeDyn { display: flex; flex-direction: column; gap: var(--space-sm); }
+.intakeMore[hidden] { display: none; }
+.intakeGuide .memoHead { font-size: var(--fs-md); }
