@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 130;
+const APP_VERSION = 131;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-04", type: "feature", text: "現場の登録・変更に「お客様名（メールの宛名）」を足しました（任意）。入れておくと、お客様への報告メールの宛名に使われます。名前だけを入れてください（メールアドレスや電話は書かない）。今の現場は「現場の管理」の「変更」から入れられます" },
   { date: "2026-11-02", type: "fix", text: "報告タブの写真で、「お客様にも」の札が途中で改行されないようにしました。写真の右上の四角（押しても意味のない表示）をなくしました。送らない写真は、押すと薄くなって「送らない」と出ます" },
   { date: "2026-11-01", type: "fix", text: "新しい報告タブの細かい不具合を直しました：更新前に入れた今週の写真が「送らない」になっていた、「アプリ外で報告」を取り消すと写真が送れなかった、取り消した週が報告済みのまま残ることがあった、報告を書いている途中に画面が作り直されてキーボードが閉じることがあった" },
   { date: "2026-11-01", type: "fix", text: "同じ人が PC と iPhone など2台で使っている時、報告を送っていない方の端末で、報告済みの週が「遅れ」と出ていたのを直しました（報告した端末が新しい版で一度同期すると直ります）" },
@@ -1694,6 +1695,12 @@ function editSiteSheet(site) {
       noHint.className = "mutedText";
       noHint.textContent = "経理で使っている番号";
       body.appendChild(noHint);
+      // お客様への報告メールの宛名の目安（名前だけ。アドレス・電話は入れない）。任意
+      const custIn = field("お客様名（メールの宛名）", site && site.customerName, "例：山田様／○○建設 △△様", "text");
+      const custHint = document.createElement("div");
+      custHint.className = "mutedText";
+      custHint.textContent = "任意。お客様への報告メールの宛名に使います（名前だけ。メールアドレスや電話は書かない）";
+      body.appendChild(custHint);
       const ml = document.createElement("div");
       ml.className = "fieldLabel strong";
       ml.innerHTML = '担当者<span class="req">必須</span>';
@@ -1810,7 +1817,7 @@ function editSiteSheet(site) {
           addMemberHistory(members);
           close();
           if (coverUrl) URL.revokeObjectURL(coverUrl);
-          resolve({ name, koujiNo: normKoujiNo(noIn.value), members, startGroup, kind, coverFile });
+          resolve({ name, koujiNo: normKoujiNo(noIn.value), customerName: custIn.value.trim(), members, startGroup, kind, coverFile });
         })
       );
       body.appendChild(
@@ -3459,7 +3466,7 @@ async function sendToBox() {
         const payload = {
           kind: "genba-photo-report",
           report_id: site.draftReportId,
-          schema: 8, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start、7: processes[].status/note・customer（お客様への報告メールの材料。memo は上司向け）、8: photos[].customer（お客様への報告メールにも使う写真。false は上司だけ）
+          schema: 9, // 2: checks、3: 番号と疑問の状態、4: progress・写真id・解決日時、5: kouji_no・members、6: start_group（記録を始めた工程）・progress[].before_start、7: processes[].status/note・customer（お客様への報告メールの材料。memo は上司向け）、8: photos[].customer（お客様への報告メールにも使う写真。false は上司だけ）、9: customer_name（お客様名＝メールの宛名の目安。任意）
           app_version: APP_VERSION,
           manual_version: manualMeta ? manualMeta.version : "",
           sent_at: new Date().toISOString(),
@@ -3469,6 +3476,7 @@ async function sendToBox() {
           site: site.name,
           site_id: site.id,
           kouji_no: site.koujiNo || "",
+          customer_name: site.customerName || "",
           start_group: GROUPS[site.startGroup || 0].name,
           paused: isPaused(site),
           other_weeks: otherWeeks,
@@ -5591,7 +5599,7 @@ async function buildSiteState(site) {
     items[r.itemId] = it;
     if ((r.updatedAt || "") > updated) updated = r.updatedAt || "";
   });
-  const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [], keyAt: site.keyAt || "" };
+  const info = { id: site.id, name: site.name, koujiNo: site.koujiNo || "", members: site.members || [], kind: site.kind || "", startGroup: site.startGroup || 0, createdAt: site.createdAt || "", completedAt: site.completedAt || "", pauses: site.pauses || [], keyAt: site.keyAt || "", customerName: site.customerName || "" };
   // 段階ごとの進み具合（週の報告の progress と同じ形）
   let progress = null;
   if (manualMeta) {
@@ -5718,7 +5726,7 @@ async function syncStates(manual = false) {
         if (!site && st.site && st.site.id && !st.deleted && !deletedSiteIds().has(st.site.id) && !sites.some((s) => s.id === st.site.id)) {
           const all = await getSites();
           if (all.some((s) => s.id === st.site.id)) continue; // 完工などで外した現場は戻さない
-          site = { id: st.site.id, name: st.site.name, koujiNo: st.site.koujiNo, members: st.site.members || [], kind: st.site.kind || "", startGroup: st.site.startGroup || 0, createdAt: st.site.createdAt || new Date().toISOString(), archived: false, processes: [], lastReportEnd: null, pauses: st.site.pauses || [] };
+          site = { id: st.site.id, name: st.site.name, koujiNo: st.site.koujiNo, customerName: st.site.customerName || "", members: st.site.members || [], kind: st.site.kind || "", startGroup: st.site.startGroup || 0, createdAt: st.site.createdAt || new Date().toISOString(), archived: false, processes: [], lastReportEnd: null, pauses: st.site.pauses || [] };
           await dbPut("sites", site);
           keyToSite[x.key] = site;
           added++;

@@ -41,12 +41,13 @@ async function receiveManual(page) {
 }
 
 // 現場を登録する（ホームの「担当現場を登録しましょう」から）
-async function addSite(page, name, koujiNo) {
+async function addSite(page, name, koujiNo, customerName = "") {
   await page.evaluate(() => goDash()); // マニュアルを受け取った後は工程の画面にいるので、ホームに戻る
   await page.locator("#dashSiteCard").getByText("担当現場を登録しましょう").click();
   const sheet = page.locator(".sheet").last();
   await sheet.getByPlaceholder("例：山田様邸 新築").fill(name);
   await sheet.getByPlaceholder("例：S26492").fill(koujiNo);
+  if (customerName) await sheet.getByPlaceholder(/例：山田様／/).fill(customerName);
   await sheet.getByRole("button", { name: "登録する" }).click();
 }
 

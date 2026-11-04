@@ -37,7 +37,7 @@ const jpegs = (n) => Array.from({ length: n }, (_, i) => ({ name: `t${i + 1}.jpg
 
 test("報告を送ると、報告 JSON と写真が Box に届き、中身が正しい", async ({ app, gas, errors }) => {
   await receiveManual(app);
-  await addSite(app, "テスト様邸 新築", "T26001");
+  await addSite(app, "テスト様邸 新築", "T26001", "テスト様");
   await addPhoto(app, { processId: "p02", itemId: "m902", color: "#c00" }); // お客様にも
   await addPhoto(app, { processId: "p04", itemId: "m903", custOff: true, color: "#00c" }); // 上司だけ
   await markCheck(app, "m902", 0);
@@ -57,7 +57,8 @@ test("報告を送ると、報告 JSON と写真が Box に届き、中身が正
 
   const r = JSON.parse(json.data.toString("utf8"));
   expect(r.kind).toBe("genba-photo-report");
-  expect(r.schema).toBe(8);
+  expect(r.schema).toBe(9);
+  expect(r.customer_name).toBe("テスト様"); // お客様名（メールの宛名の目安）
   expect(r.site).toBe("テスト様邸 新築");
   expect(r.kouji_no).toBe("T26001");
   expect(r.sender).toBe("テスト");
