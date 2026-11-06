@@ -1274,12 +1274,38 @@ img.imgBroken { visibility: hidden; }
 .flowMore { display: flex; flex-direction: column; gap: var(--space-sm); }
 .flowMore[hidden], #reportMoreBtn[hidden] { display: none; }
 .reportFlowCard .btn:disabled { opacity: 0.5; }
-.flowSubLinks { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-lg); }
-.flowSubLinks .linkBtn { min-height: 44px; }
-/* 写真を入れるシート */
-.intakeList, .intakeMore, .intakeDyn { display: flex; flex-direction: column; gap: var(--space-sm); }
-.intakeMore[hidden] { display: none; }
-.intakeGuide .memoHead { font-size: var(--fs-md); }
+/* 一番下の2つ：「今週は報告なし」「ほかの記録のしかた」（枠のある小さめのボタン） */
+.flowSubBtns { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-xs); }
+.flowSubBtns .flowSubBtn { flex: 1 1 140px; min-height: 46px; padding: 0 12px; font-size: var(--fs-sm); }
+/* ①：今週の工程のボタン（チップ）・撮影メモ・振り分けの一覧 */
+.flowSubLabel { font-size: var(--fs-sm); font-weight: 700; color: var(--color-heading); margin-top: var(--space-xs); }
+.procChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.procChip { min-height: 46px; max-width: 100%; padding: 0 14px; border-radius: 14px; border: 1.5px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); font-size: var(--fs-sm); font-weight: 700; color: var(--color-heading); display: inline-flex; align-items: center; gap: 2px; }
+.procChip .processNo { margin-right: 4px; }
+.procChip.active { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
+.procChip.active .processNo { color: inherit; opacity: 0.8; }
+.procChip .chipCount { margin-left: 6px; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--color-surface-sub); color: var(--color-text-sub); font-size: 12px; line-height: 20px; text-align: center; }
+.procChip.active .chipCount { background: rgba(255, 255, 255, 0.28); color: inherit; }
+.procChip.unsorted { border-style: dashed; border-color: var(--color-warning-text); background: var(--color-warning-soft); color: var(--color-warning-text); }
+.procChip.unsorted.active { border-style: solid; background: var(--color-warning-text); border-color: var(--color-warning-text); color: var(--color-warning-soft); }
+.procChip.unsorted .chipCount { background: var(--color-warning-text); color: var(--color-warning-soft); }
+.procChip.unsorted.active .chipCount { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.gateMsg { padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-danger-soft); color: var(--color-danger); font-size: var(--fs-sm); font-weight: 700; }
+.gateMsg[hidden], .warnText[hidden], .sortGrid[hidden], #sortHint[hidden] { display: none; }
+.compactGuide { padding: var(--space-sm) var(--space-md); gap: 6px; }
+.compactGuide .memoHead { font-size: var(--fs-md); }
+.compactGuide .memoList, .compactGuide .memoNote { font-size: 13px; padding-top: 6px; padding-bottom: 6px; }
+.unsortedNum { color: var(--color-warning-text); font-weight: 700; }
+.unsortedNum b { color: var(--color-warning-text); }
+.sortGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sortCell { position: relative; border-radius: 12px; overflow: hidden; border: 2px solid transparent; background: var(--color-surface-sub); }
+.sortCell.unsorted { border-color: var(--color-warning-text); }
+.sortPhoto { display: block; position: relative; width: 100%; padding: 0; border: none; background: none; aspect-ratio: 4 / 3; }
+.sortPhoto img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.sortTag { position: absolute; left: 4px; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 12px; font-weight: 800; line-height: 18px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sortCell.unsorted .sortTag { background: var(--color-warning-text); color: var(--color-warning-soft); }
+.sortZoom { position: absolute; top: 2px; right: 2px; width: 40px; height: 40px; border: none; background: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 4px; color: #fff; }
+.sortZoom svg { box-sizing: border-box; width: 30px; height: 30px; padding: 4px; border-radius: 14px; background: rgba(0, 0, 0, 0.55); }
 .reportFlowCard { align-items: stretch; text-align: left; }
 .flowHead { justify-content: flex-start; }
 .flowField { align-items: stretch; }

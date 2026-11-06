@@ -1,4 +1,4 @@
-// 現場ナビの週の報告：報告タブ（写真を入れる → 工程ごとの様子 → 送る）→ 偽の Box に届いた報告 JSON の中身を確かめる
+// 現場ナビの週の報告：報告タブ（①工程を選んで写真を入れる・振り分ける → ②工程ごとの様子 → ③送る）→ 偽の Box に届いた報告 JSON の中身を確かめる
 const { test, expect, receiveManual, addSite, addPhoto, markCheck } = require("../fixtures/app");
 const { fakeManualPack } = require("../fixtures/fake-manual");
 
@@ -118,27 +118,52 @@ test("取り消して送り直すと、同じ report_id・同じ週で届き、�
   expect(sent[1].week).toBe(sent[0].week);
 });
 
+// 「＋ 工程を追加」から、その工程のボタン（チップ）を出して選ぶ
+async function addChip(app, pid) {
+  const name = await app.evaluate((id) => processOf(id).name, pid);
+  await app.locator("#procAddBtn").click();
+  await app.locator(".sheet").last().locator(".pickItem").filter({ hasText: name }).click();
+  await expect(app.locator(`.procChip[data-pid="${pid}"]`)).toHaveClass(/active/);
+}
+// 「取り込む」を押して、カメラロールから写真をまとめて選ぶ（本物の iPhone と同じく、ボタンから選ぶ窓を開く）
+async function importFiles(app, files) {
+  const [chooser] = await Promise.all([app.waitForEvent("filechooser"), app.locator("#reportImportBtn").click()]);
+  await chooser.setFiles(files);
+}
+const photosOf = (app) => app.evaluate(async () => (await getSitePhotos(currentSiteId)).map((p) => ({ pid: p.processId, kind: p.kind, pick: p.sendPick, item: p.itemId || "" })));
+
+test("工程を選ばないと、撮る・取り込む・振り分けに進めない", async ({ app }) => {
+  await receiveManual(app);
+  await addSite(app, "テスト様邸 新築", "T26001");
+  await openReportTab(app);
+  // 今週の工程がまだ無い：案内が出て、撮る・取り込むは押せない。「未振り分け」のボタンも出ない
+  await expect(app.locator("#procGate")).toContainText("先に今週の工程を選んでください");
+  await expect(app.locator("#reportShootBtn")).toBeDisabled();
+  await expect(app.locator("#reportImportBtn")).toBeDisabled();
+  await expect(app.locator(".procChip")).toHaveCount(0);
+  // 工程を足すと、案内が消えて押せるようになり、足した工程が選ばれる。最後に「未振り分け」のボタンが並ぶ
+  await addChip(app, "p02");
+  await expect(app.locator("#procGate")).toBeHidden();
+  await expect(app.locator("#reportShootBtn")).toBeEnabled();
+  await expect(app.locator("#reportImportBtn")).toBeEnabled();
+  await expect(app.locator(".procChip").last()).toHaveText(/未振り分け/);
+  await expect(app.locator(".intakeGuide")).toContainText("撮影メモ"); // 選んだ工程の撮影メモ
+});
+
 test("工程を選んでまとめて取り込むと、その工程に入り、最初から全部送る写真になる", async ({ app, gas, errors }) => {
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await openReportTab(app);
-  const name = await app.evaluate(() => shortProcessName(processOf("p02")));
-  await app.locator("#reportImportBtn").click();
-  const sheet = app.locator(".sheet").last();
-  await expect(sheet).toContainText("写真を入れる");
-  // 工程を先に選ぶ（今週の工程はまだ無いので「ほかの工程を探す」から）
-  await sheet.getByRole("button", { name: "ほかの工程を探す" }).click();
-  await sheet.locator('.intakeMore .pickItem[data-pid="p02"]').click();
-  await expect(sheet.locator(".intakeGuide")).toContainText(name); // 撮影メモの小さな案内
-  await app.locator("#libraryInput").setInputFiles(jpegs(3));
-  await sheet.getByRole("button", { name: `${name}に3枚入れる` }).click();
+  await addChip(app, "p02");
+  await importFiles(app, jpegs(3));
   await expect(toastOf(app, "3枚入れました")).toBeVisible();
 
-  // その工程に3枚入り、報告タブの工程ごとの様子にも並ぶ。送る写真は最初から3枚
-  const photos = await app.evaluate(async () => (await getSitePhotos(currentSiteId)).map((p) => ({ pid: p.processId, kind: p.kind, pick: p.sendPick })));
-  expect(photos).toEqual([1, 2, 3].map(() => ({ pid: "p02", kind: "report", pick: true })));
+  // その工程に3枚入り、①の一覧と②の工程ごとの様子に並ぶ。送る写真は最初から3枚
+  expect(await photosOf(app)).toEqual([1, 2, 3].map(() => ({ pid: "p02", kind: "report", pick: true, item: "" })));
+  await expect(app.locator("#sortGrid .sortCell")).toHaveCount(3);
   await expect(app.locator('.flowProc[data-pid="p02"] .photoCard')).toHaveCount(3);
   await expect(app.locator("#reportSendBtn")).toHaveText("3 枚を送る");
+  await expect(app.locator("#reportPhotoStat")).toContainText("すべて振り分け済み");
 
   // 何も外さず送ると、3枚とも届く（お客様にも）
   await sendReport(app);
@@ -147,35 +172,120 @@ test("工程を選んでまとめて取り込むと、その工程に入り、�
   expect(errors).toEqual([]);
 });
 
+test("工程を選んで撮ると、その工程に入る。未振り分けで撮ると工程なしで入る", async ({ app, errors }) => {
+  await receiveManual(app);
+  await addSite(app, "テスト様邸 新築", "T26001");
+  await openReportTab(app);
+  await addChip(app, "p02");
+  const shoot = async () => {
+    const [chooser] = await Promise.all([app.waitForEvent("filechooser"), app.locator("#reportShootBtn").click()]);
+    await chooser.setFiles(jpegs(1));
+    await expect(app.locator("#shotView")).toBeVisible();
+  };
+  await shoot();
+  await expect(app.locator("#shotTitle")).toHaveText("地盤・基礎工事");
+  await app.locator("#shotDoneBtn").click();
+  await expect(app.locator("#reportSendBtn")).toBeVisible();
+  await app.locator('.procChip[data-pid=""]').click(); // 未振り分けで撮る
+  await shoot();
+  await expect(app.locator("#shotTitle")).toHaveText("未振り分け");
+  await app.locator("#shotDoneBtn").click();
+  expect((await photosOf(app)).map((p) => p.pid).sort()).toEqual(["", "p02"]);
+  await expect(app.locator('.procChip[data-pid=""]')).toHaveClass(/active/); // 撮ったあとも、選んでいたボタンのまま
+  await expect(app.locator("#sortGrid .sortCell.unsorted")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test("未振り分けで取り込み、工程のボタンを選んで写真を押すと振り分けられる", async ({ app, errors }) => {
+  await receiveManual(app);
+  await addSite(app, "テスト様邸 新築", "T26001");
+  await openReportTab(app);
+  await addChip(app, "p02");
+  await app.locator('.procChip[data-pid=""]').click();
+  await importFiles(app, jpegs(3));
+  await expect(toastOf(app, "未振り分けで3枚入れました")).toBeVisible();
+  expect((await photosOf(app)).map((p) => p.pid)).toEqual(["", "", ""]);
+  await expect(app.locator("#sortGrid .sortCell.unsorted")).toHaveCount(3);
+  await expect(app.locator("#reportPhotoStat")).toContainText("未振り分け 3 枚");
+  await expect(app.locator("#sortGrid .sortTag").first()).toHaveText("未振り分け");
+  await expect(app.locator('.flowProc[data-pid="p02"] .photoCard')).toHaveCount(0); // ②には出ない
+
+  // 基礎のボタンを選んで写真を押すと、その写真が基礎に入る
+  await app.locator('.procChip[data-pid="p02"]').click();
+  await app.locator("#sortGrid .sortCell .sortPhoto").first().click();
+  await expect(app.locator("#sortGrid .sortCell.unsorted")).toHaveCount(2);
+  await expect(app.locator("#sortGrid .sortTag").first()).toHaveText("基礎");
+  await expect(app.locator('.flowProc[data-pid="p02"] .photoCard')).toHaveCount(1);
+  await expect(app.locator("#reportPhotoStat")).toContainText("未振り分け 2 枚");
+  expect((await photosOf(app)).map((p) => p.pid).sort()).toEqual(["", "", "p02"]);
+
+  // 残りも押して振り分けると「すべて振り分け済み」。「未振り分け」のボタンを選んで押すと、未振り分けに戻る
+  await app.locator("#sortGrid .sortCell.unsorted .sortPhoto").first().click();
+  await app.locator("#sortGrid .sortCell.unsorted .sortPhoto").first().click();
+  await expect(app.locator("#reportPhotoStat")).toContainText("すべて振り分け済み");
+  await app.locator('.procChip[data-pid=""]').click();
+  await app.locator("#sortGrid .sortCell .sortPhoto").nth(1).click();
+  await expect(app.locator("#sortGrid .sortCell.unsorted")).toHaveCount(1);
+  expect((await photosOf(app)).map((p) => p.pid).sort()).toEqual(["", "p02", "p02"]);
+
+  // 虫めがねで拡大できる（押しても振り分けは変わらない）
+  await app.locator("#sortGrid .sortZoom").first().click();
+  await expect(app.locator("#lightbox")).toBeVisible();
+  await app.locator("#lightbox").getByRole("button", { name: "閉じる" }).click();
+  expect((await photosOf(app)).map((p) => p.pid).sort()).toEqual(["", "p02", "p02"]);
+  expect(errors).toEqual([]);
+});
+
+test("未振り分けの写真が残っていると送れない。振り分けると送れる", async ({ app, gas }) => {
+  await receiveManual(app);
+  await addSite(app, "テスト様邸 新築", "T26001");
+  await addPhoto(app, { processId: "p02", color: "#c00" });
+  await addPhoto(app, { processId: "", color: "#00c" }); // 未振り分け
+  const messages = [];
+  app.on("dialog", (d) => messages.push(d.message()));
+  await openReportTab(app);
+  await expect(app.locator("#reportUnsortedWarn")).toContainText("まだ振り分けていない写真が1枚あります。①で工程を選んでから送ってください");
+  await app.locator("#reportSendBtn").click();
+  await expect.poll(() => messages.length).toBeGreaterThan(0);
+  expect(messages[0]).toContain("まだ振り分けていない写真が1枚あります。①で工程を選んでから送ってください");
+  await expect(app.locator(".sheet").last()).not.toContainText("Boxへ送信");
+  expect(gas.box.sent).toHaveLength(0);
+
+  // 基礎のボタンを選んで押して振り分けると、警告が消えて送れる（未振り分けの印は Box に届かない）
+  await app.locator('.procChip[data-pid="p02"]').click();
+  await app.locator("#sortGrid .sortCell.unsorted .sortPhoto").click();
+  await expect(app.locator("#reportUnsortedWarn")).toBeHidden();
+  await sendReport(app);
+  const r = JSON.parse(gas.box.sent[0].files.find((f) => f.name.endsWith(".json")).data.toString("utf8"));
+  expect(r.photos.map((p) => p.process_no)).toEqual([2, 2]);
+  expect(r.processes.map((p) => p.no)).toEqual([2]);
+});
+
 test("次に開いた時は、前回入れた工程が最初から選ばれている", async ({ app }) => {
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await openReportTab(app);
-  await app.locator("#reportImportBtn").click();
-  let sheet = app.locator(".sheet").last();
-  await sheet.getByRole("button", { name: "ほかの工程を探す" }).click();
-  await sheet.locator('.intakeMore .pickItem[data-pid="p04"]').click();
-  await app.locator("#libraryInput").setInputFiles(jpegs(1));
-  await sheet.getByRole("button", { name: /に1枚入れる$/ }).click();
+  await addChip(app, "p04");
+  await importFiles(app, jpegs(1));
   await expect(toastOf(app, "1枚入れました")).toBeVisible();
-  await app.locator("#reportShootBtn").click();
-  sheet = app.locator(".sheet").last();
-  await expect(sheet.locator(".intakeList .pickItem.picked")).toHaveAttribute("data-pid", "p04");
-  await expect(sheet.getByRole("button", { name: "撮影する" })).toBeVisible();
+  // 別の工程のボタンを押してから開き直しても、前回入れた建方が選ばれている（アプリを閉じて開いた時と同じ）
+  await app.evaluate(() => {
+    reportSel = null;
+    return goReport();
+  });
+  await expect(app.locator(".procChip.active")).toHaveAttribute("data-pid", "p04");
 });
 
 test("項目ページの入口から入れると、その工程が選ばれ、項目が写真に残る", async ({ app }) => {
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await app.evaluate(() => openIntake({ pid: "p02", itemId: "m902" }));
-  const sheet = app.locator(".sheet").last();
-  await expect(sheet.locator(".pickItem.picked").first()).toHaveAttribute("data-pid", "p02");
-  await expect(sheet.locator(".procHeroItem")).toContainText("テスト配筋");
-  await app.locator("#libraryInput").setInputFiles(jpegs(2));
-  await sheet.getByRole("button", { name: /に2枚入れる$/ }).click();
+  await expect(app.locator("#reportSendBtn")).toBeVisible(); // 報告タブが開く
+  await expect(app.locator(".procChip.active")).toHaveAttribute("data-pid", "p02");
+  await expect(app.locator(".procHeroItem")).toContainText("テスト配筋");
+  await importFiles(app, jpegs(2));
   await expect(toastOf(app, "2枚入れました")).toBeVisible();
-  const photos = await app.evaluate(async () => (await getSitePhotos(currentSiteId)).map((p) => [p.processId, p.itemId]));
-  expect(photos).toEqual([["p02", "m902"], ["p02", "m902"]]);
+  expect((await photosOf(app)).map((p) => [p.pid, p.item])).toEqual([["p02", "m902"], ["p02", "m902"]]);
 });
 
 test("送らない写真を外すと、その写真は送られず、次の報告に残る", async ({ app, gas }) => {
@@ -214,6 +324,13 @@ test("今週は報告なしを押すと、報告なしの記録になる", async
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await openReportTab(app);
+  // 一番下の2つは、リンク文字ではなく、枠のあるボタン
+  for (const id of ["#reportSkipBtn", "#reportOtherBtn"]) {
+    const st = await app.locator(id).evaluate((e) => ({ border: getComputedStyle(e).borderTopWidth, h: e.getBoundingClientRect().height, tag: e.tagName }));
+    expect(st.tag).toBe("BUTTON");
+    expect(parseFloat(st.border)).toBeGreaterThan(0);
+    expect(st.h).toBeGreaterThanOrEqual(44);
+  }
   await app.locator("#reportSkipBtn").click();
   await app.locator(".sheet").last().getByRole("button", { name: "記録する" }).click();
   await expect(toastOf(app, "今週は報告なしにしました")).toBeVisible();

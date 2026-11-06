@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 132;
+const APP_VERSION = 133;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-06", type: "feature", text: "報告タブの「① 写真を入れる」を作り直しました。①の一番上に今週の工程のボタンが並び、工程を選んで「撮る」「取り込む」と、その工程に入ります。工程が分からない写真は「未振り分け」で入れておけます。その下に今週入れた写真が全部並ぶので、工程のボタンを選んで写真を押すと振り分けられます（右上の虫めがねで拡大）。未振り分けの写真が残っていると送れません。一番下の「今週は報告なし」「ほかの記録のしかた」は、押せるボタンの見た目にしました" },
   { date: "2026-11-06", type: "feature", text: "写真が無い週も、週の報告を送れるようにしました。報告タブで、工程の様子（完了・作業中などと一言）か来週の予定を1つ書いて「写真なしで送る」を押します。写真の用意が間に合わない時に、先に文面だけ送れます（写真はふだんどおり入れるのが基本です）" },
   { date: "2026-11-04", type: "feature", text: "現場の登録・変更に「お客様名（メールの宛名）」を足しました（任意）。入れておくと、お客様への報告メールの宛名に使われます。名前だけを入れてください（メールアドレスや電話は書かない）。今の現場は「現場の管理」の「変更」から入れられます" },
   { date: "2026-11-02", type: "fix", text: "報告タブの写真で、「お客様にも」の札が途中で改行されないようにしました。写真の右上の四角（押しても意味のない表示）をなくしました。送らない写真は、押すと薄くなって「送らない」と出ます" },
@@ -200,7 +201,11 @@ const PROCESSES = [
   { id: "p17", no: 17, name: "引渡し", short: "引渡し", guide: "" },
 ];
 const PROCESS_MAP = Object.fromEntries(PROCESSES.map((p) => [p.id, p]));
+// 工程を選んでいない写真（報告タブの「未振り分け」）は processId が空。送る前に必ず工程を付けるので、Box には届かない
+const UNSORTED = "";
+const UNSORTED_PROC = { id: UNSORTED, no: 98, name: "未振り分け", short: "未振り分け", guide: "" };
 function processOf(id) {
+  if (!id) return UNSORTED_PROC;
   return PROCESS_MAP[id] || { id, no: 99, name: "（不明な工程）", short: "不明", guide: "" };
 }
 
@@ -2142,14 +2147,18 @@ async function retagPhotos(ids, pid, after) {
   const photos = (await Promise.all(ids.map((id) => dbGet("photos", id)))).filter(Boolean);
   photos.forEach((p) => {
     p.processId = pid;
-    if (!isRecordPhoto(p) && p.itemId) {
-      const it = manualMeta && manualMeta.items.find((x) => x.id === p.itemId);
-      if (!it || it.cat !== pid) delete p.itemId;
-    }
+    retagFields(p, pid);
   });
   await dbPutMany("photos", photos);
   await after();
   toast(`${photos.length}枚を「${processOf(pid).name}」に変更しました`);
+}
+// 工程を変えた報告写真の、項目の印（別の工程の項目なら外す。未振り分けにした時も外す）
+function retagFields(p, pid) {
+  if (!isRecordPhoto(p) && p.itemId) {
+    const it = manualMeta && manualMeta.items.find((x) => x.id === p.itemId);
+    if (!it || it.cat !== pid) delete p.itemId;
+  }
 }
 
 function safeFileName(s) {
@@ -2449,8 +2458,7 @@ async function checkPendingShot() {
   if (it) {
     currentMTab = "check";
     await openGroup(groupOfProcess(it.cat).id, it.id);
-  } else if (p.processId) {
-    goReport();
+  } else if (typeof p.processId === "string") {
     await openIntake({ pid: p.processId, itemId: p.reportItemId || null });
   }
   return true;
@@ -2482,7 +2490,7 @@ async function onCameraPicked() {
   const file = input.files[0];
   input.value = "";
   clearPendingShot();
-  if (!file || !shootProcessId || !currentSiteId) return;
+  if (!file || shootProcessId === null || !currentSiteId) return; // shootProcessId が空文字なら「未振り分け」で撮る
   setProcessing(true);
   if (recordTarget) {
     await saveRecordPhoto(file, new Date());
@@ -2526,7 +2534,7 @@ async function renderShot(rec) {
   releaseUrls("shot");
   const p = processOf(shootProcessId);
   $("shotTitle").textContent = p.name;
-  $("shotGuide").innerHTML = guideHtml(p, { report: true, record: false });
+  $("shotGuide").innerHTML = shootProcessId ? guideHtml(p, { report: true, record: false }) : ""; // 未振り分けの時は撮影メモなし
   const current = unreported(await getSitePhotos(currentSiteId))
     .filter((ph) => ph.processId === shootProcessId && !isRecordPhoto(ph))
     .sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
@@ -2581,18 +2589,23 @@ function pickOtherProcess() {
 function leaveShot() {
   releaseUrls("shot");
   lastShotId = null;
+  // 撮影中に「別の工程で撮る」で変えていたら、報告タブでもその工程を選んだ状態に戻る
+  if (reportSel && shootProcessId !== null) {
+    reportSel.pid = shootProcessId;
+    if (shootProcessId) reportSel.extra.add(shootProcessId);
+  }
   goReport();
 }
 
-// 写真を選んだら、「写真を入れる」のシートに枚数を出す（工程を確かめてから「○○に N 枚入れる」で入れる）
+// 「取り込む」で写真を選んだら、押した時に選んでいた工程（「未振り分け」なら工程なし）にそのまま入れる
 async function onLibraryPicked() {
   const input = $("libraryInput");
   const files = Array.from(input.files || []);
   input.value = "";
-  if (!files.length || !currentSiteId) return;
-  if (!intake) intake = await makeIntake({ itemId: reportItemId });
-  intake.files = files;
-  renderIntakeSheet();
+  const pid = libraryPid;
+  libraryPid = null;
+  if (!files.length || !currentSiteId || pid === null) return;
+  await importReportPhotos(files, pid);
 }
 
 /* ---------- 報告タブ：今週の報告（1枚の流れ） ---------- */
@@ -2620,7 +2633,7 @@ function draftOf(site) {
 
 // 今週の報告に並べる工程：今週の写真がある工程 ＋ 「工程を追加」で入れた工程
 function weekProcessIds(site, cands) {
-  return [...new Set([...(site.processes || []), ...cands.map((p) => p.processId)])].sort((a, b) => processOf(a).no - processOf(b).no);
+  return [...new Set([...(site.processes || []), ...cands.map((p) => p.processId)])].filter(Boolean).sort((a, b) => processOf(a).no - processOf(b).no);
 }
 
 async function renderReport() {
@@ -2654,18 +2667,156 @@ async function renderReport() {
   const flowHead = (no, title, tag, tagCls) =>
     `<div class="flowHead"><span class="flowNo">${no}</span><span class="flowTitle">${title}</span>${tag ? `<span class="reqTag ${tagCls}">${tag}</span>` : ""}</div>`;
 
-  /* ① 写真を入れる【必須】 */
+  /* 今週の工程の選び方：reportSel.pid が null＝まだ選んでいない、""＝「未振り分け」、"pXX"＝その工程 */
+  if (!reportSel || reportSel.siteId !== site.id) reportSel = { siteId: site.id, pid: null, extra: new Set() };
+  const sel = reportSel;
+  // 並べる工程：今週の写真がある工程・「工程を追加」で入れた工程・前回の工程・項目ページから来た工程
+  const chipIds = () => {
+    const last = getSetting(LAST_PROC_KEY);
+    return [...new Set([...weekProcessIds(site, cands), ...(PROCESS_MAP[last] ? [last] : []), ...sel.extra])].sort((a, b) => processOf(a).no - processOf(b).no);
+  };
+  const ensureSel = () => {
+    const ids = chipIds();
+    if (sel.pid === UNSORTED && ids.length) return;
+    if (sel.pid && ids.includes(sel.pid)) return;
+    const last = getSetting(LAST_PROC_KEY);
+    sel.pid = ids.includes(last) ? last : ids.length ? ids[0] : null;
+  };
+  const sortList = () => cands.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : a.id < b.id ? -1 : 1));
+  const countIn = (pid) => sortList().filter((p) => (p.processId || "") === pid).length;
+
+  /* ① 写真を入れる【必須】：工程を選ぶ → 撮る・取り込む → 写真を押して振り分け（ここで完結） */
   const s1 = document.createElement("section");
   s1.className = "card reportFlowCard";
+  s1.id = "reportSortCard";
   s1.innerHTML =
     flowHead(1, "写真を入れる", "必須", "must") +
-    `<div class="psHint">今週の工事の写真を入れます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
+    `<div class="psHint">今週の工事の写真を入れます。先に工程を選んでから、まとめて撮る・取り込みます。工程が分からない写真は「未振り分け」で入れて、あとで下の一覧から振り分けられます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
+    `<div class="flowSubLabel">今週の工程</div>` +
+    `<div class="procChips" id="procChips" role="group" aria-label="今週の工程"></div>` +
+    `<div id="procGate" class="gateMsg" hidden>先に今週の工程を選んでください。下の「＋ 工程を追加」から選べます。</div>` +
+    `<div id="procGuide"></div>` +
     `<div class="btnRow"><button id="reportShootBtn" class="btn btnPrimary btnLarge" type="button">${icon(ICONS.camera, 20)}撮る</button>` +
     `<button id="reportImportBtn" class="btn btnSecondary btnLarge" type="button">${icon(ICONS.photo, 20)}取り込む</button></div>` +
-    `<div class="flowStat" id="reportPhotoStat"></div>`;
-  s1.querySelector("#reportShootBtn").addEventListener("click", () => openIntake({ mode: "camera" }));
-  s1.querySelector("#reportImportBtn").addEventListener("click", () => openIntake({ mode: "library" }));
+    `<div class="flowStat" id="reportPhotoStat"></div>` +
+    `<div id="sortHint" class="psHint" hidden>写真を押すと、上で選んでいる工程（または「未振り分け」）に振り分けます。右上の虫めがねで拡大できます。</div>` +
+    `<div class="sortGrid" id="sortGrid"></div>`;
+  s1.querySelector("#procChips").after(sheetButton("＋ 工程を追加", "btnDashed", addReportProcess));
+  s1.querySelector(".btnDashed").id = "procAddBtn";
+  const procChips = s1.querySelector("#procChips");
+  const gateEl = s1.querySelector("#procGate");
+  const guideEl = s1.querySelector("#procGuide");
+  const shootBtn = s1.querySelector("#reportShootBtn");
+  const importBtn = s1.querySelector("#reportImportBtn");
+  const statEl = s1.querySelector("#reportPhotoStat");
+  const gridEl = s1.querySelector("#sortGrid");
+  shootBtn.addEventListener("click", () => {
+    if (sel.pid === null) return toast("先に今週の工程を選んでください");
+    if (sel.pid) setSetting(LAST_PROC_KEY, sel.pid);
+    startCamera(sel.pid); // 「未振り分け」を選んでいる時は、工程なしで撮る
+  });
+  importBtn.addEventListener("click", () => {
+    if (sel.pid === null) return toast("先に今週の工程を選んでください");
+    libraryPid = sel.pid;
+    $("libraryInput").click();
+  });
   body.appendChild(s1);
+
+  const drawGuide = () => {
+    guideEl.innerHTML = "";
+    const none = sel.pid === null;
+    gateEl.hidden = !none;
+    shootBtn.disabled = none;
+    importBtn.disabled = none;
+    if (sel.pid === UNSORTED) {
+      guideEl.innerHTML = '<div class="psHint">「未振り分け」で入れた写真は、下の一覧に出ます。工程のボタンを選んでから写真を押すと、その工程に振り分けられます。送る前に、全部振り分けてください。</div>';
+    } else if (sel.pid) {
+      const p = processOf(sel.pid);
+      const g = document.createElement("div");
+      g.className = "memoCard intakeGuide compactGuide";
+      g.innerHTML =
+        `<div class="memoHead">${icon(ICONS.camSmall, 22)}${esc(shortProcessName(p))}の撮影メモ</div>` +
+        `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
+        `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
+      guideEl.appendChild(g);
+      const item = reportItemFor(sel.pid);
+      if (item) {
+        const l = document.createElement("div");
+        l.className = "procHeroItem";
+        l.innerHTML = `項目「${esc(item.name)}」の写真として残します<button class="miniLink" type="button">外す</button>`;
+        l.querySelector(".miniLink").addEventListener("click", () => {
+          reportItemId = null;
+          drawGuide();
+        });
+        guideEl.appendChild(l);
+      }
+    }
+  };
+  const drawChips = () => {
+    const ids = chipIds();
+    ensureSel();
+    procChips.innerHTML = "";
+    const mk = (pid, html, cls) => {
+      const on = sel.pid === pid;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "procChip" + cls + (on ? " active" : "");
+      b.dataset.pid = pid;
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.innerHTML = html;
+      b.addEventListener("click", () => {
+        sel.pid = pid;
+        drawChips();
+      });
+      procChips.appendChild(b);
+    };
+    ids.forEach((pid) => {
+      const p = processOf(pid);
+      const n = countIn(pid);
+      mk(pid, `<span class="processNo">${p.no}</span>${esc(shortProcessName(p))}${n ? `<span class="chipCount">${n}</span>` : ""}`, "");
+    });
+    if (ids.length) {
+      const n = countIn(UNSORTED);
+      mk(UNSORTED, `未振り分け${n ? `<span class="chipCount">${n}</span>` : ""}`, " unsorted");
+    }
+    drawGuide();
+  };
+
+  // 振り分け：今週入れた写真を全部並べる。押すと、選んでいる工程に入る（「未振り分け」を選んでいれば未振り分けに戻る）
+  const paintCell = (cell, ph) => {
+    cell.querySelector(".sortTag").textContent = ph.processId ? processOf(ph.processId).short : "未振り分け";
+    cell.classList.toggle("unsorted", !ph.processId);
+  };
+  const assign = async (ph, cell) => {
+    if (sel.pid === null) return toast("先に今週の工程を選んでください");
+    const pid = sel.pid;
+    if ((ph.processId || "") === pid) return;
+    ph.processId = pid;
+    retagFields(ph, pid);
+    paintCell(cell, ph); // 先に見た目を変える（続けて押しても追いつくように）
+    updateCounts();
+    drawProcs();
+    await dbPut("photos", ph);
+  };
+  const drawSort = () => {
+    releaseUrls("reportSort");
+    gridEl.innerHTML = "";
+    const list = sortList();
+    gridEl.hidden = !list.length;
+    s1.querySelector("#sortHint").hidden = !list.length;
+    list.forEach((ph) => {
+      const cell = document.createElement("div");
+      cell.className = "sortCell";
+      cell.dataset.id = ph.id;
+      cell.innerHTML =
+        `<button type="button" class="sortPhoto" aria-label="この写真を、選んでいる工程に振り分ける"><img src="${blobUrl("reportSort", ph.thumb)}" alt=""><span class="sortTag"></span></button>` +
+        `<button type="button" class="sortZoom" aria-label="写真を拡大">${icon(ICONS.search, 20, 2.4)}</button>`;
+      paintCell(cell, ph);
+      cell.querySelector(".sortPhoto").addEventListener("click", () => assign(ph, cell));
+      cell.querySelector(".sortZoom").addEventListener("click", () => openPhotoViewer(ph.blob, photoActions(ph, renderReport)));
+      gridEl.appendChild(cell);
+    });
+  };
 
   /* ② 工程ごとの様子【任意】 */
   const s2 = document.createElement("section");
@@ -2673,100 +2824,120 @@ async function renderReport() {
   s2.innerHTML =
     flowHead(2, "工程ごとの様子", "任意", "opt") +
     `<div class="psHint">書いておくと、お客様への報告メールにそのまま使えます。</div>` +
-    `<div class="psHint">写真は最初から全部送ります。送らない写真だけ、押して外してください（もう一度押すと送ります）。</div>`;
+    `<div class="psHint">①で振り分けた写真が、工程ごとに並びます。写真は最初から全部送ります。送らない写真だけ、押して外してください（もう一度押すと送ります）。</div>` +
+    `<div id="reportProcs" class="reportProcs"></div>`;
   body.appendChild(s2);
-  const statEls = [];
+  const procsEl = s2.querySelector("#reportProcs");
+  let statEls = [];
   const updateCounts = () => {
+    const rep = sortList();
+    const un = countIn(UNSORTED);
     const picks = cands.filter((p) => p.sendPick).length;
-    $("reportPhotoStat").innerHTML = cands.length ? `入れた写真 <b>${cands.length}</b> 枚・送る <b>${picks}</b> 枚` : "まだ写真がありません。「撮る」か「取り込む」から入れてください。写真が無い週は、工程の様子か来週の予定を書けば、写真なしでも送れます。";
+    statEl.innerHTML = rep.length
+      ? `入れた写真 <b>${rep.length}</b> 枚・` + (un ? `<span class="unsortedNum">未振り分け <b>${un}</b> 枚</span>` : "すべて振り分け済み") + `・送る <b>${picks}</b> 枚`
+      : "まだ写真がありません。工程を選んで「撮る」か「取り込む」から入れてください。写真が無い週は、工程の様子か来週の予定を書けば、写真なしでも送れます。";
     statEls.forEach(({ pid, el }) => {
       const inP = cands.filter((p) => p.processId === pid);
       el.innerHTML = `${icon(ICONS.camSmall, 16)}写真 <b>${inP.length}</b> 枚・送る <b>${inP.filter((p) => p.sendPick).length}</b> 枚`;
     });
+    const warn = $("reportUnsortedWarn");
+    if (warn) {
+      warn.hidden = !un;
+      warn.textContent = un ? `まだ振り分けていない写真が${un}枚あります。①で工程を選んでから送ってください` : "";
+    }
     const btn = $("reportSendBtn");
     if (btn) btn.textContent = picks ? `${picks} 枚を送る` : "写真なしで送る"; // 写真が無い週も、工程の様子か来週の予定を書けば送れる
+    drawChips();
   };
-  const pids = weekProcessIds(site, cands);
-  if (!pids.length) {
-    const h = document.createElement("div");
-    h.className = "hint";
-    h.textContent = "写真を入れると、工程ごとにここに並びます。写真が無い工程の様子を書きたい時は、下の「工程を追加」から選べます。";
-    s2.appendChild(h);
-  }
-  pids.forEach((pid) => {
-    const p = processOf(pid);
-    const inProc = cands.filter((ph) => ph.processId === pid).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
-    const blk = document.createElement("div");
-    blk.className = "flowProc";
-    blk.dataset.pid = pid;
-    blk.innerHTML =
-      `<div class="flowProcHead"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
-      `<button class="iconBtn removeProcessBtn" type="button" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button></div>` +
-      `<div class="procStat"></div>`;
-    statEls.push({ pid, el: blk.querySelector(".procStat") });
-    blk.querySelector(".removeProcessBtn").addEventListener("click", () =>
-      openSheet(p.name, (sb, close) => {
-        sb.appendChild(
-          sheetButton("今回の工程から外す", "btnDanger", () => {
-            close();
-            removeProcess(pid, inProc.length);
-          })
-        );
-        sb.appendChild(sheetButton("キャンセル", "btnSecondary", close));
-      })
-    );
-    if (inProc.length) {
-      const grid = document.createElement("div");
-      grid.className = "photoGrid captioned reportGrid"; // 送る・送らないは写真の薄さと札で見せるので、右上の選択の四角は出さない
-      inProc.forEach((ph) => {
-        const card = photoCard(ph, {
-          bucket: "report",
-          compact: true,
-          custToggle: true,
-          actions: (x) => photoActions(x, renderReport),
-          onTap: async (x, cell) => {
-            x.sendPick = !x.sendPick;
-            cell.classList.toggle("unsent", !x.sendPick);
-            updateCounts();
-            await dbPut("photos", x);
-          },
-        });
-        card.classList.toggle("unsent", !ph.sendPick);
-        grid.appendChild(card);
-      });
-      blk.appendChild(grid);
+  const drawProcs = () => {
+    releaseUrls("reportProcs");
+    procsEl.innerHTML = "";
+    statEls = [];
+    const pids = weekProcessIds(site, cands);
+    if (!pids.length) {
+      const h = document.createElement("div");
+      h.className = "hint";
+      h.textContent = "写真を振り分けると、工程ごとにここに並びます。写真が無い工程の様子を書きたい時は、①の「＋ 工程を追加」から選べます。";
+      procsEl.appendChild(h);
     }
-    const note = procNoteOf(site, pid);
-    const seg = document.createElement("div");
-    seg.className = "segRow";
-    seg.innerHTML = PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("");
-    seg.querySelectorAll(".segBtn").forEach((b) =>
-      b.addEventListener("click", () => {
-        const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
-        saveProcNote(site, pid, { status: st }, true);
-        seg.querySelectorAll(".segBtn").forEach((x) => x.classList.toggle("active", x.dataset.st === st));
-      })
-    );
-    blk.appendChild(seg);
-    const txt = document.createElement("textarea");
-    txt.className = "sheetTextarea psText";
-    txt.rows = 2;
-    txt.maxLength = 400;
-    txt.setAttribute("aria-label", `${shortProcessName(p)}の一言`);
-    txt.placeholder = "一言（例：土間配筋 JIO検査 10/7 合格）";
-    txt.value = note.text || "";
-    txt.addEventListener("input", () => saveProcNote(site, pid, { text: txt.value }));
-    txt.addEventListener("change", () => saveProcNote(site, pid, { text: txt.value }, true));
-    blk.appendChild(txt);
-    s2.appendChild(blk);
-  });
-  if (pids.length) {
-    const hint = document.createElement("div");
-    hint.className = "psHint";
-    hint.textContent = "一言は「何を・いつ・どうなった」を1行に1つ。来週以降に残りの作業がある工程は「一部完了」にします。写真の「︙」で、拡大・工程の変更・削除ができます。";
-    s2.appendChild(hint);
-  }
-  s2.appendChild(sheetButton("＋ 工程を追加", "btnDashed", openProcessPicker));
+    pids.forEach((pid) => {
+      const p = processOf(pid);
+      const inProc = cands.filter((ph) => ph.processId === pid).sort((a, b) => (a.takenAt < b.takenAt ? 1 : -1));
+      const blk = document.createElement("div");
+      blk.className = "flowProc";
+      blk.dataset.pid = pid;
+      blk.innerHTML =
+        `<div class="flowProcHead"><span class="processName"><span class="processNo">${p.no}</span>${esc(shortProcessName(p))}</span>` +
+        `<button class="iconBtn removeProcessBtn" type="button" aria-label="メニュー">${icon(ICONS.dotsV, 20)}</button></div>` +
+        `<div class="procStat"></div>`;
+      statEls.push({ pid, el: blk.querySelector(".procStat") });
+      blk.querySelector(".removeProcessBtn").addEventListener("click", () =>
+        openSheet(p.name, (sb, close) => {
+          sb.appendChild(
+            sheetButton("今回の工程から外す", "btnDanger", () => {
+              close();
+              removeProcess(pid, inProc.length);
+            })
+          );
+          sb.appendChild(sheetButton("キャンセル", "btnSecondary", close));
+        })
+      );
+      if (inProc.length) {
+        const grid = document.createElement("div");
+        grid.className = "photoGrid captioned reportGrid"; // 送る・送らないは写真の薄さと札で見せるので、右上の選択の四角は出さない
+        inProc.forEach((ph) => {
+          const card = photoCard(ph, {
+            bucket: "reportProcs",
+            compact: true,
+            custToggle: true,
+            actions: (x) => photoActions(x, renderReport),
+            onTap: async (x, cell) => {
+              x.sendPick = !x.sendPick;
+              cell.classList.toggle("unsent", !x.sendPick);
+              updateCounts();
+              await dbPut("photos", x);
+            },
+          });
+          card.classList.toggle("unsent", !ph.sendPick);
+          grid.appendChild(card);
+        });
+        blk.appendChild(grid);
+      }
+      const note = procNoteOf(site, pid);
+      const seg = document.createElement("div");
+      seg.className = "segRow";
+      seg.innerHTML = PROC_STATUS.map(([k, l]) => `<button class="segBtn${note.status === k ? " active" : ""}" data-st="${k}" type="button">${l}</button>`).join("");
+      seg.querySelectorAll(".segBtn").forEach((b) =>
+        b.addEventListener("click", () => {
+          const st = procNoteOf(site, pid).status === b.dataset.st ? "" : b.dataset.st; // もう一度押すと外す
+          saveProcNote(site, pid, { status: st }, true);
+          seg.querySelectorAll(".segBtn").forEach((x) => x.classList.toggle("active", x.dataset.st === st));
+        })
+      );
+      blk.appendChild(seg);
+      const txt = document.createElement("textarea");
+      txt.className = "sheetTextarea psText";
+      txt.rows = 2;
+      txt.maxLength = 400;
+      txt.setAttribute("aria-label", `${shortProcessName(p)}の一言`);
+      txt.placeholder = "一言（例：土間配筋 JIO検査 10/7 合格）";
+      txt.value = note.text || "";
+      txt.addEventListener("input", () => saveProcNote(site, pid, { text: txt.value }));
+      txt.addEventListener("change", () => saveProcNote(site, pid, { text: txt.value }, true));
+      blk.appendChild(txt);
+      procsEl.appendChild(blk);
+    });
+    if (pids.length) {
+      const hint = document.createElement("div");
+      hint.className = "psHint";
+      hint.textContent = "一言は「何を・いつ・どうなった」を1行に1つ。来週以降に残りの作業がある工程は「一部完了」にします。写真の「︙」で、拡大・工程の変更・削除ができます。";
+      procsEl.appendChild(hint);
+    }
+    statEls.forEach(({ pid, el }) => {
+      const inP = cands.filter((p) => p.processId === pid);
+      el.innerHTML = `${icon(ICONS.camSmall, 16)}写真 <b>${inP.length}</b> 枚・送る <b>${inP.filter((p) => p.sendPick).length}</b> 枚`;
+    });
+  };
 
   /* ③ 送る */
   const draft = draftOf(site);
@@ -2814,6 +2985,11 @@ async function renderReport() {
   moreBtn.hidden = !more.hidden;
   s3.appendChild(moreBtn);
   s3.appendChild(more);
+  const unsortedWarn = document.createElement("div");
+  unsortedWarn.id = "reportUnsortedWarn";
+  unsortedWarn.className = "warnText";
+  unsortedWarn.hidden = true;
+  s3.appendChild(unsortedWarn);
   const send = document.createElement("button");
   send.id = "reportSendBtn";
   send.type = "button";
@@ -2821,22 +2997,24 @@ async function renderReport() {
   send.addEventListener("click", sendToBox);
   s3.appendChild(send);
   const subs = document.createElement("div");
-  subs.className = "flowSubLinks";
+  subs.className = "flowSubBtns";
   const skip = document.createElement("button");
   skip.type = "button";
   skip.id = "reportSkipBtn";
-  skip.className = "linkBtn";
+  skip.className = "btn btnOutline flowSubBtn";
   skip.textContent = "今週は報告なし";
   skip.addEventListener("click", reportSkipWeek);
   const other = document.createElement("button");
   other.type = "button";
   other.id = "reportOtherBtn";
-  other.className = "linkBtn";
+  other.className = "btn btnOutline flowSubBtn";
   other.textContent = wk.state === "done" ? "報告済みの記録を見る・取り消す" : "ほかの記録のしかた";
   other.addEventListener("click", chooseReportedKind);
   subs.append(skip, other);
   s3.appendChild(subs);
   body.appendChild(s3);
+  drawSort();
+  drawProcs();
   updateCounts();
 
   if (reports.length) {
@@ -2867,41 +3045,6 @@ async function reportSkipWeek() {
 }
 
 
-function openProcessPicker() {
-  const site = currentSite();
-  if (!site) return;
-  const picked = new Set(site.processes);
-  openSheet("今回の工程を選ぶ（複数可）", (body, close) => {
-    PROCESSES.forEach((p) => {
-      const g = groupOfProcess(p.id);
-      if (g.cats[0] === p.id) {
-        const label = document.createElement("div");
-        label.className = "pickGroupLabel";
-        label.textContent = g.name;
-        body.appendChild(label);
-      }
-      const b = document.createElement("button");
-      b.className = "pickItem" + (picked.has(p.id) ? " picked" : "");
-      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}</span><span class="pickMark">${picked.has(p.id) ? icon(ICONS.check, 20) : ""}</span>`;
-      b.addEventListener("click", () => {
-        if (picked.has(p.id)) picked.delete(p.id);
-        else picked.add(p.id);
-        b.classList.toggle("picked", picked.has(p.id));
-        b.querySelector(".pickMark").innerHTML = picked.has(p.id) ? icon(ICONS.check, 20) : "";
-      });
-      body.appendChild(b);
-    });
-    body.appendChild(
-      sheetButton("決定", "btnPrimary btnLarge", async () => {
-        site.processes = PROCESSES.filter((p) => picked.has(p.id)).map((p) => p.id);
-        await dbPut("sites", site);
-        close();
-        renderReport();
-      })
-    );
-  });
-}
-
 async function removeProcess(pid, count) {
   const p = processOf(pid);
   const msg = count
@@ -2911,6 +3054,8 @@ async function removeProcess(pid, count) {
   const site = currentSite();
   site.processes = site.processes.filter((id) => id !== pid);
   await dbPut("sites", site);
+  if (getSetting(LAST_PROC_KEY) === pid) setSetting(LAST_PROC_KEY, ""); // 前回の工程として並び続けないように
+  if (reportSel) reportSel.extra.delete(pid);
   renderReport();
 }
 
@@ -2986,7 +3131,7 @@ function restoreDraftFromReport(site, r) {
   if (r.reportDraft) site.reportDraft = r.reportDraft;
 }
 /* ---------- 報告：写真を入れる（撮る・取り込む） ---------- */
-// 先に工程を選び、撮影メモを見ながらまとめて撮る・取り込む。工程はあとで写真ごとに選び直せる（写真の「︙」→「工程を変更」）。
+// 報告タブの①の中で完結する：先に工程（または「未振り分け」）を選び、撮影メモを見ながらまとめて撮る・取り込む。入れた写真は①の一覧で押して振り分け直せる。
 // 項目ページから開いた時は itemId を覚え、ここで撮った・取り込んだ報告写真にその項目を記録する（メールの材料で、写真がどの項目の場面か分かるように）
 const LAST_PROC_KEY = "genba-photo-last-proc"; // 前回、写真を入れた工程
 let reportItemId = null;
@@ -2994,16 +3139,9 @@ function reportItemFor(pid) {
   const it = reportItemId && manualMeta && manualMeta.items.find((x) => x.id === reportItemId);
   return it && it.cat === pid ? it : null; // 別の工程に切り替えた時は記録しない
 }
-let intake = null; // 写真を入れる途中の状態 { pid, files, cands, extra, mode }
-
-async function makeIntake({ pid = null, itemId = null, mode = "camera" } = {}) {
-  const site = currentSite();
-  const cands = site ? unreported(await getSitePhotos(site.id)) : [];
-  reportItemId = itemId;
-  const week = site ? weekProcessIds(site, cands) : [];
-  const first = [pid, getSetting(LAST_PROC_KEY), week[0]].find((id) => id && PROCESSES.some((p) => p.id === id)) || null;
-  return { pid: first, files: [], cands, extra: [], mode };
-}
+// 報告タブで選んでいる工程。pid：null＝まだ選んでいない／""＝未振り分け／"pXX"＝その工程。extra：項目ページなどから来て、チップに足した工程
+let reportSel = null;
+let libraryPid = null; // 「取り込む」を押した時に選んでいた工程（写真を選び終わったあとに使う）
 
 // v127（入れた写真は最初から送る）の前に入れて、まだ送っていない報告写真のうち、先週以降に撮ったものを「送る」にする（1回だけ）。
 // それより古い写真は、前のやり方で送らないと決めたものかもしれないので、そのまま
@@ -3017,7 +3155,7 @@ async function migrateSendPicks() {
   setSetting(FLAG, "1");
 }
 
-// 報告タブの「撮る」「取り込む」、項目ページの「報告写真」から。opts: { pid, itemId, mode: "camera"|"library" }
+// 項目ページの「報告写真」から。報告タブを開いて、その工程を選んだ状態にする（撮る・取り込むは報告タブの①で）。opts: { pid, itemId }
 async function openIntake(opts = {}) {
   const site = await refreshSites();
   if (!site) {
@@ -3025,148 +3163,35 @@ async function openIntake(opts = {}) {
     openSiteSwitcher();
     return;
   }
-  intake = await makeIntake(opts);
-  renderIntakeSheet();
+  reportItemId = opts.itemId || null;
+  if (!reportSel || reportSel.siteId !== site.id) reportSel = { siteId: site.id, pid: null, extra: new Set() };
+  if (opts.pid) {
+    reportSel.extra.add(opts.pid);
+    reportSel.pid = opts.pid;
+  }
+  goReport();
 }
 
-function renderIntakeSheet() {
-  const it = intake;
-  const site = currentSite();
-  if (!it || !site) return;
-  openSheet("写真を入れる", (body, close) => {
-    const lead = document.createElement("div");
-    lead.className = "psHint";
-    lead.textContent = "先に、どの工程の写真かを選びます。まとめて入れたあとでも、写真ごとに工程を選び直せます。";
-    body.appendChild(lead);
-    const label = document.createElement("div");
-    label.className = "pickGroupLabel";
-    label.textContent = "今週の工程";
-    body.appendChild(label);
-    const rows = [];
-    const dyn = document.createElement("div");
-    dyn.className = "intakeDyn";
-    const weekIds = weekProcessIds(site, it.cands);
-    const list = document.createElement("div");
-    list.className = "intakeList";
-    const more = document.createElement("div");
-    more.className = "intakeMore";
-    more.hidden = true;
-    const countOf = (id) => it.cands.filter((p) => p.processId === id).length;
-    const mkRow = (p) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "pickItem";
-      b.dataset.pid = p.id;
-      const n = countOf(p.id);
-      b.innerHTML = `<span><span class="processNo">${p.no}</span>${esc(p.name)}${n ? `<span class="mutedText">　写真${n}枚</span>` : ""}</span><span class="pickMark"></span>`;
-      b.addEventListener("click", () => {
-        it.pid = p.id;
-        if (!weekIds.includes(p.id) && !it.extra.includes(p.id)) it.extra.push(p.id);
-        more.hidden = true;
-        moreBtn.hidden = false;
-        fillList();
-        paint();
-      });
-      return b;
-    };
-    const fillList = () => {
-      list.innerHTML = "";
-      const ids = [...new Set([...weekIds, ...it.extra, ...(it.pid ? [it.pid] : [])])].sort((a, b) => processOf(a).no - processOf(b).no);
-      if (!ids.length) list.innerHTML = '<div class="hint">まだ今週の工程がありません。下の「ほかの工程を探す」から選んでください。</div>';
-      ids.forEach((id) => list.appendChild(mkRow(processOf(id))));
-    };
-    const moreBtn = sheetButton("ほかの工程を探す", "btnDashed", () => {
-      more.hidden = false;
-      moreBtn.hidden = true;
-    });
-    PROCESSES.forEach((p) => {
-      const g = groupOfProcess(p.id);
-      if (g.cats[0] === p.id) {
-        const gl = document.createElement("div");
-        gl.className = "pickGroupLabel";
-        gl.textContent = g.name;
-        more.appendChild(gl);
-      }
-      more.appendChild(mkRow(p));
-    });
-    body.appendChild(list);
-    body.appendChild(moreBtn);
-    body.appendChild(more);
-    body.appendChild(dyn);
-
-    function paint() {
-      [...list.querySelectorAll(".pickItem"), ...more.querySelectorAll(".pickItem")].forEach((b) => {
-        const on = b.dataset.pid === it.pid;
-        b.classList.toggle("picked", on);
-        b.querySelector(".pickMark").innerHTML = on ? icon(ICONS.check, 20) : "";
-      });
-      drawDyn();
+// ①の「＋ 工程を追加」：全工程から選んで、今週の工程に足す（選んだ工程が選択中になる）
+function addReportProcess() {
+  if (!currentSite()) return;
+  pickProcessSheet("今週の工程を追加", async (pid) => {
+    const site = currentSite();
+    if (!site) return;
+    const fresh = (await dbGet("sites", site.id)) || site;
+    if (!(fresh.processes || []).includes(pid)) {
+      fresh.processes = PROCESSES.filter((p) => p.id === pid || (fresh.processes || []).includes(p.id)).map((p) => p.id);
+      await dbPut("sites", fresh);
     }
-    function drawDyn() {
-      dyn.innerHTML = "";
-      if (!it.pid) {
-        dyn.innerHTML = '<div class="hint">工程を選ぶと、撮影メモと「撮影する」「写真を選ぶ」が出ます。</div>';
-        return;
-      }
-      const p = processOf(it.pid);
-      const name = shortProcessName(p);
-      const g = document.createElement("div");
-      g.className = "memoCard intakeGuide";
-      g.innerHTML =
-        `<div class="memoHead">${icon(ICONS.camSmall, 22)}${esc(name)}の撮影メモ</div>` +
-        `<ul class="memoList">${reportGuideList(p).map((x) => `<li>${icon(ICONS.check, 16, 2.6)}<span>${esc(x)}</span></li>`).join("")}</ul>` +
-        `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
-      dyn.appendChild(g);
-      const item = reportItemFor(it.pid);
-      if (item) {
-        const l = document.createElement("div");
-        l.className = "procHeroItem";
-        l.innerHTML = `項目「${esc(item.name)}」の写真として残します<button class="miniLink" type="button">外す</button>`;
-        l.querySelector(".miniLink").addEventListener("click", () => {
-          reportItemId = null;
-          drawDyn();
-        });
-        dyn.appendChild(l);
-      }
-      const picked = it.files.length > 0;
-      const cam = sheetButton("撮影する", picked || it.mode === "library" ? "btnSecondary" : "btnPrimary btnLarge", () => {
-        setSetting(LAST_PROC_KEY, it.pid);
-        close();
-        startCamera(it.pid);
-      });
-      const lib = sheetButton(picked ? "選び直す" : "写真を選ぶ（まとめて）", picked || it.mode === "camera" ? "btnSecondary" : "btnPrimary btnLarge", () => $("libraryInput").click());
-      if (picked) {
-        const n = it.files.length;
-        const sel = document.createElement("div");
-        sel.className = "summaryBox";
-        sel.textContent = `選んだ写真：${n}枚`;
-        dyn.appendChild(sel);
-        dyn.appendChild(sheetButton(`${name}に${n}枚入れる`, "btnPrimary btnLarge", () => commitIntake(close)));
-        dyn.appendChild(lib);
-        dyn.appendChild(cam);
-      } else {
-        dyn.appendChild(it.mode === "library" ? lib : cam);
-        dyn.appendChild(it.mode === "library" ? cam : lib);
-      }
-    }
-    fillList();
-    paint();
-    body.appendChild(
-      sheetButton("やめる", "btnText", () => {
-        it.files = [];
-        close();
-      })
-    );
+    if (reportSel && reportSel.siteId === site.id) reportSel.pid = pid;
+    await renderReport();
   });
 }
 
-// 選んだ写真を、選んだ工程に入れる（入れた写真は最初から「送る」）
-async function commitIntake(close) {
-  const it = intake;
-  if (!it || !it.pid || !it.files.length || !currentSiteId) return;
-  const { pid, files } = it;
-  close();
-  setSetting(LAST_PROC_KEY, pid);
+// 選んだ写真を、選んだ工程（""＝未振り分け）に入れる（入れた写真は最初から「送る」）
+async function importReportPhotos(files, pid) {
+  if (!files.length || pid === null || !currentSiteId) return;
+  if (pid) setSetting(LAST_PROC_KEY, pid);
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < files.length; i++) {
@@ -3184,8 +3209,7 @@ async function commitIntake(close) {
     }
   }
   setProcessing(false);
-  it.files = [];
-  toast(`「${shortProcessName(processOf(pid))}」に${ok}枚入れました` + (failed ? `（${failed}枚は読み込めませんでした）` : ""));
+  toast((pid ? `「${shortProcessName(processOf(pid))}」に` : "未振り分けで") + `${ok}枚入れました` + (failed ? `（${failed}枚は読み込めませんでした）` : ""));
   if (currentView === "reportView") renderReport();
 }
 
@@ -3349,6 +3373,12 @@ async function sendToBox() {
   const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const picks = sendPicks(all);
+  // 工程を選んでいない（未振り分けの）報告写真が残っていたら送らない（Box の報告は工程ごとに並ぶため）
+  const unsorted = cands.filter((p) => !isRecordPhoto(p) && !p.processId);
+  if (unsorted.length) {
+    alert(`まだ振り分けていない写真が${unsorted.length}枚あります。①で工程を選んでから送ってください`);
+    return;
+  }
   // 写真なしで送る（写真の用意が間に合わない週など）：工程の様子か、写真以外にやったこと・来週の予定のどれか1つは要る
   const textOnly = !picks.length;
   if (textOnly) {
@@ -3384,7 +3414,7 @@ async function sendToBox() {
     await dbPut("sites", site);
   }
   const otherWeeks = allReports.filter((r) => r.kind && r.week >= addDays(todayKey(), -70)).map((r) => ({ week: r.week, kind: r.kind, memo: r.memo || "", at: r.createdAt }));
-  const procIds = new Set(cands.map((p) => p.processId));
+  const procIds = new Set(cands.map((p) => p.processId).filter(Boolean));
   site.processes.forEach((id) => procIds.add(id));
   const processes = [...procIds]
     .map(processOf)
@@ -7082,13 +7112,13 @@ const TOUR_STEPS = [
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="manual"]'),
-    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。週の報告で送る報告写真は、「報告」タブの「撮る」「取り込む」から入れます（お客様メールにも使う写真と、上司だけに見せる写真を分けられます）。",
+    text: "品質写真の撮り方です。下の「工程」から項目を開くと「チェックポイント」が出ます。「写真要」のチェックの横にあるカメラで撮ると、写真とチェックが一緒に残ります。週の報告で送る報告写真は、「報告」タブの①で、工程を選んで「撮る」「取り込む」から入れます（お客様メールにも使う写真と、上司だけに見せる写真を分けられます）。",
     next: true,
   },
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="report"]'),
-    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。写真を入れて「N 枚を送る」を押し、確認の画面で「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
+    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。「写真を入れる」では、先に今週の工程を選び、撮る・取り込む（分からない写真は「未振り分け」で入れて、あとで写真を押して振り分け）。そのあと「N 枚を送る」を押し、確認の画面で「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
     next: true,
     nextLabel: "完了",
   },
@@ -7536,7 +7566,10 @@ function init() {
       if (b.dataset.tab === "home") goDash();
       if (b.dataset.tab === "manual") goManual();
       if (b.dataset.tab === "photos") goAlbum();
-      if (b.dataset.tab === "report") goReport();
+      if (b.dataset.tab === "report") {
+        reportItemId = null; // 項目ページから来た時の印は、タブから開き直した時には持ち越さない
+        goReport();
+      }
     })
   );
 
