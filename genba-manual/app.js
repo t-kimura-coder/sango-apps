@@ -632,7 +632,10 @@ function chosenWeek(site, reports, cands, today = todayKey()) {
   const opts = sendWeekOptions(site, reports, cands, today);
   const saved = getSetting(sendWeekKey(site.id));
   if (saved && opts.includes(saved)) return saved;
-  return site.redoWeek && opts.includes(site.redoWeek) ? site.redoWeek : weekMon(today);
+  if (site.redoWeek && opts.includes(site.redoWeek)) return site.redoWeek;
+  // 選んでいない時は、報告の週の決まりどおり（月・火曜で先週が未報告なら先週。金曜以降は今週）
+  const due = reportWeek(site, reports, today).mon;
+  return opts.includes(due) ? due : weekMon(today);
 }
 function setChosenWeek(siteId, mon) {
   setSetting(sendWeekKey(siteId), mon || "");
