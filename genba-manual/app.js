@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 134;
+const APP_VERSION = 135;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-06", type: "fix", text: "報告まわりの細かい不具合を直しました：振り分けていない写真が「報告済みにする」「アプリ外で報告」で報告済みになることがあった、写真なしで送った報告が過去の報告で「写真削除済み」と出て取り消せなかった、お客様名の欄に「必須」と出ていた、①で写真を振り分けると②で打っている途中のキーボードが閉じた、別の現場に切り替えても前の現場の工程が選ばれていた、別の端末で入れたお客様名が届かなかった" },
   { date: "2026-11-06", type: "feature", text: "項目のチェックが全部済んだ時、チェックポイントの上に緑の「COMPLETE！」の帯が出るようにしました。項目のボタンも済んだものは緑になり、工程の項目が全部済むと工程名にも ✓ が付きます" },
   { date: "2026-11-06", type: "feature", text: "報告タブの「① 写真を入れる」を作り直しました。①の一番上に今週の工程のボタンが並び、工程を選んで「撮る」「取り込む」と、その工程に入ります。工程が分からない写真は「未振り分け」で入れておけます。その下に今週入れた写真が全部並ぶので、工程のボタンを選んで写真を押すと振り分けられます（右上の虫めがねで拡大）。未振り分けの写真が残っていると送れません。一番下の「今週は報告なし」「ほかの記録のしかた」は、押せるボタンの見た目にしました" },
   { date: "2026-11-06", type: "feature", text: "写真が無い週も、週の報告を送れるようにしました。報告タブで、工程の様子（完了・作業中などと一言）か来週の予定を1つ書いて「写真なしで送る」を押します。写真の用意が間に合わない時に、先に文面だけ送れます（写真はふだんどおり入れるのが基本です）" },
@@ -1703,7 +1704,7 @@ function editSiteSheet(site) {
       noHint.textContent = "経理で使っている番号";
       body.appendChild(noHint);
       // お客様への報告メールの宛名の目安（名前だけ。アドレス・電話は入れない）。任意
-      const custIn = field("お客様名（メールの宛名）", site && site.customerName, "例：山田様／○○建設 △△様", "text");
+      const custIn = field("お客様名（メールの宛名）", site && site.customerName, "例：山田様／○○建設 △△様", "text", "任意");
       const custHint = document.createElement("div");
       custHint.className = "mutedText";
       custHint.textContent = "任意。お客様への報告メールの宛名に使います（名前だけ。メールアドレスや電話は書かない）";
@@ -2582,7 +2583,7 @@ async function undoLastShot() {
 function pickOtherProcess() {
   if (!currentSite()) return;
   pickProcessSheet("どの工程を撮りますか", (pid) => {
-    setSetting(LAST_PROC_KEY, pid);
+    setSetting(lastProcKey(), pid);
     startCamera(pid);
   });
 }
@@ -2673,14 +2674,14 @@ async function renderReport() {
   const sel = reportSel;
   // 並べる工程：今週の写真がある工程・「工程を追加」で入れた工程・前回の工程・項目ページから来た工程
   const chipIds = () => {
-    const last = getSetting(LAST_PROC_KEY);
+    const last = getSetting(lastProcKey());
     return [...new Set([...weekProcessIds(site, cands), ...(PROCESS_MAP[last] ? [last] : []), ...sel.extra])].sort((a, b) => processOf(a).no - processOf(b).no);
   };
   const ensureSel = () => {
     const ids = chipIds();
-    if (sel.pid === UNSORTED && ids.length) return;
+    if (sel.pid === UNSORTED && (ids.length || countIn(UNSORTED))) return;
     if (sel.pid && ids.includes(sel.pid)) return;
-    const last = getSetting(LAST_PROC_KEY);
+    const last = getSetting(lastProcKey());
     sel.pid = ids.includes(last) ? last : ids.length ? ids[0] : null;
   };
   const sortList = () => cands.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : a.id < b.id ? -1 : 1));
@@ -2713,7 +2714,7 @@ async function renderReport() {
   const gridEl = s1.querySelector("#sortGrid");
   shootBtn.addEventListener("click", () => {
     if (sel.pid === null) return toast("先に今週の工程を選んでください");
-    if (sel.pid) setSetting(LAST_PROC_KEY, sel.pid);
+    if (sel.pid) setSetting(lastProcKey(), sel.pid);
     startCamera(sel.pid); // 「未振り分け」を選んでいる時は、工程なしで撮る
   });
   importBtn.addEventListener("click", () => {
@@ -2776,7 +2777,8 @@ async function renderReport() {
       const n = countIn(pid);
       mk(pid, `<span class="processNo">${p.no}</span>${esc(shortProcessName(p))}${n ? `<span class="chipCount">${n}</span>` : ""}`, "");
     });
-    if (ids.length) {
+    // 未振り分けの写真が残っていれば、工程を全部外しても「未振り分け」は出しておく（写真だけ残って選べなくならないように）
+    if (ids.length || countIn(UNSORTED)) {
       const n = countIn(UNSORTED);
       mk(UNSORTED, `未振り分け${n ? `<span class="chipCount">${n}</span>` : ""}`, " unsorted");
     }
@@ -2796,7 +2798,9 @@ async function renderReport() {
     retagFields(ph, pid);
     paintCell(cell, ph); // 先に見た目を変える（続けて押しても追いつくように）
     updateCounts();
-    drawProcs();
+    // ②で一言を打っている途中は②を作り直さない（キーボードが閉じるため）。②の写真の並びは次に開いた時にそろう
+    const typing = document.activeElement && procsEl.contains(document.activeElement) && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+    if (!typing) drawProcs();
     await dbPut("photos", ph);
   };
   const drawSort = () => {
@@ -3027,7 +3031,7 @@ async function renderReport() {
       const row = document.createElement("button");
       row.className = "pastReportRow";
       const kindLabel = r.kind === "external" ? "アプリ外で報告" : r.kind === "skip" ? `報告なし${r.memo ? "（" + esc(r.memo) + "）" : ""}` : "";
-      row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${kindLabel ? `<span class="kindTag">${kindLabel}</span>` : ""}${n ? n + "枚" : kindLabel ? "" : "写真削除済み"}</span>`;
+      row.innerHTML = `<span>${fmtDate(r.start)}〜${fmtDate(r.end)}</span><span class="mutedText">${kindLabel ? `<span class="kindTag">${kindLabel}</span>` : ""}${n ? n + "枚" : kindLabel ? "" : r.textOnly ? "写真なし" : "写真削除済み"}</span>`;
       // アプリ外・報告なしで写真の無い記録は、押すと取り消せる
       row.addEventListener("click", () => (r.kind && !n ? cancelWeekOther(r) : openReportPast(r.id)));
       past.appendChild(row);
@@ -3055,7 +3059,7 @@ async function removeProcess(pid, count) {
   const site = currentSite();
   site.processes = site.processes.filter((id) => id !== pid);
   await dbPut("sites", site);
-  if (getSetting(LAST_PROC_KEY) === pid) setSetting(LAST_PROC_KEY, ""); // 前回の工程として並び続けないように
+  if (getSetting(lastProcKey()) === pid) setSetting(lastProcKey(), ""); // 前回の工程として並び続けないように
   if (reportSel) reportSel.extra.delete(pid);
   renderReport();
 }
@@ -3135,6 +3139,10 @@ function restoreDraftFromReport(site, r) {
 // 報告タブの①の中で完結する：先に工程（または「未振り分け」）を選び、撮影メモを見ながらまとめて撮る・取り込む。入れた写真は①の一覧で押して振り分け直せる。
 // 項目ページから開いた時は itemId を覚え、ここで撮った・取り込んだ報告写真にその項目を記録する（メールの材料で、写真がどの項目の場面か分かるように）
 const LAST_PROC_KEY = "genba-photo-last-proc"; // 前回、写真を入れた工程
+// 前回の工程は現場ごとに覚える（別の現場に切り替えた時に、前の現場の工程が選ばれないように）
+function lastProcKey() {
+  return `${LAST_PROC_KEY}:${currentSiteId || ""}`;
+}
 let reportItemId = null;
 function reportItemFor(pid) {
   const it = reportItemId && manualMeta && manualMeta.items.find((x) => x.id === reportItemId);
@@ -3192,7 +3200,7 @@ function addReportProcess() {
 // 選んだ写真を、選んだ工程（""＝未振り分け）に入れる（入れた写真は最初から「送る」）
 async function importReportPhotos(files, pid) {
   if (!files.length || pid === null || !currentSiteId) return;
-  if (pid) setSetting(LAST_PROC_KEY, pid);
+  if (pid) setSetting(lastProcKey(), pid);
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < files.length; i++) {
@@ -3248,7 +3256,7 @@ async function renderReportPast() {
   $("pastCustShareBtn").hidden = !list.some(isCustomerPhoto);
   $("deleteReportPhotosBtn").hidden = !list.length;
   const latestRep = (await dbGetAll("reports", "siteId", site.id)).filter((x) => !x.kind).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-  $("undoReportBtn").hidden = !list.length || !!r.kind || !latestRep || latestRep.id !== r.id;
+  $("undoReportBtn").hidden = (!list.length && !r.textOnly) || !!r.kind || !latestRep || latestRep.id !== r.id; // 写真なしで送った報告も取り消せる
 }
 
 async function deleteReportPhotos() {
@@ -3375,7 +3383,7 @@ async function sendToBox() {
   const cands = unreported(all);
   const picks = sendPicks(all);
   // 工程を選んでいない（未振り分けの）報告写真が残っていたら送らない（Box の報告は工程ごとに並ぶため）
-  const unsorted = cands.filter((p) => !isRecordPhoto(p) && !p.processId);
+  const unsorted = cands.filter((p) => !isRecordPhoto(p) && !p.processId && p.sendPick !== false);
   if (unsorted.length) {
     alert(`まだ振り分けていない写真が${unsorted.length}枚あります。①で工程を選んでから送ってください`);
     return;
@@ -3566,7 +3574,7 @@ async function sendToBox() {
 /* ---------- アプリ外で報告した週・報告しない週 ----------
    写真を別の方法で送った週や、自分は担当しない週（もう一人が報告する等）を「済み」にして、未送信・遅れに出さない */
 function markWeekOther(site, wk, kind, cands) {
-  const photosLeft = cands.filter((p) => p.dateKey <= wk.sat);
+  const photosLeft = cands.filter((p) => p.dateKey <= wk.sat && (isRecordPhoto(p) || p.processId)); // 未振り分けは報告済みにしない
   openSheet(kind === "external" ? "アプリ外で報告済みにする" : "今週は報告なしにする", (body, close) => {
     const note = document.createElement("div");
     note.className = "mutedText";
@@ -3751,17 +3759,25 @@ async function markReported(memo = "", opts = null) {
   const all = await getSitePhotos(site.id);
   const reports = await dbGetAll("reports", "siteId", site.id);
   const ids = opts && opts.photoIds ? new Set(opts.photoIds) : null;
-  const targets = ids ? all.filter((p) => ids.has(p.id) && !p.reportId) : sendPicks(all);
+  // 未振り分けの報告写真は、工程が無いまま報告済みにしない（①で振り分けてから）
+  const sorted = (p) => isRecordPhoto(p) || !!p.processId;
+  const picked = ids ? all.filter((p) => ids.has(p.id) && !p.reportId) : sendPicks(all);
+  const targets = picked.filter(sorted);
+  if (!ids && picked.length > targets.length) {
+    alert(`まだ振り分けていない写真が${picked.length - targets.length}枚あります。報告タブの①で工程を選んでから、報告済みにしてください`);
+    return;
+  }
   if (!targets.length && !(opts && opts.textOnly)) {
     toast("「送る写真」に選んだ写真がありません");
     return;
   }
   const wk = opts && opts.week ? { mon: opts.week, sat: addDays(opts.week, 5) } : tagWeek(site, reports);
   const dates = targets.map((p) => p.dateKey).sort();
-  const start = opts && opts.start ? opts.start : dates[0] < wk.mon ? dates[0] : wk.mon;
-  let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].sort().pop();
+  const start = opts && opts.start ? opts.start : dates.length && dates[0] < wk.mon ? dates[0] : wk.mon; // 写真が無い時は週の初めから
+  let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].filter(Boolean).sort().pop();
   if (end > todayKey()) end = todayKey();
   const report = { id: newId(), siteId: site.id, start, end, createdAt: new Date().toISOString(), memo, week: wk.mon, sentReportId: site.draftReportId || "" };
+  if (opts && opts.textOnly && !targets.length) report.textOnly = true; // 写真なしで送った報告（過去の報告で「写真なし」と出す・取り消せる）
   moveDraftToReport(site, report);
   // 「アプリから送った」で報告済みにした時も、送った写真が全部そろっていれば送った時の名前を残す（取りやめた送信の名前が混ざる時は消す）
   const sentNow = !!(opts && opts.photoIds) || targets.every((p) => p.sentName);
@@ -5779,6 +5795,13 @@ async function syncStates(manual = false) {
           const fresh = (await dbGet("sites", site.id)) || site; // 通信の間に書いた書きかけなどを、古い site で上書きしない
           const forgot = fresh.forgotWeeks || [];
           const weeks = [...new Set([...(st.weeks || []), ...(st.reports || []).map((r) => r.week)].filter((w) => w && !forgot.includes(w)))].sort();
+          // お客様名は、この端末で空の時だけ別の端末の値を入れる（この端末で入れた名前は上書きしない）
+          const cn = (st.site && st.site.customerName) || "";
+          if (cn && !fresh.customerName) {
+            fresh.customerName = cn;
+            await dbPut("sites", fresh);
+            merged++;
+          }
           if (weeks.join() !== (fresh.remoteWeeks || []).join()) {
             fresh.remoteWeeks = weeks;
             await dbPut("sites", fresh);
