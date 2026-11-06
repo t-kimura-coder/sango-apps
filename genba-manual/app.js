@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 131;
+const APP_VERSION = 132;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-06", type: "feature", text: "写真が無い週も、週の報告を送れるようにしました。報告タブで、工程の様子（完了・作業中などと一言）か来週の予定を1つ書いて「写真なしで送る」を押します。写真の用意が間に合わない時に、先に文面だけ送れます（写真はふだんどおり入れるのが基本です）" },
   { date: "2026-11-04", type: "feature", text: "現場の登録・変更に「お客様名（メールの宛名）」を足しました（任意）。入れておくと、お客様への報告メールの宛名に使われます。名前だけを入れてください（メールアドレスや電話は書かない）。今の現場は「現場の管理」の「変更」から入れられます" },
   { date: "2026-11-02", type: "fix", text: "報告タブの写真で、「お客様にも」の札が途中で改行されないようにしました。写真の右上の四角（押しても意味のない表示）をなくしました。送らない写真は、押すと薄くなって「送らない」と出ます" },
   { date: "2026-11-01", type: "fix", text: "新しい報告タブの細かい不具合を直しました：更新前に入れた今週の写真が「送らない」になっていた、「アプリ外で報告」を取り消すと写真が送れなかった、取り消した週が報告済みのまま残ることがあった、報告を書いている途中に画面が作り直されてキーボードが閉じることがあった" },
@@ -2677,16 +2678,13 @@ async function renderReport() {
   const statEls = [];
   const updateCounts = () => {
     const picks = cands.filter((p) => p.sendPick).length;
-    $("reportPhotoStat").innerHTML = cands.length ? `入れた写真 <b>${cands.length}</b> 枚・送る <b>${picks}</b> 枚` : "まだ写真がありません。「撮る」か「取り込む」から入れてください。";
+    $("reportPhotoStat").innerHTML = cands.length ? `入れた写真 <b>${cands.length}</b> 枚・送る <b>${picks}</b> 枚` : "まだ写真がありません。「撮る」か「取り込む」から入れてください。写真が無い週は、工程の様子か来週の予定を書けば、写真なしでも送れます。";
     statEls.forEach(({ pid, el }) => {
       const inP = cands.filter((p) => p.processId === pid);
       el.innerHTML = `${icon(ICONS.camSmall, 16)}写真 <b>${inP.length}</b> 枚・送る <b>${inP.filter((p) => p.sendPick).length}</b> 枚`;
     });
     const btn = $("reportSendBtn");
-    if (btn) {
-      btn.disabled = picks === 0;
-      btn.textContent = picks ? `${picks} 枚を送る` : "送る写真がありません";
-    }
+    if (btn) btn.textContent = picks ? `${picks} 枚を送る` : "写真なしで送る"; // 写真が無い週も、工程の様子か来週の予定を書けば送れる
   };
   const pids = weekProcessIds(site, cands);
   if (!pids.length) {
@@ -3351,9 +3349,16 @@ async function sendToBox() {
   const all = await getSitePhotos(site.id);
   const cands = unreported(all);
   const picks = sendPicks(all);
-  if (!picks.length) {
-    toast("送る写真がありません。報告タブの「撮る」「取り込む」から写真を入れてください");
-    return;
+  // 写真なしで送る（写真の用意が間に合わない週など）：工程の様子か、写真以外にやったこと・来週の予定のどれか1つは要る
+  const textOnly = !picks.length;
+  if (textOnly) {
+    const d = site.reportDraft || {};
+    const wrote = Object.values(site.procNotes || {}).some((v) => v && (v.status || (v.text || "").trim())) || (d.next || "").trim() || (d.doneOther || "").trim();
+    if (!wrote) {
+      toast("写真なしで送る時は、工程の様子（完了・作業中など）か来週の予定を、1つは書いてください");
+      return;
+    }
+    if (!confirm("写真なしで送りますか？\n（工程の様子と来週の予定だけを報告として送ります）")) return;
   }
   const email = getBoxEmail();
   if (!email) {
@@ -3361,7 +3366,7 @@ async function sendToBox() {
     return;
   }
   const entries = photoFiles(site, picks);
-  if (!entries.length) {
+  if (!textOnly && !entries.length) {
     toast("送る写真が片付け済みのため、送れる写真がありません");
     return;
   }
@@ -3371,7 +3376,7 @@ async function sendToBox() {
   const start = pStart < wk.mon ? pStart : wk.mon;
   // 期間の終わり：対象の週の土曜と、送る写真のいちばん新しい日のうち遅い方（今日より先にはしない）
   const latestPick = picks.map((p) => p.dateKey).sort().pop();
-  let end = [wk.sat, latestPick].sort().pop();
+  let end = [wk.sat, latestPick].filter(Boolean).sort().pop();
   if (end > todayKey()) end = todayKey();
   // iPhone は「送信する」を押した直後でないと共有画面を開かせないので、読み込みや保存はここで先に済ませる
   if (!site.draftReportId) {
@@ -3518,7 +3523,7 @@ async function sendToBox() {
         await dbPutMany("photos", sentPhotos);
         close();
         const memoText = (dr.memo || "").trim();
-        if (confirmDelivered(res, "OK で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon });
+        if (confirmDelivered(res, "OK で、送った写真を報告済みにします。")) markReported(memoText, { photoIds: picks.map((p) => p.id), start, end, week: wk.mon, textOnly });
         else toast(res.how === "saved" ? "報告済みにはしていません。保存先を確かめて、よければ報告タブの「ほかの記録のしかた」から報告済みにしてください" : "報告済みにはしていません。送れたら報告タブの「ほかの記録のしかた」から報告済みにしてください");
       })
     );
@@ -3716,7 +3721,7 @@ async function markReported(memo = "", opts = null) {
   const reports = await dbGetAll("reports", "siteId", site.id);
   const ids = opts && opts.photoIds ? new Set(opts.photoIds) : null;
   const targets = ids ? all.filter((p) => ids.has(p.id) && !p.reportId) : sendPicks(all);
-  if (!targets.length) {
+  if (!targets.length && !(opts && opts.textOnly)) {
     toast("「送る写真」に選んだ写真がありません");
     return;
   }
