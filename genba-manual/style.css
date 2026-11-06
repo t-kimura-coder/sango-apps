@@ -1122,6 +1122,11 @@ img.imgBroken { visibility: hidden; }
 /* 完了の表示 */
 #checkProgress.complete, .groupDone, .reqDone, .statPct.done { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 12px; background: var(--color-ok-soft); color: var(--color-ok-text); font-weight: 800; white-space: nowrap; }
 .groupDone { font-size: 11px; }
+.checkDoneBanner { display: flex; align-items: center; gap: 8px; margin: 0 0 var(--space-sm); padding: 10px 14px; border-radius: 12px; background: var(--color-ok-soft); border: 1.5px solid var(--color-ok-text); color: var(--color-ok-text); font-size: var(--fs-sm); }
+.checkDoneBanner b { font-size: var(--fs-md); letter-spacing: 0.04em; }
+.checkDoneBanner[hidden] { display: none; }
+.itemChip.done { border-color: var(--color-ok-text); background: var(--color-ok-soft); }
+.stripCat.done { color: var(--color-ok-text); font-weight: 700; }
 #checkProgress.complete { padding: 2px 6px; gap: 2px; }
 .secHead .secRight:has(#checkProgress.complete) { gap: 4px; }
 .secHead .secRight:has(#checkProgress.complete) .miniBtn { padding: 0 10px; }

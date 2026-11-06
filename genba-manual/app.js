@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 133;
+const APP_VERSION = 134;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-06", type: "feature", text: "項目のチェックが全部済んだ時、チェックポイントの上に緑の「COMPLETE！」の帯が出るようにしました。項目のボタンも済んだものは緑になり、工程の項目が全部済むと工程名にも ✓ が付きます" },
   { date: "2026-11-06", type: "feature", text: "報告タブの「① 写真を入れる」を作り直しました。①の一番上に今週の工程のボタンが並び、工程を選んで「撮る」「取り込む」と、その工程に入ります。工程が分からない写真は「未振り分け」で入れておけます。その下に今週入れた写真が全部並ぶので、工程のボタンを選んで写真を押すと振り分けられます（右上の虫めがねで拡大）。未振り分けの写真が残っていると送れません。一番下の「今週は報告なし」「ほかの記録のしかた」は、押せるボタンの見た目にしました" },
   { date: "2026-11-06", type: "feature", text: "写真が無い週も、週の報告を送れるようにしました。報告タブで、工程の様子（完了・作業中などと一言）か来週の予定を1つ書いて「写真なしで送る」を押します。写真の用意が間に合わない時に、先に文面だけ送れます（写真はふだんどおり入れるのが基本です）" },
   { date: "2026-11-04", type: "feature", text: "現場の登録・変更に「お客様名（メールの宛名）」を足しました（任意）。入れておくと、お客様への報告メールの宛名に使われます。名前だけを入れてください（メールアドレスや電話は書かない）。今の現場は「現場の管理」の「変更」から入れられます" },
@@ -4058,6 +4059,7 @@ function setCheckProg(it) {
   if (!prog) return;
   prog.innerHTML = checkProgHtml(it);
   prog.classList.toggle("complete", itemDone(it));
+  if ($("checkDoneBanner")) $("checkDoneBanner").hidden = !itemDone(it);
 }
 // チェックを付けて全部済んだ瞬間に知らせる
 function toastIfCompleted(it, wasDone) {
@@ -4127,8 +4129,11 @@ function renderItemStrip(scrollToActive = true) {
     const g = groupOf(currentGroupId);
     if (g.cats.length > 1 && it.cat !== lastCat) {
       const label = document.createElement("span");
-      label.className = "stripCat";
-      label.textContent = processOf(it.cat).short;
+      // その工程の項目が全部済んだら、工程名にも ✓（該当なしの項目は数えない）
+      const inCat = groupItems.filter((x) => x.cat === it.cat && !itemProgress(x).na);
+      const catDone = inCat.length > 0 && inCat.every(itemDone);
+      label.className = "stripCat" + (catDone ? " done" : "");
+      label.textContent = (catDone ? "✓ " : "") + processOf(it.cat).short;
       strip.appendChild(label);
     }
     lastCat = it.cat;
@@ -4275,6 +4280,8 @@ async function renderItem() {
         `<div class="secHead">${icon(ICONS.checkSquare, 22)}チェックポイント<span class="secRight">` +
         (tx.checks.length ? `<span id="checkProgress"${itemDone(it) ? ' class="complete"' : ""}>${checkProgHtml(it)}</span>` : "") +
         `<button class="miniBtn" data-go="docs">原本を見る${icon(ICONS.chevron, 14)}</button></span></div>`;
+      // チェックが全部済んだら、一覧の上にずっと出す（小さな「完了」だけだと気づきにくいため）
+      if (tx.checks.length) html += `<div id="checkDoneBanner" class="checkDoneBanner"${itemDone(it) ? "" : " hidden"}>${icon(ICONS.check, 18, 3.4)}<b>COMPLETE！</b><span>この項目のチェックはすべて済みです</span></div>`;
       html += tx.checks.length
         ? `<div class="checkList">${tx.checks.map((c) => checkRowHtml("checks", c, rec, it)).join("")}</div>`
         : currentSiteId && !rec.na
