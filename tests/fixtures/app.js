@@ -52,9 +52,9 @@ async function addSite(page, name, koujiNo, customerName = "") {
 }
 
 // 写真を1枚足す（カメラの代わりに、画面の中で色を塗った絵を作って、アプリと同じ作り方で保存する）
-async function addPhoto(page, { processId, itemId = "", custOff = false, sendPick = true, color = "#888" }) {
+async function addPhoto(page, { processId, itemId = "", custOff = false, sendPick = true, color = "#888", daysAgo = 0 }) {
   return page.evaluate(
-    async ({ processId, itemId, custOff, sendPick, color }) => {
+    async ({ processId, itemId, custOff, sendPick, color, daysAgo }) => {
       const c = document.createElement("canvas");
       c.width = 64;
       c.height = 48;
@@ -62,11 +62,11 @@ async function addPhoto(page, { processId, itemId = "", custOff = false, sendPic
       g.fillStyle = color;
       g.fillRect(0, 0, 64, 48);
       const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.9));
-      const rec = await makePhotoRecord(new File([blob], "test.jpg", { type: "image/jpeg" }), currentSiteId, processId, new Date(), { itemId, custOff, sendPick });
+      const rec = await makePhotoRecord(new File([blob], "test.jpg", { type: "image/jpeg" }), currentSiteId, processId, new Date(Date.now() - daysAgo * 864e5), { itemId, custOff, sendPick });
       await dbPut("photos", rec);
       return rec.id;
     },
-    { processId, itemId, custOff, sendPick, color }
+    { processId, itemId, custOff, sendPick, color, daysAgo }
   );
 }
 

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 135;
+const APP_VERSION = 136;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-07", type: "feature", text: "報告タブの「① 写真を入れる」を見やすくしました。「撮る」「取り込む」が一番上になり、工程を選ばなくても押せます（選んでいない時は「未振り分け」に入ります。写真を先に入れて、あとで振り分けるのが基本です）。その下の「＋ 工程を追加」のすぐ下に、工程のボタンと写真の一覧が続けて並びます。撮影メモは「撮影メモ」の1行にたたみました（押すと開き、開け閉めは次も覚えています）。また、先週の分をまだ送っていない時は、③に「どの週の報告として送りますか」が出ます。送る週（今週・先週…）を選ぶと、その週の写真だけが出て、選んだ週の報告として送れます。前の週の写真は「前の週の写真」にたたんであり、「この週の報告に入れる」で今選んでいる週に入れることもできます。未報告の週が無い時は、今までどおりです" },
   { date: "2026-11-06", type: "fix", text: "報告まわりの細かい不具合を直しました：振り分けていない写真が「報告済みにする」「アプリ外で報告」で報告済みになることがあった、写真なしで送った報告が過去の報告で「写真削除済み」と出て取り消せなかった、お客様名の欄に「必須」と出ていた、①で写真を振り分けると②で打っている途中のキーボードが閉じた、別の現場に切り替えても前の現場の工程が選ばれていた、別の端末で入れたお客様名が届かなかった" },
   { date: "2026-11-06", type: "feature", text: "項目のチェックが全部済んだ時、チェックポイントの上に緑の「COMPLETE！」の帯が出るようにしました。項目のボタンも済んだものは緑になり、工程の項目が全部済むと工程名にも ✓ が付きます" },
   { date: "2026-11-06", type: "feature", text: "報告タブの「① 写真を入れる」を作り直しました。①の一番上に今週の工程のボタンが並び、工程を選んで「撮る」「取り込む」と、その工程に入ります。工程が分からない写真は「未振り分け」で入れておけます。その下に今週入れた写真が全部並ぶので、工程のボタンを選んで写真を押すと振り分けられます（右上の虫めがねで拡大）。未振り分けの写真が残っていると送れません。一番下の「今週は報告なし」「ほかの記録のしかた」は、押せるボタンの見た目にしました" },
@@ -541,17 +542,6 @@ function unreported(photos) {
   return photos.filter((p) => !p.reportId && !p.imageRemoved && (!isRecordPhoto(p) || p.forReport));
 }
 
-// 今回の報告期間の開始日 = 前回報告の終了日の翌日
-// （初回は現場登録日。登録日より前の写真を取り込んだ場合はその日付まで遡る）
-function periodStart(site, currentPhotos) {
-  let start = site.lastReportEnd ? addDays(site.lastReportEnd, 1) : toDateKey(new Date(site.createdAt));
-  currentPhotos.forEach((p) => {
-    // 「報告に使う」にした古い品質写真で期間が遡らないよう、期間の計算は報告写真だけで行う
-    if (!isRecordPhoto(p) && p.dateKey < start) start = p.dateKey;
-  });
-  return start;
-}
-
 /* ---------- 報告の週 ----------
    工事は月〜土を1週とし（日曜は終わった週の続き）、その週の報告は金曜から翌週の月曜まで（遅くとも火曜）に送る。
    月・火曜は、先週の報告がまだなら先週を対象にする。週の報告は「その週の金曜以降、次の週の金曜より前に報告済みにした」ことで済みとする */
@@ -604,15 +594,59 @@ function tagWeek(site, reports, today = todayKey()) {
   return { mon, sat: addDays(mon, 5) };
 }
 
-function reportWeek(site, reports, today = todayKey()) {
+/* ---------- 送る週を選ぶ ----------
+   未報告がたまった時に「先週分」を先週の報告として送れるように、③で送る週を選ぶ。
+   写真の「報告の週」＝「この週の報告に入れる」で付けた印（sendWeek）、無ければ撮った日の週（月〜土、日曜は前の月曜の週）。
+   報告タブの一覧・送る写真は、選んだ週の写真だけ。選んだ週は現場ごとに覚え、送ったら今週に戻す */
+const SENDWEEK_KEY = "genba-photo-sendweek";
+const sendWeekKey = (siteId) => `${SENDWEEK_KEY}:${siteId}`;
+function photoWeek(p) {
+  return p.sendWeek || weekMon(p.dateKey || todayKey());
+}
+function weekRangeText(mon) {
+  return `${fmtDate(mon)}〜${fmtDate(addDays(mon, 5))}`;
+}
+// 「今週」「先週」「3週前」
+function weekWord(mon, today = todayKey()) {
+  const n = Math.round(daysBetween(mon, weekMon(today)) / 7);
+  return n <= 0 ? "今週" : n === 1 ? "先週" : `${n}週前`;
+}
+// 送る週に選べる週（新しい順）：今週・報告がまだで休工でもない週・まだ報告していない写真がある週（今週より前）
+function sendWeekOptions(site, reports, cands, today = todayKey()) {
+  const isReported = weekReportedFn(reports, site.remoteWeeks);
+  const thisMon = weekMon(today);
+  const created = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
+  const startMon = created > WEEK_RULE_START ? created : WEEK_RULE_START;
+  const set = new Set([thisMon]);
+  for (let m = addDays(thisMon, -7), n = 0; m >= startMon && n < 12; m = addDays(m, -7), n++) {
+    if (!isReported(m) && !pausedOn(site, addDays(m, 4))) set.add(m);
+  }
+  cands.forEach((p) => {
+    if (photoWeek(p) < thisMon) set.add(photoWeek(p));
+  });
+  if (site.redoWeek) set.add(site.redoWeek);
+  return [...set].sort().reverse();
+}
+// 今、送る週として選んでいる週（覚えた週が選べなくなっていたら、取り消した週の送り直し→今週）
+function chosenWeek(site, reports, cands, today = todayKey()) {
+  const opts = sendWeekOptions(site, reports, cands, today);
+  const saved = getSetting(sendWeekKey(site.id));
+  if (saved && opts.includes(saved)) return saved;
+  return site.redoWeek && opts.includes(site.redoWeek) ? site.redoWeek : weekMon(today);
+}
+function setChosenWeek(siteId, mon) {
+  setSetting(sendWeekKey(siteId), mon || "");
+}
+
+function reportWeek(site, reports, today = todayKey(), forMon = "") {
   const isReported = weekReportedFn(reports, site.remoteWeeks);
   const thisMon = weekMon(today);
   const prevMon = addDays(thisMon, -7);
   const created = weekMon(toDateKey(new Date(site.createdAt || Date.now())));
   const startMon = created > WEEK_RULE_START ? created : WEEK_RULE_START;
-  let mon = thisMon;
-  if (daysBetween(thisMon, today) <= 1 && prevMon >= startMon && !isReported(prevMon)) mon = prevMon;
-  const w = { mon, sat: addDays(mon, 5), fri: addDays(mon, 4), due: addDays(mon, 7), late: addDays(mon, 8), isPrev: mon !== thisMon };
+  let mon = forMon || thisMon;
+  if (!forMon && daysBetween(thisMon, today) <= 1 && prevMon >= startMon && !isReported(prevMon)) mon = prevMon;
+  const w = { mon, sat: addDays(mon, 5), fri: addDays(mon, 4), due: addDays(mon, 7), late: addDays(mon, 8), isPrev: mon !== thisMon, word: weekWord(mon, today) };
   w.state = isReported(mon) ? "done" : pausedOn(site, w.fri <= today ? w.fri : today) ? "paused" : today < w.fri ? "before" : today <= w.due ? "open" : today <= w.late ? "late" : "over";
   const rec = (reports || []).find((r) => r.week === mon);
   w.doneKind = rec ? rec.kind || "" : "";
@@ -625,7 +659,7 @@ function reportWeek(site, reports, today = todayKey()) {
   return w;
 }
 function reportWeekHtml(w) {
-  const title = w.isPrev ? "先週の報告" : "今週の報告";
+  const title = `${w.word}の報告`;
   const sub = {
     done: w.doneKind === "skip" ? `報告なし${w.doneMemo ? "（" + esc(w.doneMemo) + "）" : ""}` : w.doneKind === "external" ? "アプリ外で報告済み" : "報告済み",
     before: `報告は ${fmtDate(w.fri)}〜${fmtDate(w.due)}`,
@@ -2651,20 +2685,18 @@ async function renderReport() {
     body.innerHTML = '<div class="emptyState"><div class="emptyTitle">担当現場を登録しましょう</div><div class="emptyText">上の「今の現場」から現場を登録すると、今週の報告写真を入れられます。</div></div>';
     return;
   }
-  const cands = unreported(all);
-  const wk = reportWeek(site, reports);
-  // 対象の週より前に撮った、まだ報告していない報告写真があれば知らせる
-  const older = cands.filter((p) => !isRecordPhoto(p) && p.dateKey < wk.mon).length;
+  const allCands = unreported(all); // まだ報告していない写真（全部の週）
+  const weekOpts = sendWeekOptions(site, reports, allCands);
+  const selMon = chosenWeek(site, reports, allCands);
+  const wk = reportWeek(site, reports, todayKey(), selMon);
+  // 一覧・②・送る写真は、選んだ週の写真だけ。選んだ週より前の写真は畳んで下に、あとの写真は数だけ
+  const cands = allCands.filter((p) => photoWeek(p) === selMon);
+  const olderPhotos = allCands.filter((p) => photoWeek(p) < selMon);
+  const laterCount = allCands.filter((p) => photoWeek(p) > selMon).length;
   const bar = document.createElement("div");
   bar.className = "periodBar withArt";
   bar.innerHTML = reportWeekHtml(wk);
   body.appendChild(bar);
-  if (older) {
-    const h = document.createElement("div");
-    h.className = "hint";
-    h.textContent = `${fmtDate(wk.mon)}より前に撮った、まだ報告していない写真が${older}枚あります（今回の報告に含められます）。`;
-    body.appendChild(h);
-  }
 
   const flowHead = (no, title, tag, tagCls) =>
     `<div class="flowHead"><span class="flowNo">${no}</span><span class="flowTitle">${title}</span>${tag ? `<span class="reqTag ${tagCls}">${tag}</span>` : ""}</div>`;
@@ -2678,61 +2710,68 @@ async function renderReport() {
     return [...new Set([...weekProcessIds(site, cands), ...(PROCESS_MAP[last] ? [last] : []), ...sel.extra])].sort((a, b) => processOf(a).no - processOf(b).no);
   };
   const ensureSel = () => {
-    const ids = chipIds();
-    if (sel.pid === UNSORTED && (ids.length || countIn(UNSORTED))) return;
-    if (sel.pid && ids.includes(sel.pid)) return;
-    const last = getSetting(lastProcKey());
-    sel.pid = ids.includes(last) ? last : ids.length ? ids[0] : null;
+    // 最初に選ばれているのは「未振り分け」（写真を先に入れて、あとで振り分ける形が基本）。選んでいた工程が無くなった時も未振り分けに戻す
+    if (sel.pid && chipIds().includes(sel.pid)) return;
+    sel.pid = UNSORTED;
   };
   const sortList = () => cands.filter((p) => !isRecordPhoto(p)).sort((a, b) => (a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : a.id < b.id ? -1 : 1));
   const countIn = (pid) => sortList().filter((p) => (p.processId || "") === pid).length;
 
-  /* ① 写真を入れる【必須】：工程を選ぶ → 撮る・取り込む → 写真を押して振り分け（ここで完結） */
+  /* ① 写真を入れる【必須】：撮る・取り込む（工程を選ばなくても押せる。選んでいなければ未振り分け）→ 工程のボタンを選んで写真を押して振り分け */
   const s1 = document.createElement("section");
   s1.className = "card reportFlowCard";
   s1.id = "reportSortCard";
   s1.innerHTML =
     flowHead(1, "写真を入れる", "必須", "must") +
-    `<div class="psHint">今週の工事の写真を入れます。先に工程を選んでから、まとめて撮る・取り込みます。工程が分からない写真は「未振り分け」で入れて、あとで下の一覧から振り分けられます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
-    `<div class="flowSubLabel">今週の工程</div>` +
-    `<div class="procChips" id="procChips" role="group" aria-label="今週の工程"></div>` +
-    `<div id="procGate" class="gateMsg" hidden>先に今週の工程を選んでください。下の「＋ 工程を追加」から選べます。</div>` +
-    `<div id="procGuide"></div>` +
+    `<div class="psHint">「撮る」「取り込む」で写真を入れます。先に工程を選ばなくても大丈夫です（選んでいない時は「未振り分け」に入ります）。あとで下の一覧から、工程のボタンを選んで写真を押すと振り分けられます。写真だけで報告になります（②③は書かなくても送れます）。</div>` +
+    `<div id="weekNote" class="psHint weekNote" hidden></div>` +
     `<div class="btnRow"><button id="reportShootBtn" class="btn btnPrimary btnLarge" type="button">${icon(ICONS.camera, 20)}撮る</button>` +
     `<button id="reportImportBtn" class="btn btnSecondary btnLarge" type="button">${icon(ICONS.photo, 20)}取り込む</button></div>` +
+    `<div id="procAddSlot"></div>` +
+    `<details class="foldBox memoFold" id="reportMemoFold" data-fold="reportMemo"><summary class="foldTitle">${icon(ICONS.camSmall, 20)}撮影メモ<span class="foldMark">${icon(ICONS.chevron, 16)}</span></summary><div id="procGuide"></div></details>` +
+    `<div id="procItemSlot"></div>` +
     `<div class="flowStat" id="reportPhotoStat"></div>` +
-    `<div id="sortHint" class="psHint" hidden>写真を押すと、上で選んでいる工程（または「未振り分け」）に振り分けます。右上の虫めがねで拡大できます。</div>` +
-    `<div class="sortGrid" id="sortGrid"></div>`;
-  s1.querySelector("#procChips").after(sheetButton("＋ 工程を追加", "btnDashed", addReportProcess));
+    `<div id="sortHint" class="psHint" hidden>写真を押すと、選んでいる工程（または「未振り分け」）に振り分けます。右上の虫めがねで拡大できます。</div>` +
+    `<div class="sortWrap"><div class="procChips" id="procChips" role="group" aria-label="工程"></div><div class="sortGrid" id="sortGrid"></div></div>` +
+    `<div id="olderWeeks"></div>`;
+  s1.querySelector("#procAddSlot").appendChild(sheetButton("＋ 工程を追加", "btnDashed", addReportProcess));
   s1.querySelector(".btnDashed").id = "procAddBtn";
   const procChips = s1.querySelector("#procChips");
-  const gateEl = s1.querySelector("#procGate");
   const guideEl = s1.querySelector("#procGuide");
+  const itemSlot = s1.querySelector("#procItemSlot");
+  const memoFold = s1.querySelector("#reportMemoFold");
+  memoFold.open = foldOpen("reportMemo", false); // 撮影メモは畳んでおく（開閉は次も覚える）
+  memoFold.addEventListener("toggle", () => setFold("reportMemo", memoFold.open));
   const shootBtn = s1.querySelector("#reportShootBtn");
   const importBtn = s1.querySelector("#reportImportBtn");
   const statEl = s1.querySelector("#reportPhotoStat");
   const gridEl = s1.querySelector("#sortGrid");
   shootBtn.addEventListener("click", () => {
-    if (sel.pid === null) return toast("先に今週の工程を選んでください");
+    ensureSel();
     if (sel.pid) setSetting(lastProcKey(), sel.pid);
     startCamera(sel.pid); // 「未振り分け」を選んでいる時は、工程なしで撮る
   });
   importBtn.addEventListener("click", () => {
-    if (sel.pid === null) return toast("先に今週の工程を選んでください");
+    ensureSel();
     libraryPid = sel.pid;
     $("libraryInput").click();
   });
   body.appendChild(s1);
+  // 選んでいる週が今週でない時は、一覧が「その週の写真だけ」であることを知らせる
+  const weekNote = s1.querySelector("#weekNote");
+  if (selMon !== weekMon(todayKey())) {
+    weekNote.hidden = false;
+    weekNote.innerHTML = `${esc(wk.word)}（${weekRangeText(selMon)}）の報告として送る写真だけを出しています。<button class="miniLink" type="button">送る週を変える</button>`;
+    weekNote.querySelector(".miniLink").addEventListener("click", () => {
+      const t = $("weekPick");
+      if (t) t.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 
   const drawGuide = () => {
     guideEl.innerHTML = "";
-    const none = sel.pid === null;
-    gateEl.hidden = !none;
-    shootBtn.disabled = none;
-    importBtn.disabled = none;
-    if (sel.pid === UNSORTED) {
-      guideEl.innerHTML = '<div class="psHint">「未振り分け」で入れた写真は、下の一覧に出ます。工程のボタンを選んでから写真を押すと、その工程に振り分けられます。送る前に、全部振り分けてください。</div>';
-    } else if (sel.pid) {
+    itemSlot.innerHTML = "";
+    if (sel.pid) {
       const p = processOf(sel.pid);
       const g = document.createElement("div");
       g.className = "memoCard intakeGuide compactGuide";
@@ -2750,8 +2789,12 @@ async function renderReport() {
           reportItemId = null;
           drawGuide();
         });
-        guideEl.appendChild(l);
+        itemSlot.appendChild(l);
       }
+    } else {
+      guideEl.innerHTML =
+        '<div class="psHint">工程を選ばずに入れた写真は「未振り分け」になり、下の一覧に出ます。工程のボタンを選んでから写真を押すと、その工程に振り分けられます。送る前に、全部振り分けてください。</div>' +
+        `<div class="memoNote">${icon(ICONS.alert, 22)}<span>${esc(reportNote)}</span></div>`;
     }
   };
   const drawChips = () => {
@@ -2777,11 +2820,9 @@ async function renderReport() {
       const n = countIn(pid);
       mk(pid, `<span class="processNo">${p.no}</span>${esc(shortProcessName(p))}${n ? `<span class="chipCount">${n}</span>` : ""}`, "");
     });
-    // 未振り分けの写真が残っていれば、工程を全部外しても「未振り分け」は出しておく（写真だけ残って選べなくならないように）
-    if (ids.length || countIn(UNSORTED)) {
-      const n = countIn(UNSORTED);
-      mk(UNSORTED, `未振り分け${n ? `<span class="chipCount">${n}</span>` : ""}`, " unsorted");
-    }
+    // 「未振り分け」は最後に、いつも出す（最初に選ばれているのもこれ）
+    const n = countIn(UNSORTED);
+    mk(UNSORTED, `未振り分け${n ? `<span class="chipCount">${n}</span>` : ""}`, " unsorted");
     drawGuide();
   };
 
@@ -2791,8 +2832,7 @@ async function renderReport() {
     cell.classList.toggle("unsorted", !ph.processId);
   };
   const assign = async (ph, cell) => {
-    if (sel.pid === null) return toast("先に今週の工程を選んでください");
-    const pid = sel.pid;
+    const pid = sel.pid || UNSORTED;
     if ((ph.processId || "") === pid) return;
     ph.processId = pid;
     retagFields(ph, pid);
@@ -2823,8 +2863,73 @@ async function renderReport() {
     });
   };
 
+  // 選んだ週より前の未報告の写真：畳んで一覧の下に。週ごとに「この週の報告に入れる」「その週を選ぶ」
+  const olderEl = s1.querySelector("#olderWeeks");
+  const drawOlder = () => {
+    releaseUrls("reportOlder");
+    olderEl.innerHTML = "";
+    if (olderPhotos.length) {
+      const det = document.createElement("details");
+      det.className = "foldBox olderFold";
+      det.id = "olderFold";
+      det.dataset.fold = "olderWeeks";
+      det.open = foldOpen("olderWeeks", false);
+      det.addEventListener("toggle", () => setFold("olderWeeks", det.open));
+      det.innerHTML = `<summary class="foldTitle">前の週の写真（${olderPhotos.length}枚）<span class="foldMark">${icon(ICONS.chevron, 16)}</span></summary>`;
+      const hint = document.createElement("div");
+      hint.className = "psHint";
+      hint.textContent = `${wk.word}の報告には入っていません。「この週の報告に入れる」で、その写真を今選んでいる週（${weekRangeText(selMon)}）の報告に含められます。`;
+      det.appendChild(hint);
+      const byWeek = new Map();
+      olderPhotos.forEach((p) => byWeek.set(photoWeek(p), [...(byWeek.get(photoWeek(p)) || []), p]));
+      [...byWeek.keys()].sort().reverse().forEach((mon) => {
+        const list = byWeek.get(mon).sort((a, b) => (a.takenAt < b.takenAt ? -1 : 1));
+        const grp = document.createElement("div");
+        grp.className = "olderGroup";
+        grp.dataset.week = mon;
+        grp.innerHTML = `<div class="olderHead"><b>${weekRangeText(mon)}</b><span class="mutedText">${weekWord(mon)}・${list.length}枚</span></div><div class="olderThumbs"></div><div class="btnRow olderBtns"></div>`;
+        const thumbs = grp.querySelector(".olderThumbs");
+        list.forEach((ph) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "olderThumb";
+          b.setAttribute("aria-label", "写真を拡大");
+          b.innerHTML = `<img src="${blobUrl("reportOlder", ph.thumb)}" alt="">`;
+          b.addEventListener("click", () => openPhotoViewer(ph.blob, photoActions(ph, renderReport)));
+          thumbs.appendChild(b);
+        });
+        const btns = grp.querySelector(".olderBtns");
+        const incl = sheetButton("この週の報告に入れる", "btnSecondary", async () => {
+          list.forEach((ph) => {
+            ph.sendWeek = selMon; // 印を残す（選んだ週の報告に含める）
+            ph.sendPick = true; // 入れた写真は最初から送る
+          });
+          await dbPutMany("photos", list);
+          toast(`${list.length}枚を${wk.word}の報告に入れました`);
+          renderReport();
+        });
+        incl.dataset.act = "include";
+        const pick = sheetButton("その週を選ぶ", "btnOutline", () => {
+          setChosenWeek(site.id, mon);
+          renderReport();
+          window.scrollTo(0, 0);
+        });
+        pick.dataset.act = "pick";
+        btns.append(incl, pick);
+        det.appendChild(grp);
+      });
+      olderEl.appendChild(det);
+    }
+    if (laterCount) {
+      const l = document.createElement("div");
+      l.className = "psHint laterNote";
+      l.textContent = `あとの週の写真（${laterCount}枚）：送る週を切り替えると出ます。`;
+      olderEl.appendChild(l);
+    }
+  };
+
   /* ② 工程ごとの様子【任意】 */
-  const s2 = document.createElement("section");
+  const s2 =document.createElement("section");
   s2.className = "card reportFlowCard";
   s2.innerHTML =
     flowHead(2, "工程ごとの様子", "任意", "opt") +
@@ -2840,7 +2945,7 @@ async function renderReport() {
     const picks = cands.filter((p) => p.sendPick).length;
     statEl.innerHTML = rep.length
       ? `入れた写真 <b>${rep.length}</b> 枚・` + (un ? `<span class="unsortedNum">未振り分け <b>${un}</b> 枚</span>` : "すべて振り分け済み") + `・送る <b>${picks}</b> 枚`
-      : "まだ写真がありません。工程を選んで「撮る」か「取り込む」から入れてください。写真が無い週は、工程の様子か来週の予定を書けば、写真なしでも送れます。";
+      : "まだ写真がありません。「撮る」か「取り込む」から入れてください。写真が無い週は、工程の様子か来週の予定を書けば、写真なしでも送れます。";
     statEls.forEach(({ pid, el }) => {
       const inP = cands.filter((p) => p.processId === pid);
       el.innerHTML = `${icon(ICONS.camSmall, 16)}写真 <b>${inP.length}</b> 枚・送る <b>${inP.filter((p) => p.sendPick).length}</b> 枚`;
@@ -2976,7 +3081,31 @@ async function renderReport() {
     }
     return wrap;
   };
-  s3.appendChild(field("draftNext", "next", `来週の予定・お客様への連絡<span class="reqTag opt">任意</span>`, 3, "お客様への報告メールの「来週の予定」になります。例：10/8 塗り壁の材料が納品。来週は設備の試運転"));
+  // 送る週：未報告の週（や、今週より前の未報告の写真）がある時だけ出す。無ければ今までどおり何も出さない
+  if (weekOpts.length > 1) {
+    const pickBox = document.createElement("div");
+    pickBox.className = "flowField weekPick";
+    pickBox.id = "weekPick";
+    pickBox.innerHTML = `<div class="fieldLabel flowLabel">どの週の報告として送りますか</div><div class="weekOpts" role="group" aria-label="送る週"></div><div class="psHint">未報告の週だけ並んでいます。選んだ週の写真だけが①②に出て、送る報告もその週のものとして記録されます。</div>`;
+    const optsEl = pickBox.querySelector(".weekOpts");
+    weekOpts.forEach((m) => {
+      const n = allCands.filter((p) => photoWeek(p) === m).length;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "weekOpt" + (m === selMon ? " active" : "");
+      b.dataset.week = m;
+      b.setAttribute("aria-pressed", m === selMon ? "true" : "false");
+      b.innerHTML = `<b>${weekWord(m)}</b><span>${weekRangeText(m)}</span><small>${n ? `写真${n}枚` : "写真なし"}</small>`;
+      b.addEventListener("click", () => {
+        if (m === selMon) return;
+        setChosenWeek(site.id, m);
+        renderReport();
+      });
+      optsEl.appendChild(b);
+    });
+    s3.appendChild(pickBox);
+  }
+  s3.appendChild(field("draftNext","next", `来週の予定・お客様への連絡<span class="reqTag opt">任意</span>`, 3, "お客様への報告メールの「来週の予定」になります。例：10/8 塗り壁の材料が納品。来週は設備の試運転"));
   const more = document.createElement("div");
   more.className = "flowMore";
   more.hidden = !(draft.doneOther || draft.memo);
@@ -3007,7 +3136,7 @@ async function renderReport() {
   skip.type = "button";
   skip.id = "reportSkipBtn";
   skip.className = "btn btnOutline flowSubBtn";
-  skip.textContent = "今週は報告なし";
+  skip.textContent = `${wk.word}は報告なし`;
   skip.addEventListener("click", reportSkipWeek);
   const other = document.createElement("button");
   other.type = "button";
@@ -3019,6 +3148,7 @@ async function renderReport() {
   s3.appendChild(subs);
   body.appendChild(s3);
   drawSort();
+  drawOlder();
   drawProcs();
   updateCounts();
 
@@ -3045,8 +3175,10 @@ async function reportSkipWeek() {
   const site = currentSite();
   if (!site) return;
   const reps = await dbGetAll("reports", "siteId", site.id);
-  if (reportWeek(site, reps).state === "done") return chooseReportedKind();
-  markWeekOther(site, tagWeek(site, reps), "skip", unreported(await getSitePhotos(site.id)));
+  const allC = unreported(await getSitePhotos(site.id));
+  const mon = chosenWeek(site, reps, allC);
+  if (reportWeek(site, reps, todayKey(), mon).state === "done") return chooseReportedKind();
+  markWeekOther(site, { mon, sat: addDays(mon, 5) }, "skip", allC.filter((p) => photoWeek(p) === mon));
 }
 
 
@@ -3136,7 +3268,7 @@ function restoreDraftFromReport(site, r) {
   if (r.reportDraft) site.reportDraft = r.reportDraft;
 }
 /* ---------- 報告：写真を入れる（撮る・取り込む） ---------- */
-// 報告タブの①の中で完結する：先に工程（または「未振り分け」）を選び、撮影メモを見ながらまとめて撮る・取り込む。入れた写真は①の一覧で押して振り分け直せる。
+// 報告タブの①の中で完結する：「撮る」「取り込む」（工程を選んでいればその工程、選んでいなければ未振り分け）でまとめて入れる。入れた写真は①の一覧で押して振り分け直せる。
 // 項目ページから開いた時は itemId を覚え、ここで撮った・取り込んだ報告写真にその項目を記録する（メールの材料で、写真がどの項目の場面か分かるように）
 const LAST_PROC_KEY = "genba-photo-last-proc"; // 前回、写真を入れた工程
 // 前回の工程は現場ごとに覚える（別の現場に切り替えた時に、前の現場の工程が選ばれないように）
@@ -3380,8 +3512,11 @@ async function sendToBox() {
   if (!site) return;
   if (pendingSiteSave) await flushSiteDraft(pendingSiteSave); // 報告タブで打っている途中の来週の予定・メモを、先に保存する
   const all = await getSitePhotos(site.id);
-  const cands = unreported(all);
-  const picks = sendPicks(all);
+  const allReports = await dbGetAll("reports", "siteId", site.id);
+  // 送る週：選んでいる週の写真（と「この週の報告に入れる」にした写真）だけを送る
+  const selMon = chosenWeek(site, allReports, unreported(all));
+  const cands = unreported(all).filter((p) => photoWeek(p) === selMon);
+  const picks = cands.filter((p) => p.sendPick);
   // 工程を選んでいない（未振り分けの）報告写真が残っていたら送らない（Box の報告は工程ごとに並ぶため）
   const unsorted = cands.filter((p) => !isRecordPhoto(p) && !p.processId && p.sendPick !== false);
   if (unsorted.length) {
@@ -3409,13 +3544,11 @@ async function sendToBox() {
     toast("送る写真が片付け済みのため、送れる写真がありません");
     return;
   }
-  const allReports = await dbGetAll("reports", "siteId", site.id);
-  const wk = tagWeek(site, allReports);
-  const pStart = periodStart(site, cands);
-  const start = pStart < wk.mon ? pStart : wk.mon;
-  // 期間の終わり：対象の週の土曜と、送る写真のいちばん新しい日のうち遅い方（今日より先にはしない）
-  const latestPick = picks.map((p) => p.dateKey).sort().pop();
-  let end = [wk.sat, latestPick].filter(Boolean).sort().pop();
+  const wk = { mon: selMon, sat: addDays(selMon, 5) };
+  // 期間：選んだ週の月〜土と、送る写真の撮影日のうち、早い方から遅い方まで（今日より先にはしない）
+  const pickDates = picks.map((p) => p.dateKey).filter(Boolean).sort();
+  const start = [wk.mon, pickDates[0]].filter(Boolean).sort()[0];
+  let end = [wk.sat, pickDates[pickDates.length - 1]].filter(Boolean).sort().pop();
   if (end > todayKey()) end = todayKey();
   // iPhone は「送信する」を押した直後でないと共有画面を開かせないので、読み込みや保存はここで先に済ませる
   if (!site.draftReportId) {
@@ -3451,7 +3584,7 @@ async function sendToBox() {
     const box = document.createElement("div");
     box.className = "summaryBox";
     box.innerHTML =
-      `現場：${esc(site.name)}<br>期間：${fmtDate(start)}〜${fmtDate(end)}<br>` +
+      `現場：${esc(site.name)}<br>報告の週：${wk.mon === weekMon(todayKey()) ? "" : esc(weekWord(wk.mon)) + "　"}${weekRangeText(wk.mon)}<br>期間：${fmtDate(start)}〜${fmtDate(end)}<br>` +
       `工程：${esc(processes.map((p) => p.name).join(" / ") || "なし")}<br>` +
       `写真：${entries.length}枚（約${(photoBytes / 1024 / 1024).toFixed(1)}MB）<br>` +
       `チェック：${checkSummary.length}項目・${checkCount}件（期間中に付けたもの）`;
@@ -3575,7 +3708,8 @@ async function sendToBox() {
    写真を別の方法で送った週や、自分は担当しない週（もう一人が報告する等）を「済み」にして、未送信・遅れに出さない */
 function markWeekOther(site, wk, kind, cands) {
   const photosLeft = cands.filter((p) => p.dateKey <= wk.sat && (isRecordPhoto(p) || p.processId)); // 未振り分けは報告済みにしない
-  openSheet(kind === "external" ? "アプリ外で報告済みにする" : "今週は報告なしにする", (body, close) => {
+  const word = weekWord(wk.mon);
+  openSheet(kind === "external" ? "アプリ外で報告済みにする" : `${word}は報告なしにする`, (body, close) => {
     const note = document.createElement("div");
     note.className = "mutedText";
     note.textContent =
@@ -3611,14 +3745,16 @@ function markWeekOther(site, wk, kind, cands) {
             delete p.sentCustNo;
           });
           await dbPutMany("photos", photosLeft);
-          site.lastReportEnd = wk.sat < todayKey() ? wk.sat : todayKey();
+          const e = wk.sat < todayKey() ? wk.sat : todayKey();
+          if (!site.lastReportEnd || site.lastReportEnd < e) site.lastReportEnd = e;
         }
         delete site.draftReportId; // 前に送りかけた報告の番号を次の週に使い回さない
         delete site.redoWeek;
+        setChosenWeek(site.id, ""); // 送る週は今週に戻す
         site.processes = [];
         await dbPut("sites", site);
         close();
-        toast(kind === "external" ? "アプリ外で報告済みにしました" : "今週は報告なしにしました");
+        toast(kind === "external" ? "アプリ外で報告済みにしました" : `${word}は報告なしにしました`);
         scheduleStatePush();
         renderReport();
         notifyStatus(site, { status: "week", week: wk.mon, week_kind: kind, memo: report.memo }, kind === "external" ? "アプリ外で報告したことを上司に知らせる" : "今週は報告なしと上司に知らせる");
@@ -3646,11 +3782,15 @@ async function undoReport(r) {
   photos.forEach((p) => {
     p.reportId = null;
     p.sendPick = true;
+    if (r.week && weekMon(p.dateKey || r.week) !== r.week) p.sendWeek = r.week; // その週に含めていた写真は、送り直す週にそのまま入れておく
   });
   if (photos.length) await dbPutMany("photos", photos);
   await dbDeleteMany("reports", [r.id]);
   if (r.sentReportId) site.draftReportId = r.sentReportId;
-  if (r.week) site.redoWeek = r.week; // 送り直す時に元の週の報告として扱う
+  if (r.week) {
+    site.redoWeek = r.week; // 送り直す時に元の週の報告として扱う
+    setChosenWeek(site.id, r.week);
+  }
   restoreDraftFromReport(site, r);
   if (r.memo) site.reportDraft = { ...(site.reportDraft || {}), memo: r.memo };
   await forgetWeek(site, r.week);
@@ -3683,6 +3823,7 @@ async function cancelWeekOther(r) {
     photos.forEach((p) => {
       p.reportId = null;
       if (!isRecordPhoto(p)) p.sendPick = true; // 報告タブに「送る写真」として戻す（undoReport と同じ）
+      if (r.week && weekMon(p.dateKey || r.week) !== r.week) p.sendWeek = r.week;
     });
     if (photos.length) await dbPutMany("photos", photos);
     if (r.procNotes || r.reportDraft) restoreDraftFromReport(site, r);
@@ -3699,11 +3840,13 @@ async function chooseReportedKind() {
   if (!site) return;
   // 対象の週がもう済んでいる時は、何で済んだかを見せて、間違えた時の取り消しだけを出す
   const allReps = await dbGetAll("reports", "siteId", site.id);
-  const w = reportWeek(site, allReps);
+  const allC = unreported(await getSitePhotos(site.id));
+  const selMon = chosenWeek(site, allReps, allC);
+  const w = reportWeek(site, allReps, todayKey(), selMon);
   if (w.state === "done") {
     const r = weekReportOf(w, allReps);
-    const extra = unreported(await getSitePhotos(site.id)).filter((p) => p.sendPick);
-    return openSheet(`${w.isPrev ? "先週" : "今週"}は報告済みです`, (body, close) => {
+    const extra = allC.filter((p) => p.sendPick && photoWeek(p) === selMon);
+    return openSheet(`${w.word}は報告済みです`, (body, close) => {
       const box = document.createElement("div");
       box.className = "summaryBox";
       box.innerHTML =
@@ -3728,9 +3871,9 @@ async function chooseReportedKind() {
       body.appendChild(sheetButton("閉じる", "btnGhost", close));
     });
   }
-  const cands = unreported(await getSitePhotos(site.id));
+  const cands = allC.filter((p) => photoWeek(p) === selMon);
   const picks = cands.filter((p) => p.sendPick);
-  const wk = tagWeek(site, await dbGetAll("reports", "siteId", site.id));
+  const wk = { mon: selMon, sat: addDays(selMon, 5) };
   openSheet(`報告済みにする（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}）`, (body, close) => {
     const opt = (title, sub, cls, fn, disabled) => {
       const b = document.createElement("button");
@@ -3745,7 +3888,7 @@ async function chooseReportedKind() {
     };
     opt("アプリから送った", picks.length ? `Boxへ送信した報告。「送る写真」${picks.length}枚を報告済みにします` : "「送る写真」に選んだ写真がありません", "primary", () => markReported(""), !picks.length);
     opt("アプリ外で報告した", "別のメールなどで報告した週として記録します", "", () => markWeekOther(site, wk, "external", cands));
-    opt("今週は報告なし", "自分は担当しない・工事が無かった週など。遅れに数えません", "", () => markWeekOther(site, wk, "skip", cands));
+    opt(`${w.word}は報告なし`, "自分は担当しない・工事が無かった週など。遅れに数えません", "", () => markWeekOther(site, wk, "skip", cands));
     body.appendChild(sheetButton("キャンセル", "btnSecondary", close));
   });
 }
@@ -3761,7 +3904,8 @@ async function markReported(memo = "", opts = null) {
   const ids = opts && opts.photoIds ? new Set(opts.photoIds) : null;
   // 未振り分けの報告写真は、工程が無いまま報告済みにしない（①で振り分けてから）
   const sorted = (p) => isRecordPhoto(p) || !!p.processId;
-  const picked = ids ? all.filter((p) => ids.has(p.id) && !p.reportId) : sendPicks(all);
+  const selMon = opts && opts.week ? opts.week : chosenWeek(site, reports, unreported(all));
+  const picked = ids ? all.filter((p) => ids.has(p.id) && !p.reportId) : unreported(all).filter((p) => p.sendPick && photoWeek(p) === selMon);
   const targets = picked.filter(sorted);
   if (!ids && picked.length > targets.length) {
     alert(`まだ振り分けていない写真が${picked.length - targets.length}枚あります。報告タブの①で工程を選んでから、報告済みにしてください`);
@@ -3771,7 +3915,7 @@ async function markReported(memo = "", opts = null) {
     toast("「送る写真」に選んだ写真がありません");
     return;
   }
-  const wk = opts && opts.week ? { mon: opts.week, sat: addDays(opts.week, 5) } : tagWeek(site, reports);
+  const wk = { mon: selMon, sat: addDays(selMon, 5) };
   const dates = targets.map((p) => p.dateKey).sort();
   const start = opts && opts.start ? opts.start : dates.length && dates[0] < wk.mon ? dates[0] : wk.mon; // 写真が無い時は週の初めから
   let end = opts && opts.end ? opts.end : [wk.sat, dates[dates.length - 1]].filter(Boolean).sort().pop();
@@ -3791,9 +3935,10 @@ async function markReported(memo = "", opts = null) {
   });
   await dbPut("reports", report);
   await dbPutMany("photos", targets);
-  site.lastReportEnd = end;
+  if (!site.lastReportEnd || site.lastReportEnd < end) site.lastReportEnd = end;
   delete site.draftReportId;
   delete site.redoWeek;
+  setChosenWeek(site.id, ""); // 送る週は今週に戻す
   site.processes = []; // 「今回の工程」は次の週に持ち越さない（未報告の写真がある工程は自動で出る）
   await dbPut("sites", site);
   toast(`報告済みにしました（${fmtDate(wk.mon)}〜${fmtDate(wk.sat)}の週・写真${targets.length}枚）`);
@@ -4393,11 +4538,11 @@ async function renderItem() {
 
 // 開け閉めの状態（初めは開いている。閉じたら次も閉じたまま）
 const FOLD_KEY = "genba-photo-fold";
-function foldOpen(name) {
+function foldOpen(name, def = true) {
   try {
-    return (JSON.parse(localStorage.getItem(FOLD_KEY) || "{}")[name] ?? true) !== false;
+    return (JSON.parse(localStorage.getItem(FOLD_KEY) || "{}")[name] ?? def) !== false;
   } catch (e) {
-    return true;
+    return def;
   }
 }
 function setFold(name, open) {
@@ -7148,7 +7293,7 @@ const TOUR_STEPS = [
   {
     view: "dashView",
     target: () => document.querySelector('.tabBtn[data-tab="report"]'),
-    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。「写真を入れる」では、先に今週の工程を選び、撮る・取り込む（分からない写真は「未振り分け」で入れて、あとで写真を押して振り分け）。そのあと「N 枚を送る」を押し、確認の画面で「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
+    text: "最後に、週の報告です。月〜土の工事を、金曜〜翌週の月曜（遅くとも火曜）に「報告」タブから送ります。「写真を入れる」では、一番上の「撮る」「取り込む」で入れます（工程を選ばなくても押せて、選んでいなければ「未振り分け」に入ります）。あとで、工程のボタンを選んで写真を押すと振り分けられます。先週分がまだ残っている時は、③で送る週を選べます。そのあと「N 枚を送る」を押し、確認の画面で「送信する」を押してください（合言葉を入れていれば、そのまま Box に届きます）。",
     next: true,
     nextLabel: "完了",
   },

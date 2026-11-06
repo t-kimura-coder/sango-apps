@@ -1316,3 +1316,30 @@ img.imgBroken { visibility: hidden; }
 .flowField { align-items: stretch; }
 .flowField .fieldLabel { display: block; width: 100%; }
 .reportFlowCard .btnRow .btn { white-space: nowrap; font-size: var(--fs-md); padding: 0 8px; gap: 6px; }
+/* ①：撮影メモ（畳んだ1行）・工程のボタンと写真の一覧（すき間なくひと続き）・前の週の写真 */
+.memoFold { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0 var(--space-md); background: var(--color-surface); }
+.memoFold:not([open]) { padding-top: 0; padding-bottom: 0; }
+.memoFold[open] { padding-bottom: var(--space-sm); }
+.memoFold .memoCard { box-shadow: none; }
+.sortWrap { border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; background: var(--color-surface-sub); }
+.sortWrap .procChips { padding: 8px; }
+.sortWrap .sortGrid { padding: 0 8px 8px; }
+.weekNote { color: var(--color-primary); font-weight: 700; }
+.weekNote[hidden] { display: none; }
+.weekNote .miniLink { margin-left: 6px; border: none; background: none; padding: 0; font-size: inherit; color: var(--color-text-sub); text-decoration: underline; min-height: 32px; }
+.weekOpts { display: flex; flex-direction: column; gap: 8px; }
+.weekOpt { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-height: 52px; padding: 8px 14px; border-radius: 14px; border: 1.5px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-card); text-align: left; color: var(--color-heading); font-size: var(--fs-md); }
+.weekOpt b { font-weight: 800; }
+.weekOpt span { font-size: var(--fs-sm); font-weight: 700; }
+.weekOpt small { margin-left: auto; font-size: 12px; opacity: 0.85; }
+.weekOpt.active { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-text); }
+.olderFold { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0 var(--space-md); background: var(--color-surface); }
+.olderFold:not([open]) { padding-top: 0; padding-bottom: 0; }
+.olderFold[open] { padding-bottom: var(--space-sm); }
+.olderGroup { display: flex; flex-direction: column; gap: 8px; padding: var(--space-sm) 0; border-top: 1px solid var(--color-border); }
+.olderHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; font-size: var(--fs-sm); }
+.olderThumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.olderThumb { padding: 0; border: none; background: var(--color-surface-sub); border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; }
+.olderThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.olderBtns .btn { flex: 1 1 140px; min-height: 46px; font-size: var(--fs-sm); padding: 0 8px; }
+.laterNote { margin-top: 4px; }

@@ -132,22 +132,48 @@ async function importFiles(app, files) {
 }
 const photosOf = (app) => app.evaluate(async () => (await getSitePhotos(currentSiteId)).map((p) => ({ pid: p.processId, kind: p.kind, pick: p.sendPick, item: p.itemId || "" })));
 
-test("工程を選ばないと、撮る・取り込む・振り分けに進めない", async ({ app }) => {
+test("工程を選ばなくても、撮る・取り込むが押せて、選ばずに取り込むと未振り分けに入る", async ({ app }) => {
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await openReportTab(app);
-  // 今週の工程がまだ無い：案内が出て、撮る・取り込むは押せない。「未振り分け」のボタンも出ない
-  await expect(app.locator("#procGate")).toContainText("先に今週の工程を選んでください");
-  await expect(app.locator("#reportShootBtn")).toBeDisabled();
-  await expect(app.locator("#reportImportBtn")).toBeDisabled();
-  await expect(app.locator(".procChip")).toHaveCount(0);
-  // 工程を足すと、案内が消えて押せるようになり、足した工程が選ばれる。最後に「未振り分け」のボタンが並ぶ
-  await addChip(app, "p02");
-  await expect(app.locator("#procGate")).toBeHidden();
+  // 工程がまだ無くても、案内で止めない。撮る・取り込むが押せて、最初に選ばれているのは「未振り分け」
+  await expect(app.locator("#procGate")).toHaveCount(0);
   await expect(app.locator("#reportShootBtn")).toBeEnabled();
   await expect(app.locator("#reportImportBtn")).toBeEnabled();
+  await expect(app.locator(".procChip")).toHaveCount(1);
+  await expect(app.locator(".procChip.active")).toHaveAttribute("data-pid", "");
+  await importFiles(app, jpegs(2));
+  await expect(toastOf(app, "未振り分けで2枚入れました")).toBeVisible();
+  expect((await photosOf(app)).map((p) => p.pid)).toEqual(["", ""]);
+  await expect(app.locator("#sortGrid .sortCell.unsorted")).toHaveCount(2);
+  // 工程を足すと、足した工程が選ばれる。「未振り分け」のボタンは最後に並ぶ
+  await addChip(app, "p02");
   await expect(app.locator(".procChip").last()).toHaveText(/未振り分け/);
-  await expect(app.locator(".intakeGuide")).toContainText("撮影メモ"); // 選んだ工程の撮影メモ
+});
+
+test("①の並び：撮る・取り込む → 工程を追加 → 工程のボタンと写真の一覧（すき間なし）。撮影メモは畳まれている", async ({ app }) => {
+  await receiveManual(app);
+  await addSite(app, "テスト様邸 新築", "T26001");
+  await addPhoto(app, { processId: "p02" });
+  await openReportTab(app);
+  const y = (sel) => app.locator(sel).evaluate((e) => e.getBoundingClientRect().top);
+  const ys = [await y("#reportShootBtn"), await y("#procAddBtn"), await y("#reportMemoFold"), await y(".sortWrap")];
+  expect([...ys].sort((a, b) => a - b)).toEqual(ys);
+  // 工程のボタンと写真の一覧は、同じ枠の中でくっついている
+  await expect(app.locator(".sortWrap > #procChips")).toHaveCount(1);
+  await expect(app.locator(".sortWrap > #sortGrid")).toHaveCount(1);
+  // 撮影メモは1行に畳まれていて、押すと開く。開け閉めは次も覚えている
+  const memo = app.locator("#reportMemoFold");
+  await expect(memo).toContainText("撮影メモ");
+  expect(await memo.evaluate((e) => e.open)).toBe(false);
+  await app.locator('.procChip[data-pid="p02"]').click();
+  expect(await memo.evaluate((e) => e.open)).toBe(false); // 工程を選び替えても閉じたまま
+  await memo.locator("summary").click();
+  expect(await memo.evaluate((e) => e.open)).toBe(true);
+  await expect(memo.locator(".intakeGuide")).toContainText("基礎");
+  await app.evaluate(() => goReport());
+  await expect(app.locator("#reportSendBtn")).toBeVisible();
+  expect(await app.locator("#reportMemoFold").evaluate((e) => e.open)).toBe(true);
 });
 
 test("工程を選んでまとめて取り込むと、その工程に入り、最初から全部送る写真になる", async ({ app, gas, errors }) => {
@@ -261,7 +287,7 @@ test("未振り分けの写真が残っていると送れない。振り分け�
   expect(r.processes.map((p) => p.no)).toEqual([2]);
 });
 
-test("次に開いた時は、前回入れた工程が最初から選ばれている", async ({ app }) => {
+test("次に開いた時は、前回入れた工程のボタンは並ぶが、選ばれているのは未振り分け", async ({ app }) => {
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", "T26001");
   await openReportTab(app);
@@ -273,7 +299,8 @@ test("次に開いた時は、前回入れた工程が最初から選ばれて�
     reportSel = null;
     return goReport();
   });
-  await expect(app.locator(".procChip.active")).toHaveAttribute("data-pid", "p04");
+  await expect(app.locator(".procChip.active")).toHaveAttribute("data-pid", "");
+  await expect(app.locator('.procChip[data-pid="p04"]')).toBeVisible();
 });
 
 test("項目ページの入口から入れると、その工程が選ばれ、項目が写真に残る", async ({ app }) => {
