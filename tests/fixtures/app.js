@@ -82,4 +82,10 @@ async function markCheck(page, itemId, index) {
   );
 }
 
-module.exports = { test, expect: base.expect, receiveManual, addSite, addPhoto, markCheck };
+// 裏で動く同期（開いて4秒後・チェックの6秒後）が終わるのを待つ。同期の送信を確かめるテストで、裏の送信と競り合わないように
+// （クラウドの遅い環境では、テストの送信と裏の送信が前後して、最後に届く中身が変わることがあった）
+async function syncIdle(page) {
+  await page.waitForFunction(() => !!getSetting("stateSyncAt") && !stateSyncing && !statePushTimer, null, { timeout: 30000 });
+}
+
+module.exports = { test, expect: base.expect, receiveManual, addSite, addPhoto, markCheck, syncIdle };

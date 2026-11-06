@@ -1,5 +1,5 @@
 // チェック記録の同期（GAS の states）。偽の GAS に届いた putStates の中身を確かめる
-const { test, expect, receiveManual, addSite, markCheck } = require("../fixtures/app");
+const { test, expect, receiveManual, addSite, markCheck, syncIdle } = require("../fixtures/app");
 
 const putStates = (gas) => gas.calls.filter((c) => c.action === "putStates").flatMap((c) => c.states.map((s) => ({ ...s, body: JSON.parse(s.state) })));
 
@@ -9,6 +9,7 @@ test("工事番号を後から入れると、古い記録に移った時刻の�
   await receiveManual(app);
   await addSite(app, "テスト様邸 新築", ""); // 番号なしで登録（確認の窓は OK で進む）
   await markCheck(app, "m902", 0);
+  await syncIdle(app); // 裏の同期（チェックの6秒後）が終わってから
   const siteId = await app.evaluate(() => currentSiteId);
   await app.evaluate(() => pushStates(true));
   const before = putStates(gas).filter((s) => s.key === `s:${siteId}`);
@@ -22,11 +23,14 @@ test("工事番号を後から入れると、古い記録に移った時刻の�
   await sheet.getByRole("button", { name: "変更する" }).click();
   await expect(app.locator(".toast, #toast").filter({ hasText: "現場の情報を変更しました" }).first()).toBeVisible();
 
+  // 移った印は待たずに送られるので、届くまで待つ
+  await expect.poll(() => putStates(gas).some((s) => s.key === `s:${siteId}` && s.body.deleted)).toBe(true);
   const moved = putStates(gas).find((s) => s.key === `s:${siteId}` && s.body.deleted);
   expect(moved, "古い番号なしの記録に移った印").toBeTruthy();
   expect(moved.body.moved).toBe("k:T26002");
   expect(moved.body.movedAt).toBeTruthy();
 
+  await syncIdle(app);
   await app.evaluate(() => pushStates(true));
   const now = putStates(gas).filter((s) => s.key === "k:T26002").pop();
   expect(now.body.site.keyAt >= moved.body.movedAt).toBe(true); // GAS はこれで「番号を変えた後の中身」と分かる
