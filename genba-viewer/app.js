@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 62;
+const APP_VERSION = 63;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -2259,10 +2259,63 @@ function progressAsOf(s) {
 }
 
 const GROUP_ART = { 基礎: "g1", 上棟: "g2", 外装: "g3", 内装: "g4", 設備: "g5", 引渡し: "g6" };
+/* ---------- 現場Plus の工程表（中継の毎週金曜の写し）を、週の報告の下に並べる ----------
+   2026-11-09 決定：完了の印や遅れの判定は出さず、「その週の現場Plus の工程」を見せるところから。工事番号で結ぶ。
+   取った日より後に来た変更の知らせの数も添える（通知の無い変更は次の金曜まで反映されない） */
+const planCache = new Map(); // 工事番号 → { at, plans }
+async function loadPlan(kouji) {
+  const k = normKouji(kouji);
+  const c = planCache.get(k);
+  if (c && Date.now() - c.at < 10 * 60 * 1000) return c.plans;
+  const j = await gasCall({ action: "genbaPlan", kouji: String(kouji).split("・") });
+  const plans = Object.values(j.plans || {}).flat();
+  planCache.set(k, { at: Date.now(), plans });
+  return plans;
+}
+function planWeekHtml(plans, mon) {
+  const sun = addDays(mon, 6);
+  const rows = [];
+  plans.forEach((p) =>
+    p.tasks.forEach((t) => {
+      if (t.kind === "グループ" || !t.ps) return;
+      const pe = t.pe || t.ps;
+      if (t.ps <= sun && pe >= mon) rows.push({ p, t, pe });
+    })
+  );
+  rows.sort((a, b) => (a.t.ps < b.t.ps ? -1 : a.t.ps > b.t.ps ? 1 : 0));
+  const p0 = plans[0];
+  const head =
+    `<div class="wkPlanHead">${icon("list", 15)}<b>現場Plus の工程（この週）</b><span class="mutedText">${esc(fmtMD(String(p0.takenAt).slice(0, 10)))} 時点</span>` +
+    (plans.some((p) => p.changes) ? `<span class="tag warn">取った後に変更の知らせ ${plans.reduce((n, p) => n + p.changes, 0)}件</span>` : "") +
+    `</div>`;
+  if (!rows.length) return head + `<div class="mutedText">この週に予定の入った工程はありません。</div>`;
+  const li = ({ t, pe }) =>
+    `<li><span class="wkPlanName">${t.parent && t.parent !== t.name ? `<small>${esc(t.parent)} ›</small> ` : ""}${esc(t.name)}</span>` +
+    `<span class="mutedText">${esc(fmtMD(t.ps))}${pe !== t.ps ? "〜" + esc(fmtMD(pe)) : ""}${t.company ? "・" + esc(t.company) : ""}</span></li>`;
+  const first = rows.slice(0, 8);
+  const rest = rows.slice(8);
+  return head + `<ul class="wkPlanList">${first.map(li).join("")}</ul>` + (rest.length ? `<details class="wkPlanMore"><summary>ほか ${rest.length}件</summary><ul class="wkPlanList">${rest.map(li).join("")}</ul></details>` : "");
+}
+async function fillPlans(s) {
+  const slots = [...document.querySelectorAll(".wkPlan[data-week]")];
+  if (!slots.length || !s.koujiNo || !gasOn()) return;
+  let plans;
+  try {
+    plans = await loadPlan(s.koujiNo);
+  } catch (e) {
+    return; // 合言葉が上司・設計者でない時や、つながらない時は出さない
+  }
+  if (!plans.length) return; // 中継に工程表が無い現場（工事番号が入っていない等）は何も出さない
+  slots.forEach((el) => {
+    if (document.body.contains(el)) el.innerHTML = planWeekHtml(plans, el.dataset.week);
+  });
+}
+
 function renderSite(key) {
   const main = $("main");
   const s = data.sites.get(key);
   if (noData() || !s || !siteInScope(s)) return renderSites();
+  setTimeout(() => fillPlans(s), 0); // 描き終わってから、週の報告の下に工程表を入れる
   const prog = siteProgress(s);
   const personProg = personProgress(s);
   const stage = siteStage(prog);
@@ -2328,6 +2381,7 @@ function renderSite(key) {
           : "") +
         (r.memo ? `<div class="wkLine memo">${icon("report", 15)}<span>${r.schema >= 7 ? "<b>上司へ：</b>" : ""}${esc(r.memo)}</span></div>` : "") +
         custMaterialHtml(r) +
+        (s.koujiNo ? `<div class="wkPlan" data-week="${esc(r.week || weekMon(String((r.period || {}).start || "").slice(0, 10)))}"></div>` : "") +
         `</div></div>`
       );
     })

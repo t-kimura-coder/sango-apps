@@ -921,3 +921,13 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .bigTabbed.notice .bigTabNum { color: var(--color-primary); }
 .bigTabbed.notice .bigLabel, .bigTabbed.notice .bigNum, .bigTabbed.notice .bigIcon { color: var(--color-primary); }
 .bigTabbed.notice .bigBtn { border-color: rgba(14, 90, 69, 0.25); }
+/* 現場Plus の工程（週の報告の下。2026-11-09） */
+.wkPlan:empty { display: none; }
+.wkPlan { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--color-surface-sub); font-size: 13px; }
+.wkPlanHead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.tag.warn { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.wkPlanList { margin: 0; padding: 0; list-style: none; }
+.wkPlanList li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px solid var(--color-border); }
+.wkPlanList li:first-child { border-top: none; }
+.wkPlanName small { color: var(--color-text-muted); }
+.wkPlanMore summary { cursor: pointer; color: var(--color-text-muted); margin-top: 4px; }
