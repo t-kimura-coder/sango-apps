@@ -32,7 +32,9 @@ test("工事番号を後から入れると、古い記録に移った時刻の�
 
   await syncIdle(app);
   await app.evaluate(() => pushStates(true));
-  const now = putStates(gas).filter((s) => s.key === "k:T26002").pop();
+  // 裏の送信と前後することがあるので、チェックの入った新しい記録が届くまで待つ
+  await expect.poll(() => putStates(gas).some((s) => s.key === "k:T26002" && s.body.items && s.body.items.m902)).toBe(true);
+  const now = putStates(gas).filter((s) => s.key === "k:T26002" && s.body.items && s.body.items.m902).pop();
   expect(now.body.site.keyAt >= moved.body.movedAt).toBe(true); // GAS はこれで「番号を変えた後の中身」と分かる
   expect(Object.keys(now.body.items)).toContain("m902");
   expect(errors).toEqual([]);

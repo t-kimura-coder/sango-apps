@@ -3,6 +3,10 @@
 // 日付は固定せず、page の中で「今日から」週を計算する（何曜日に動かしても同じ結果になるように）
 const { test, expect, receiveManual, addSite, addPhoto } = require("../fixtures/app");
 
+// 2026-11-12：月・火曜は「先週が未報告なら先週」が最初に選ばれる決まりで、土曜は日曜の写真が先週に入るため、
+// 動かす曜日で結果が変わって夜のチェックで落ちた。今日を木曜に決めて動かす
+test.use({ fixedNow: "2026-11-05T10:00:00+09:00" });
+
 const toastOf = (app, text) => app.locator(".toast, #toast").filter({ hasText: text }).first();
 
 // 今週・先週の月曜（page の中の weekMon と今日で計算）

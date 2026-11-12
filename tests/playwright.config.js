@@ -23,7 +23,7 @@ const executablePath = cloudChromium();
 
 module.exports = defineConfig({
   testDir: "./specs",
-  timeout: 30000,
+  timeout: 60000, // クラウドや混んだ PC では遅くなることがある（30秒で切れて落ちたことがあった）
   retries: 0,
   reporter: [["list"], ["json", { outputFile: "test-results/results.json" }]],
   use: {

@@ -15,7 +15,10 @@ const test = base.test.extend({
     page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     await use(errors);
   },
-  app: async ({ page, gas, errors }, use) => {
+  // 今日の日時を決めておく（曜日で動きが変わる所のテスト用。例 test.use({ fixedNow: "2026-11-05T10:00:00+09:00" })）
+  fixedNow: [null, { option: true }],
+  app: async ({ page, gas, errors, fixedNow }, use) => {
+    if (fixedNow) await page.clock.setFixedTime(new Date(fixedNow));
     await page.addInitScript((token) => {
       // iPhone の Safari にはフォルダを選ぶ機能が無い（あると PC 用の「フォルダに保存」になる）。テストは iPhone と同じ動きで
       delete window.showDirectoryPicker;
@@ -37,7 +40,8 @@ const test = base.test.extend({
 // マニュアルを偽の GAS から受け取る（設定の「合言葉で受け取る」と同じ道）
 async function receiveManual(page) {
   await page.evaluate(() => receiveManualViaGas());
-  await base.expect(page.locator(".toast, #toast").filter({ hasText: "取り込みました" }).first()).toBeVisible({ timeout: 30000 }); // テストを並べて動かすと遅くなることがある
+  // 「取り込みました」の表示は数秒で消え、ほかの表示と重なると見落とすので、マニュアルの項目が使えるようになったことで待つ（2026-11-12）
+  await page.waitForFunction(() => typeof allManualItems === "function" && allManualItems().length > 0, null, { timeout: 45000 });
 }
 
 // 現場を登録する（ホームの「担当現場を登録しましょう」から）
