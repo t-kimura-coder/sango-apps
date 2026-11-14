@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -11,6 +11,14 @@ const setLS = (k, v) => { try { localStorage.setItem(P + k, v); } catch (e) { /*
 
 const PROGRESS = [["", "未手配"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
 const progLabel = (v) => (PROGRESS.find((p) => p[0] === v) || PROGRESS[0])[1];
+// 山郷へのひとことの決まり文句（ボタンの名前, 入る文）。日程が決まる前の返事に使う。業者の名前は入れない（山郷に見せない）
+const REPLY_TEMPLATES = [
+  ["業者に連絡した", "業者に状況を連絡しました。日程が決まり次第お知らせします。"],
+  ["日程の連絡待ち", "業者からの日程の連絡を待っています。決まり次第お知らせします。"],
+  ["週明けに対応", "週明けに対応する予定です。日程が決まり次第お知らせします。"],
+  ["本社で確認中", "本社で確認しています。少しお待ちください。"],
+  ["使用中止のまま", "対応が終わるまで、使用中止のままでお願いします。"],
+];
 const SANGO_STATUS = { "": "依頼中", doing: "対応中", done: "完了" };
 
 const S = { api: loadApi(), records: [], items: {}, syncedAt: 0, syncError: "", loaded: false, master: null, past: [] };
@@ -380,8 +388,10 @@ function viewDetail(main, id) {
       <div class="form">
         <div><label>訪問予定日（業者が伺う日）</label><input type="date" id="fVisit" value="${esc(it.visit_at || "")}"></div>
         <div><label>業者の金額の目安（円。山郷に表示）</label><input type="text" id="fEstm" maxlength="40" placeholder="例）100000（約10万円なら、そのまま）" value="${esc(it.estimate == null ? "" : it.estimate)}"></div>
-        <div class="wide"><label>山郷へのひとこと</label><input type="text" id="fReply" maxlength="120" placeholder="例）10/14 午前に業者が伺います" value="${esc(it.reply || "")}"></div>
-      </div></div>
+        <div class="wide"><label>山郷へのひとこと</label><input type="text" id="fReply" maxlength="120" placeholder="例）10/14 午前に業者が伺います" value="${esc(it.reply || "")}">
+          <div class="replyTpl"><span class="note">よく使うひとこと（押すと入ります。直してから保存できます）</span>${REPLY_TEMPLATES.map((t, i) => `<button type="button" class="tplBtn" data-tpl="${i}">${esc(t[0])}</button>`).join("")}</div></div>
+      </div>
+      <div class="note">訪問予定日が決まっていなくても、ひとことだけで保存できます。日程が決まったら、訪問予定日を入れてください。</div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
       ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.direct === false ? `<span class="chip hq" title="まだ山郷からの修繕実績がない業者。山郷のリーダーの画面では、電話が本社に回ります">本社経由</span>` : ""}${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
       <div id="hqVNote">${hqVendorNote(it.vendor, r.id)}</div>
@@ -403,6 +413,10 @@ function viewDetail(main, id) {
   const coMap = companyMap();   // 業者のまとめは、この画面を開いた時に1回だけ作る（打つたびに作り直さない）
   const upNote = () => { $("hqVNote").innerHTML = hqVendorNote($("fVendor").value.trim(), r.id, coMap); };   // 手配先が本社経由の業者なら、案内を出す
   $("fVendor").oninput = upNote;
+  main.querySelectorAll(".tplBtn").forEach((b) => (b.onclick = () => {   // 空なら入れる。書いてあれば、後ろに足す（同じ文は足さない。120文字まで）
+    const f = $("fReply"), t = REPLY_TEMPLATES[Number(b.dataset.tpl)][1], v = f.value.trim();
+    f.value = !v ? t : v.includes(t) ? v : (v + t).slice(0, 120); f.focus();
+  }));
   main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); upNote(); }));
   $("fSave").onclick = async () => {
     if (saveBusy) return;
