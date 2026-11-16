@@ -211,6 +211,9 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .vAct { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .vEditBox .form { margin-bottom: 8px; }
 .vSpots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vAddRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.vAddRow select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; max-width: 100%; }
+.vAddLbl { font-size: 13px; color: var(--muted); }
 .vSpot { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px; background: #fff; }
 @media (max-width: 720px) { .vRow { grid-template-columns: 1fr 1fr; } .vMain, .vAct { grid-column: 1 / -1; } }
 
