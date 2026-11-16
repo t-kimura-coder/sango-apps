@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 48;
+const APP_VERSION = 49;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -161,6 +161,7 @@ async function loadApiRecords(manual) {
     S.syncedAt = Date.now(); S.syncError = "";
     if (typeof inspLoad === "function") inspLoad(); // 点検も、いっしょに最新にする
     rebuild();
+    hqLoad(false);
     return true;
   } catch (e) {
     S.syncError = String(e && e.message || e);
@@ -457,7 +458,7 @@ function viewMap(main) {
   const live = S.records.filter((r) => !isHidden(r));
   const st = (id) => { const l = live.filter((r) => r.buildingId === id); return { all: l.length, todo: l.filter(isTodo).length, req: l.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length, urgent: l.some((r) => r.req && r.urgent && adm(r).status !== "done") }; };
   const nTodo = live.filter(isTodo).length, nReq = live.filter((r) => r.req && r.src === "new" && adm(r).status !== "done").length;
-  main.innerHTML = `<h2 class="mapH">山郷の敷地</h2>
+  main.innerHTML = `<h2 class="mapH">山郷の敷地</h2>${hqBannerHtml()}
     <div class="mapKpis"><a class="mapKpi" href="#/list" data-todo="1"><small>未整理の症例</small><b>${nTodo}</b></a><a class="mapKpi" href="#/list" data-req="1"><small>依頼（対応中）</small><b>${nReq}</b></a><a class="mapKpi" href="#/list"><small>症例の合計</small><b>${live.length}</b></a></div>
     <div class="panel mapPanel"><div id="siteMapMain"></div></div>`;
   main.querySelectorAll(".mapKpi").forEach((a) => (a.onclick = () => { F.blds = new Set(); F.todo = !!a.dataset.todo; F.req = !!a.dataset.req; }));
@@ -512,7 +513,7 @@ function viewList(main) {
   renderListBody();
 }
 const reqChips = (r) => (r.req ? `<span class="chip req">依頼</span>${r.urgent ? `<span class="chip urgent">急ぎ</span>` : ""}` : "");
-function stateChip(r) { return reqChips(r) + (isHidden(r) ? `<span class="chip hid">非表示</span>` : r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">${r.req ? "完了" : "整理済み"}</span>` : adm(r).status === "doing" ? `<span class="chip doing">対応中</span>` : `<span class="chip todo">${r.req ? "依頼中" : "未整理"}</span>`); }
+function stateChip(r) { return (r.req && r.src === "new" && hqIsNew(r.id) ? `<span class="chip hqNewChip">本社から新着</span>` : "") + reqChips(r) + (isHidden(r) ? `<span class="chip hid">非表示</span>` : r.src === "past" ? `<span class="chip past">過去</span>` : adm(r).status === "done" ? `<span class="chip done">${r.req ? "完了" : "整理済み"}</span>` : adm(r).status === "doing" ? `<span class="chip doing">対応中</span>` : `<span class="chip todo">${r.req ? "依頼中" : "未整理"}</span>`); }
 function renderListBody() {
   const list = filtered();
   $("listCnt").textContent = `全 ${list.length} 件`;
@@ -620,9 +621,34 @@ function reqStatusHtml(st) {
     ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
     ${!st ? `<div class="note">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
+/* ---------- 本社からの新着。端末ごとに「見た時点」（段階＋一番新しい連絡の日時）を持つ。初めての時は、今ある分を見たことにする ---------- */
+let HQ_ST = null, hqAt = 0;
+const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") : "");
+function hqSeen() { try { return JSON.parse(getLS("hq-seen", "") || "null"); } catch (e) { return null; } }
+function hqTake(status) {
+  HQ_ST = status || {};
+  if (!hqSeen()) { const m = { __init: 1 }; Object.keys(HQ_ST).forEach((id) => (m[id] = hqKey(HQ_ST[id]))); setLS("hq-seen", JSON.stringify(m)); }
+}
+const hqIsNew = (id) => { const st = HQ_ST && HQ_ST[id]; return !!st && hqKey(st) !== ((hqSeen() || {})[id] || ""); };
+function hqMarkSeen(id) { const st = HQ_ST && HQ_ST[id]; if (!st) return; const m = hqSeen() || { __init: 1 }; m[id] = hqKey(st); setLS("hq-seen", JSON.stringify(m)); hqDot(); }
+const hqNewIds = () => (HQ_ST ? S.records.filter((r) => r.req && r.src === "new" && hqIsNew(r.id)).map((r) => r.id) : []);
+function hqDot() { const n = hqNewIds().length; document.querySelectorAll(".hqBadge").forEach((el) => { el.textContent = n; el.hidden = !n; }); }
+function hqBannerHtml() {
+  const ids = hqNewIds(); if (!ids.length) return "";
+  return `<a class="hqBanner" href="${ids.length === 1 ? "#/r/" + encodeURIComponent(ids[0]) : MOBILE ? "#/req" : "#/list"}"><b>本社から新しい連絡があります（${ids.length}件）</b><span>見る ›</span></a>`;
+}
+async function hqLoad(force) {   // 依頼の一覧を読んだあとに、一緒に読む（2分に1回まで）
+  if (!S.api || S.demo || (!force && Date.now() - hqAt < 120000)) return;
+  hqAt = Date.now();
+  try {
+    const j = await apiCall({ action: "requestStatus" }, 20000), before = hqNewIds().join();
+    hqTake(j.status); hqDot();
+    if (before !== hqNewIds().join()) refreshView();
+  } catch (e) { /* 次の自動更新で */ }
+}
 async function fillReqStatus(id) {
   const box = $("reqBox"); if (!box || !S.api || S.demo) return;
-  try { const j = await apiCall({ action: "requestStatus" }, 20000); if ($("reqBox") === box) box.innerHTML = reqStatusHtml((j.status || {})[id] || null); }
+  try { const j = await apiCall({ action: "requestStatus" }, 20000); hqTake(j.status); if ($("reqBox") === box) { box.innerHTML = reqStatusHtml((j.status || {})[id] || null); hqMarkSeen(id); } }
   catch (e) { box.innerHTML = `<h3>手配の状況</h3><div class="note">読み込めませんでした（電波・窓口を確認してください）</div>`; }
 }
 async function viewDetail(main, id) {
@@ -793,6 +819,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-11-16", type: "feature", text: "本社から依頼に新しい連絡が来ると、マップの上に「本社から新しい連絡があります」の帯と、症例一覧（スマホは「依頼」タブ）に件数の印が出るようになりました。一覧にも「本社から新着」の印が付きます。症例を開いて見ると消えます。" },
   { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },
   { date: "2026-11-01", type: "feature", text: "「報告のみ」で届いた症例を、管理者が「本社に依頼する」で本社に回せるようになりました（症例の詳細にボタン。急ぎ・ひとことも付けられます）。本社にメールが届き、この画面に「手配の状況」が出るようになります。" },

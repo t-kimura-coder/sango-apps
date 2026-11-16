@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 61;
+const APP_VERSION = 62;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-16", type: "feature", text: "本社から依頼に新しい連絡が来ると、ホームに「本社から新しい連絡があります」の帯と、下の「症例」タブに赤い点が出るようになりました。自分の症例の一覧にも「本社から新着」の印が付きます。開いて見ると消えます。" },
   { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },
   { date: "2026-10-26", type: "fix", text: "症例の入力画面を、書く順に番号を付けて整理しました。建物と分類を上に並べ、①報告の種類 ②場所（どの部屋か）③何が起きたか ④写真 ⑤どう対応したか ⑥報告した人 の順です。建物の中の図で、階段と踊り場を1つ（階段）にまとめました。" },
@@ -340,7 +341,7 @@ async function viewHome(main) {
   recs.forEach((r) => { count[r.buildingId] = (count[r.buildingId] || 0) + 1; });
   const groups = [];
   master.buildings.forEach((b) => { let g = groups.find((x) => x.name === b.group); if (!g) groups.push((g = { name: b.group, list: [] })); g.list.push(b); });
-  main.innerHTML = hero + `<div class="siteMapCard"><div id="siteMap"></div></div>` + inspBannerHtml() + helpCard(false) + `<div class="sectionHead"><h3>名前から選ぶ</h3><span class="rule"></span></div>` + groups.map((g) => `
+  main.innerHTML = hero + `<div class="siteMapCard"><div id="siteMap"></div></div>` + inspBannerHtml() + (await hqBannerHtml()) + helpCard(false) + `<div class="sectionHead"><h3>名前から選ぶ</h3><span class="rule"></span></div>` + groups.map((g) => `
     <div class="sectionHead"><h3>${esc(g.name)}</h3><span class="rule"></span><span class="count">${g.list.length}件</span></div>
     <div class="bldGrid">${g.list.map((b) => `
       <button class="bldCard" data-b="${esc(b.id)}">
@@ -623,7 +624,7 @@ async function fillRecList(box, recs, emptyText) {
     const btn = document.createElement("button");
     btn.className = "recItem" + (r.doneAt ? " isDone" : r.sentAt && !r.draft ? " isSent" : "");
     btn.innerHTML = `<div class="recThumb">${p && p.thumb ? `<img src="${blobUrl(p.thumb)}" alt="">` : icon("image")}</div>
-      <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${stateTag(r)}</div>
+      <div class="recBody"><div class="recMeta"><span>${fmtDate(r.createdAt)}</span>${r.categoryName ? `<span class="tag">${esc(r.categoryName)}</span>` : ""}${stateTag(r)}${r.kind === "request" && hqIsNew(r.id) ? `<span class="tag hqNewTag">本社から新着</span>` : ""}</div>
       <div class="recTitle">${esc(r.what || "（内容なし）")}</div>
       <div class="recSub">${esc([r.buildingName + (r.place && r.place.room ? "・" + r.place.room : ""), r.how].filter(Boolean).join(" ／ "))}</div></div>${icon("chevron")}`;
     btn.lastElementChild.style.cssText = "width:18px;height:18px;color:var(--muted);flex:none";
@@ -835,9 +836,35 @@ function reqStatusHtml(st) {
     ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
     ${!st ? `<div class="mutedText">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
+/* ---------- 本社からの新着。端末ごとに「見た時点」（段階＋一番新しい連絡の日時）を持つ。初めての時は、今ある分を見たことにする ---------- */
+let HQ_ST = null, hqAt = 0;
+const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") : "");
+function hqSeen() { try { return JSON.parse(getSetting("hq-seen", "") || "null"); } catch (e) { return null; } }
+function hqTake(status) {
+  HQ_ST = status || {};
+  if (!hqSeen()) { const m = { __init: 1 }; Object.keys(HQ_ST).forEach((id) => (m[id] = hqKey(HQ_ST[id]))); setSetting("hq-seen", JSON.stringify(m)); }
+}
+const hqIsNew = (id) => { const st = HQ_ST && HQ_ST[id]; return !!st && hqKey(st) !== ((hqSeen() || {})[id] || ""); };
+function hqMarkSeen(id) { const st = HQ_ST && HQ_ST[id]; if (!st) return; const m = hqSeen() || { __init: 1 }; m[id] = hqKey(st); setSetting("hq-seen", JSON.stringify(m)); hqDot(); }
+async function hqNewIds() { if (!HQ_ST) return []; return (await dbAll("records")).filter((r) => r.kind === "request" && r.sentAt && hqIsNew(r.id)).map((r) => r.id); }
+async function hqDot() { const a = document.querySelector('#tabbar a[data-tab="case"]'); if (a) a.classList.toggle("hqNew", (await hqNewIds()).length > 0); }
+async function hqBannerHtml() {
+  const ids = await hqNewIds(); if (!ids.length) return "";
+  return `<div class="inspBanner hqBanner" data-insp-go="${ids.length === 1 ? "#/r/" + encodeURIComponent(ids[0]) : "#/mine"}">${icon("info")}<span>本社から新しい連絡があります（<b>${ids.length}件</b>）</span><span class="inspBannerGo">見る</span></div>`;
+}
+async function hqLoad(force) {   // 開いた時・戻ってきた時に読む（2分に1回まで）
+  if (!hasApi() || (!force && Date.now() - hqAt < 120000)) return;
+  hqAt = Date.now();
+  try {
+    const j = await apiCall({ action: "requestStatus" }, 20000), before = (await hqNewIds()).join();
+    hqTake(j.status); await hqDot();
+    if (before !== (await hqNewIds()).join() && ["home", "mine"].includes(route().name)) render();
+  } catch (e) { /* 電波が無い時は、次に開いた時 */ }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) hqLoad(false); });
 async function fillReqStatus(id) {
   const box = $("reqBox"); if (!box || !hasApi()) return;
-  try { const j = await apiCall({ action: "requestStatus" }, 20000); if ($("reqBox") === box) box.innerHTML = reqStatusHtml((j.status || {})[id] || null); }
+  try { const j = await apiCall({ action: "requestStatus" }, 20000); hqTake(j.status); if ($("reqBox") === box) { box.innerHTML = reqStatusHtml((j.status || {})[id] || null); hqMarkSeen(id); } }
   catch (e) { box.innerHTML = `<div class="mutedText">手配の状況は、電波のある所で見られます。</div>`; }
 }
 
@@ -1111,6 +1138,7 @@ $("gearBtn").onclick = () => go("#/settings");
     if (typeof maybeStartTour === "function") maybeStartTour();
     if (typeof accountStart === "function") accountStart(true);
     if (typeof inspStart === "function") inspStart();
+    hqLoad(true);
   } catch (e) {
     console.error(e);
     $("main").innerHTML = `<div class="empty">端末の保存領域が使えませんでした。<br>Safariの「プライベートブラウズ」を使っていないか確認して、ホーム画面のアイコンから開き直してください。<br><button class="btn btnPrimary" id="retryBoot">もう一度開く</button></div>`;

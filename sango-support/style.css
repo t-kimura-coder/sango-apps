@@ -388,3 +388,5 @@ textarea { min-height: 84px; }
 .inspFlts .chips.wrap{flex-wrap:wrap;overflow:visible;row-gap:6px}
 .hqMsgs { list-style: none; margin: 4px 0 8px; padding: 0; } .hqMsgs li { padding: 6px 10px; margin: 4px 0; border-radius: 8px; background: rgba(0, 0, 0, .04); font-size: 14px; }
 .hqMsgs li.new { background: #fff7e0; border: 1px solid #f0d68a; } .hqT { display: block; font-size: 12px; opacity: .7; } .hqX { white-space: pre-wrap; }
+#tabbar a.hqNew { position: relative; } #tabbar a.hqNew::after { content: ""; position: absolute; top: 4px; left: calc(50% + 10px); width: 10px; height: 10px; border-radius: 50%; background: #d23c2f; border: 2px solid #fff; }
+.tag.hqNewTag { background: #f4d3cf; color: #a3322a; font-weight: 700; }
