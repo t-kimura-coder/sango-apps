@@ -336,3 +336,5 @@ body.mobileMode .settingBox { max-width: none; }
 .hqDlg{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:18px 18px 14px;width:min(480px,100%)}.hqDlg h3{margin:0 0 6px;color:#244f37}
 .hqDlg .note{margin-bottom:10px;line-height:1.5}.hqChk{display:flex;gap:8px;align-items:center;font-weight:700;margin:6px 0 10px}.hqLbl{display:block;font-size:13px;font-weight:700;margin-bottom:4px}
 .hqDlg textarea{width:100%;min-height:80px;box-sizing:border-box;border:1px solid #cfc9b8;border-radius:10px;padding:8px;font:inherit}.hqBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.hqMsgs { list-style: none; margin: 4px 0 8px; padding: 0; } .hqMsgs li { padding: 6px 10px; margin: 4px 0; border-radius: 8px; background: rgba(0, 0, 0, .04); font-size: 14px; }
+.hqMsgs li.new { background: #fff7e0; border: 1px solid #f0d68a; } .hqT { display: block; font-size: 12px; opacity: .7; } .hqX { white-space: pre-wrap; }

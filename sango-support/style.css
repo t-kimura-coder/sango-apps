@@ -386,3 +386,5 @@ textarea { min-height: 84px; }
 .inspFlts .chips{padding:2px 0 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}.inspFlts .chips::-webkit-scrollbar{display:none}
 .inspFlts .fRow+.fRow{margin-top:8px}
 .inspFlts .chips.wrap{flex-wrap:wrap;overflow:visible;row-gap:6px}
+.hqMsgs { list-style: none; margin: 4px 0 8px; padding: 0; } .hqMsgs li { padding: 6px 10px; margin: 4px 0; border-radius: 8px; background: rgba(0, 0, 0, .04); font-size: 14px; }
+.hqMsgs li.new { background: #fff7e0; border: 1px solid #f0d68a; } .hqT { display: block; font-size: 12px; opacity: .7; } .hqX { white-space: pre-wrap; }

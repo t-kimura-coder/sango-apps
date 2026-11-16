@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 60;
+const APP_VERSION = 61;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },
   { date: "2026-10-26", type: "fix", text: "症例の入力画面を、書く順に番号を付けて整理しました。建物と分類を上に並べ、①報告の種類 ②場所（どの部屋か）③何が起きたか ④写真 ⑤どう対応したか ⑥報告した人 の順です。建物の中の図で、階段と踊り場を1つ（階段）にまとめました。" },
   { date: "2026-10-26", type: "fix", text: "建物の中の図で、部屋を指で押しても選べなかったのを直しました。分類のページは、記入欄をやめて「症例を書く」ボタンだけにしました（何が起きたかは、次の画面で書きます）。" },
@@ -819,11 +820,19 @@ async function viewMine(main) {
 
 /* ---------- 手配の状況（依頼の返事。本社が入れた内容のうち、山郷に見せてよいものだけ） ---------- */
 const REQ_STEPS = [["received", "依頼を送った"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
+/** 本社からの連絡（経過。新しい順）。前の窓口（経過が無い）の時は、ひとこと1件を出す */
+function hqMsgsHtml(st) {
+  if (!st) return "";
+  const a = (st.replies && st.replies.length ? st.replies : st.reply ? [{ t: "", text: st.reply }] : []).slice().reverse();
+  if (!a.length) return "";
+  const dt = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  return `<div class="reqLine"><b>本社からの連絡</b></div><ol class="hqMsgs">${a.map((x, i) => `<li${i === 0 ? ' class="new"' : ""}>${x.t ? `<span class="hqT">${esc(dt(x.t))}</span>` : ""}<span class="hqX">${esc(x.text)}</span></li>`).join("")}</ol>`;
+}
 function reqStatusHtml(st) {
   const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
   const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
   return `<div class="fieldLabel">手配の状況</div><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
-    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${st && st.reply ? `<div class="reqLine"><b>本社から：</b>${esc(st.reply)}</div>` : ""}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
     ${!st ? `<div class="mutedText">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
 async function fillReqStatus(id) {

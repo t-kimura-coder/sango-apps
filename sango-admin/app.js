@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -605,11 +605,19 @@ document.addEventListener("click", (e) => {
 /* ---------- 症例の詳細 ---------- */
 /** 手配の状況（本社が入れた内容のうち、山郷に見せてよいものだけ）。依頼の症例の詳細に出す */
 const REQ_STEPS = [["received", "依頼を受けた"], ["arranged", "手配済み"], ["scheduled", "施工待ち"], ["done", "施工完了"]];
+/** 本社からの連絡（経過。新しい順）。前の窓口（経過が無い）の時は、ひとこと1件を出す */
+function hqMsgsHtml(st) {
+  if (!st) return "";
+  const a = (st.replies && st.replies.length ? st.replies : st.reply ? [{ t: "", text: st.reply }] : []).slice().reverse();
+  if (!a.length) return "";
+  const dt = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  return `<div class="reqLine"><b>本社からの連絡</b></div><ol class="hqMsgs">${a.map((x, i) => `<li${i === 0 ? ' class="new"' : ""}>${x.t ? `<span class="hqT">${esc(dt(x.t))}</span>` : ""}<span class="hqX">${esc(x.text)}</span></li>`).join("")}</ol>`;
+}
 function reqStatusHtml(st) {
   const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
   const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
   return `<h3>手配の状況</h3><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
-    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${st && st.reply ? `<div class="reqLine"><b>本社から：</b>${esc(st.reply)}</div>` : ""}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
     ${!st ? `<div class="note">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
 async function fillReqStatus(id) {
@@ -785,6 +793,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },
   { date: "2026-11-01", type: "feature", text: "「報告のみ」で届いた症例を、管理者が「本社に依頼する」で本社に回せるようになりました（症例の詳細にボタン。急ぎ・ひとことも付けられます）。本社にメールが届き、この画面に「手配の状況」が出るようになります。" },
   { date: "2026-10-25", type: "feature", text: "症例に「場所」（リーダーが図で選んだ部屋）が出るようになりました。「図で場所を見る」で、その部屋が色付きで出ます。" },

@@ -99,6 +99,15 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .cand { display: inline-flex; align-items: center; gap: 6px; margin: 6px 12px 0 0; }
 .candBtn, .tplBtn { padding: 4px 12px; border-radius: 14px; border: 1px solid var(--navy); background: #fff; color: var(--navy-deep); font-weight: 700; cursor: pointer; }
 .replyTpl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; } .replyTpl .note { width: 100%; }
+.replyAdd { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--navy-soft); }
+.replyAdd label { display: block; font-size: 13px; margin-bottom: 4px; }
+.replyAdd textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; resize: vertical; }
+.replyAdd .btnRow { margin-top: 8px; align-items: center; }
+.replyH { margin: 12px 0 4px; font-size: 13px; font-weight: 700; }
+.replyLog { list-style: none; margin: 0; padding: 0; } .replyLog li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.replyT { color: var(--muted); font-size: 12px; min-width: 110px; } .replyX { flex: 1; min-width: 200px; white-space: pre-wrap; }
+.linkBtn { border: 0; background: none; color: var(--navy); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
+.replyNone { margin-top: 10px; }
 .tel { color: var(--navy); font-size: 13px; text-decoration: underline; }
 .bars { margin-bottom: 14px; } .barRow { display: grid; grid-template-columns: 78px 1fr 150px; gap: 10px; align-items: center; margin: 6px 0; }
 .barM { font-size: 13px; color: var(--muted); } .barT { background: #ebe8dc; border-radius: 6px; height: 16px; } .barB { background: var(--navy); height: 16px; border-radius: 6px; min-width: 2px; }

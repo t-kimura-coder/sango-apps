@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -356,7 +356,14 @@ const STEPS = ["依頼を受けた", "手配済み", "施工待ち", "施工完�
 const STEP_ICONS = ["order", "arrange", "schedule", "done", "invoice"];
 const icn = (n, c) => `<img class="${c || "ic"}" src="art/ic-${n}.webp" alt="" onerror="this.remove()">`;
 const stepIdx = (r) => { const it = item(r); return it.billed ? 4 : it.progress === "done" ? 3 : it.progress === "scheduled" ? 2 : it.progress === "arranged" ? 1 : 0; };
-let viewTok = 0, saveBusy = false;
+let viewTok = 0, saveBusy = false, replyBusy = false;
+/** 山郷への連絡の経過（新しい順）。一番新しい1件だけ取り消せる */
+function replyListHtml(list) {
+  const a = (list || []).slice().reverse();
+  if (!a.length) return `<div class="note replyNone">山郷への連絡は、まだありません</div>`;
+  return `<div class="replyH">これまでの連絡（山郷に見えています。新しい順）</div><ol class="replyLog">${a.map((x, i) => `<li><span class="replyT">${esc(fmtDT(x.t))}${x.by ? "　" + esc(x.by) : ""}</span><span class="replyX">${esc(x.text)}</span>${i === 0 ? `<button type="button" class="linkBtn" id="replyUndo">取り消す</button>` : ""}</li>`).join("")}</ol>`;
+}
+const fmtDT = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 
 /* ---------- 症例の場所（リーダーが図で選んだ部屋）。「図で場所を見る」で、その部屋に色を付けた図を開く ---------- */
 const placeText = (p) => (p ? (p.floor_label ? p.floor_label + "・" : "") + p.room : "");
@@ -388,10 +395,13 @@ function viewDetail(main, id) {
       <div class="form">
         <div><label>訪問予定日（業者が伺う日）</label><input type="date" id="fVisit" value="${esc(it.visit_at || "")}"></div>
         <div><label>業者の金額の目安（円。山郷に表示）</label><input type="text" id="fEstm" maxlength="40" placeholder="例）100000（約10万円なら、そのまま）" value="${esc(it.estimate == null ? "" : it.estimate)}"></div>
-        <div class="wide"><label>山郷へのひとこと</label><input type="text" id="fReply" maxlength="120" placeholder="例）10/14 午前に業者が伺います" value="${esc(it.reply || "")}">
-          <div class="replyTpl"><span class="note">よく使うひとこと（押すと入ります。直してから保存できます）</span>${REPLY_TEMPLATES.map((t, i) => `<button type="button" class="tplBtn" data-tpl="${i}">${esc(t[0])}</button>`).join("")}</div></div>
       </div>
-      <div class="note">訪問予定日が決まっていなくても、ひとことだけで保存できます。日程が決まったら、訪問予定日を入れてください。</div></div>
+      <div class="note">訪問予定日と金額の目安は、下の「保存する」で保存します。</div>
+      <div class="replyAdd"><label for="fReply">山郷への連絡を足す（送ると、日時つきで下の経過に積まれます。前の連絡は書き換えません）</label>
+        <textarea id="fReply" maxlength="200" rows="2" placeholder="例）業者から連絡がありました。11/20 午前に伺います"></textarea>
+        <div class="replyTpl"><span class="note">よく使う連絡（押すと欄に入ります。直してから送れます）</span>${REPLY_TEMPLATES.map((t, i) => `<button type="button" class="tplBtn" data-tpl="${i}">${esc(t[0])}</button>`).join("")}</div>
+        <div class="btnRow"><button type="button" class="btn primary" id="fReplySend">山郷に送る</button><span class="note">日程が決まっていなくても送れます</span></div></div>
+      <div id="replyList">${replyListHtml(it.replies)}</div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
       ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.direct === false ? `<span class="chip hq" title="まだ山郷からの修繕実績がない業者。山郷のリーダーの画面では、電話が本社に回ります">本社経由</span>` : ""}${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
       <div id="hqVNote">${hqVendorNote(it.vendor, r.id)}</div>
@@ -413,16 +423,33 @@ function viewDetail(main, id) {
   const coMap = companyMap();   // 業者のまとめは、この画面を開いた時に1回だけ作る（打つたびに作り直さない）
   const upNote = () => { $("hqVNote").innerHTML = hqVendorNote($("fVendor").value.trim(), r.id, coMap); };   // 手配先が本社経由の業者なら、案内を出す
   $("fVendor").oninput = upNote;
-  main.querySelectorAll(".tplBtn").forEach((b) => (b.onclick = () => {   // 空なら入れる。書いてあれば、後ろに足す（同じ文は足さない。120文字まで）
-    const f = $("fReply"), t = REPLY_TEMPLATES[Number(b.dataset.tpl)][1], v = f.value.trim();
-    f.value = !v ? t : v.includes(t) ? v : (v + t).slice(0, 120); f.focus();
-  }));
+  main.querySelectorAll(".tplBtn").forEach((b) => (b.onclick = () => { const f = $("fReply"); f.value = REPLY_TEMPLATES[Number(b.dataset.tpl)][1]; f.focus(); }));   // 欄の文を入れ替える（つなげない）
+  // 山郷への連絡：送る（1件足す）・一番新しい1件を取り消す。ほかの欄の書きかけを消さないよう、経過の所だけを描き直す
+  const replyCall = async (patch, btn, okMsg) => {
+    if (replyBusy) return;
+    replyBusy = true; if (btn) btn.disabled = true;
+    try {
+      const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
+      if (!j.item) throw new Error("窓口の返事に保存結果がありません");
+      S.items = { ...S.items, [r.id]: j.item };
+      if (tok === viewTok && $("replyList")) { $("replyList").innerHTML = replyListHtml(j.item.replies); bindUndo(); }
+      toast(okMsg); return true;
+    } catch (e) { alert("送れませんでした。電波や窓口の状態を確認して、もう一度試してください。\n（" + String((e && e.message) || e) + "）"); return false; }
+    finally { replyBusy = false; if (btn) btn.disabled = false; }
+  };
+  const bindUndo = () => { const u = $("replyUndo"); if (u) u.onclick = () => { if (confirm("一番新しい連絡を取り消しますか？（山郷の画面からも消えます）")) replyCall({ reply_undo: true }, u, "取り消しました"); }; };
+  bindUndo();
+  $("fReplySend").onclick = async () => {
+    const t = $("fReply").value.trim();
+    if (!t) { toast("連絡の文を入れてください"); $("fReply").focus(); return; }
+    if (await replyCall({ reply_add: t }, $("fReplySend"), "山郷に送りました")) $("fReply").value = "";
+  };
   main.querySelectorAll(".candBtn").forEach((b) => (b.onclick = () => { $("fVendor").value = b.dataset.v; if (!$("fProg").value) $("fProg").value = "arranged"; if (!$("fArr").value) $("fArr").value = new Date().toISOString().slice(0, 10); upNote(); }));
   $("fSave").onclick = async () => {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
     try {
-      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, visit_at: $("fVisit").value, reply: $("fReply").value.trim(), estimate: $("fEstm").value.trim(), billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
+      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, visit_at: $("fVisit").value, estimate: $("fEstm").value.trim(), billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
       if (patch.billed && !patch.bill_month) { toast("請求済みにするには、請求月を入れてください"); return; }
       const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
       if (!j.item) throw new Error("窓口の返事に保存結果がありません");
