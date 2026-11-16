@@ -19,6 +19,7 @@ const walk = (suite, parents) => {
         file: parents[0] || "",
         title: spec.title,
         status: last.status || "skipped",
+        retried: t.results.length > 1, // クラウドでは落ちたテストを1回やり直す
         error: ((last.error && last.error.message) || "").replace(/\u001b\[[0-9;]*m/g, "").split("\n").slice(0, 6).join("\n"),
       });
     }
@@ -28,4 +29,7 @@ walk(r, []);
 const ng = tests.filter((t) => t.status !== "passed" && t.status !== "skipped");
 console.log(`テスト ${tests.length} 本：通った ${tests.filter((t) => t.status === "passed").length}・落ちた ${ng.length}・飛ばした ${tests.filter((t) => t.status === "skipped").length}（${Math.round((r.stats?.duration || 0) / 1000)} 秒）`);
 for (const t of ng) console.log(`\n✗ ${t.file} › ${t.title}\n${t.error}`);
+// 1回目に落ちて、やり直しで通ったもの（不安定なテストの目印。報告の「気づいたこと」に書く）
+const flaky = tests.filter((t) => t.status === "passed" && t.retried);
+if (flaky.length) console.log(`\nやり直しで通過 ${flaky.length} 本：\n` + flaky.map((t) => `- ${t.file} › ${t.title}`).join("\n"));
 process.exit(ng.length ? 1 : 0);

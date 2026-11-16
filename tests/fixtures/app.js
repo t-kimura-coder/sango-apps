@@ -16,9 +16,10 @@ const test = base.test.extend({
     await use(errors);
   },
   // 今日の日時を決めておく（曜日で動きが変わる所のテスト用。例 test.use({ fixedNow: "2026-11-05T10:00:00+09:00" })）
-  fixedNow: [null, { option: true }],
+  // 全部のテストで今日を決めて動かす（2026-11-16：動かす日・曜日でテストの結果が変わり、夜のチェックが不安定だった）。時刻はそこから進む
+  fixedNow: ["2026-11-05T10:00:00+09:00", { option: true }],
   app: async ({ page, gas, errors, fixedNow }, use) => {
-    if (fixedNow) await page.clock.setFixedTime(new Date(fixedNow));
+    if (fixedNow) await page.clock.setSystemTime(new Date(fixedNow));
     await page.addInitScript((token) => {
       // iPhone の Safari にはフォルダを選ぶ機能が無い（あると PC 用の「フォルダに保存」になる）。テストは iPhone と同じ動きで
       delete window.showDirectoryPicker;

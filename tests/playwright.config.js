@@ -24,7 +24,7 @@ const executablePath = cloudChromium();
 module.exports = defineConfig({
   testDir: "./specs",
   timeout: 60000, // クラウドや混んだ PC では遅くなることがある（30秒で切れて落ちたことがあった）
-  retries: 0,
+  retries: process.env.TEST_BROWSER === "chromium" ? 1 : 0, // クラウド（遅い）だけ、落ちたテストを1回やり直す。やり直しで通ったものは summarize が「やり直しで通過」と出す
   reporter: [["list"], ["json", { outputFile: "test-results/results.json" }]],
   use: {
     baseURL: "http://localhost:4173/",

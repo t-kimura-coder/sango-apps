@@ -1,5 +1,8 @@
 // 現場ナビの週の報告：報告タブ（①工程を選んで写真を入れる・振り分ける → ②工程ごとの様子 → ③送る）→ 偽の Box に届いた報告 JSON の中身を確かめる
 const { test, expect, receiveManual, addSite, addPhoto, markCheck } = require("../fixtures/app");
+
+// 取り込みのテストは本物のファイルを使い、写真の日付はファイルの日付（本当の今日）になるので、今日は決めずに本当の日付で動かす
+test.use({ fixedNow: null });
 const { fakeManualPack } = require("../fixtures/fake-manual");
 
 const toastOf = (app, text) => app.locator(".toast, #toast").filter({ hasText: text }).first();
