@@ -1,6 +1,15 @@
 // 現場カルテ（genba-karte）。過去の現場の事例を、言葉から引く・現場ごとに並べる・振り返る時に足す。
 // 社内データ（事例カード・現場名・札・言い換え）はここに書かない。カルテパックの JSON を取り込む。作りは 設計メモ.md
-const APP_VERSION = 2;
+const APP_VERSION = 3;
+// お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する（現場ナビと同じ形）
+// （自動では増えないので、書き忘れるとお知らせが古いまま残る）
+const ANNOUNCEMENTS = [
+  { date: "2026-11-18", type: "feature", text: "ダークモードを足しました。設定の「表示の色」で、端末と同じ・ライト・ダークを選べます" },
+  { date: "2026-11-18", type: "feature", text: "お知らせを足しました（ホーム右上のベル）。「新しい機能」と「直したこと」に分けて出します" },
+  { date: "2026-11-18", type: "fix", text: "設定のボタンの絵を、現場ナビと同じ歯車にしました" },
+  { date: "2026-11-18", type: "feature", text: "現場一覧を「期でくくる」に切り替えられるようにしました。事例を引く時も、期で絞れます（期の入ったカルテパックを取り込んだ時）" },
+  { date: "2026-11-18", type: "feature", text: "現場カルテを公開しました。カルテパックを取り込むと、言葉から事例を引く・現場ごとに建てた時とその後を見る・振り返る時に足す、ができます" },
+];
 // カード・現場名・札・言い換えは社内データ。アプリには入れず、カルテパック（JSON）を取り込んで端末（IndexedDB）に置く
 let D = null, CARDS = [], BUKKEN = {}, LISTS = {工程:[], 部位:[], 症状:[]}, ALIAS = {}, NAMES = {}, HAS_NAMES = false, byId = {};
 let TASU = [];   // この端末で足した「そう言えば」
@@ -33,7 +42,8 @@ const P = {
   tag:'<path d="M4 12V4h8l8 8-8 8z"/><circle cx="8.500" cy="8.500" r="1.200"/>',
   save:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   check:'<path d="M5 12l4.500 4.500L19 7"/>',
-  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.600 5.600l2.100 2.100M16.300 16.300l2.100 2.100M18.400 5.600l-2.100 2.100M7.700 16.300l-2.100 2.100"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   down:'<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'
 };
 const ic = n => `<svg class="i" viewBox="0 0 24 24">${P[n]}</svg>`;
@@ -89,6 +99,8 @@ function caseRow(c, hit){
 const kiOf = k => (BUKKEN[k] || {})['期'];
 const kiList = () => [...new Set(Object.keys(BUKKEN).map(kiOf).filter(Boolean))].sort((a, b) => b - a);
 const kiPill = k => kiOf(k) ? `<span class="ki">${esc(kiOf(k))}期</span>` : '';
+const annSeen = () => { try { return Number(localStorage.getItem('gk-announce-seen') || 0); } catch (e) { return 0; } };
+const acts = () => `<div class="acts"><a class="gear bellBtn" href="#/oshirase" aria-label="お知らせ">${ic('bell')}${ANNOUNCEMENTS.length > annSeen() ? '<span class="bellDot"></span>' : ''}</a><a class="gear" href="#/settei" aria-label="設定">${ic('gear')}</a></div>`;
 function bukkenLabel(k){ const b = BUKKEN[k] || {}; return [b['種類'], b['用途'], b['地域'], b['季節']].filter(x => x && x !== '記録なし').join('・'); }
 function kindImg(k){ const b = BUKKEN[k] || {}, y = String(b['用途'] || '');
   if (String(b['種類'] || '').includes('リフォーム')) return 'kind-reform.webp';
@@ -112,7 +124,7 @@ function home(){
   const years = [...new Set(Object.keys(BUKKEN).filter(k => /^\d/.test(k)).map(k => k.slice(0,2)))].sort().reverse();
   const recent = Object.keys(BUKKEN).filter(k => k.startsWith(years[0])).sort().reverse().slice(0, 4);
   const after = CARDS.filter(isAfter).length;
-  return `<div class="brand">${img('icon-96.png')}<div><b>現場カルテ</b><span>建てた時も、その後も。</span></div><a class="gear" href="#/settei" aria-label="設定">${ic('gear')}</a></div>
+  return `<div class="brand">${img('icon-96.png')}<div><b>現場カルテ</b><span>建てた時も、その後も。</span></div>${acts()}</div>
     <div class="hero">${img('hero.webp')}</div>
     <div class="searchwrap">${searchBox('', false)}</div>${chipsHtml(true)}
     <div class="tiles">
@@ -233,7 +245,7 @@ function taisaku(){
 
 // ---- 道案内 ----
 const TABS = [['home','#/','ホーム','home'],['hiku','#/hiku','事例','book'],['genba','#/genba','現場','helmet'],['tasu','#/tasu','足す','plus'],['taisaku','#/taisaku','対策','sign']];
-const TITLES = {home:'現場カルテ', hiku:'事例を引く', genba:'現場一覧', tasu:'そう言えばを足す', card:'事例カード', taisaku:'対策の行き先', settei:'設定'};
+const TITLES = {home:'現場カルテ', hiku:'事例を引く', genba:'現場一覧', tasu:'そう言えばを足す', card:'事例カード', taisaku:'対策の行き先', settei:'設定', oshirase:'お知らせ'};
 function renderApp(){
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/'); const tab = p[0] || 'home';
   let h = '', title = TITLES[tab] || '現場カルテ';
@@ -244,6 +256,7 @@ function renderApp(){
   else if (tab === 'tasu') h = tasu(p[1], p[2]);
   else if (tab === 'taisaku') h = taisaku();
   else if (tab === 'settei') h = settei();
+  else if (tab === 'oshirase') h = oshirase();
   document.body.classList.toggle('home', tab === 'home');
   $('#app').innerHTML = h; $('#title').textContent = title;
   const cur = tab === 'card' ? 'hiku' : tab;
@@ -273,6 +286,28 @@ document.addEventListener('input', e => {
   $('#f-tags').innerHTML = all.length ? all.map(x => `<span class="tag hit">${esc(x)}</span>`).join('') : '<span style="font-size:13px;color:var(--muted)">まだ拾えていません</span>';
 });
 window.addEventListener('hashchange', render);
+
+// ---- お知らせ（「新しい機能」と「直したこと」に分ける。機能の追加が、細かい修正に埋もれないように） ----
+let annTab = 'feature', annUnseen = 0, annOpened = false;
+function oshirase(){
+  if (!annOpened) { annUnseen = ANNOUNCEMENTS.length - annSeen(); annTab = 'feature'; annOpened = true; try { localStorage.setItem('gk-announce-seen', String(ANNOUNCEMENTS.length)); } catch (e) {} }
+  const isFix = a => a.type === 'fix', newIn = fix => ANNOUNCEMENTS.filter((a, i) => i < annUnseen && isFix(a) === fix).length;
+  const tab = (k, l, n) => `<button type="button" data-ann="${k}" class="${annTab === k ? 'on' : ''}">${l}${n ? `<span class="annCount">${n}</span>` : ''}</button>`;
+  const list = ANNOUNCEMENTS.map((a, i) => ({a, i})).filter(({a}) => isFix(a) === (annTab === 'fix'));
+  return `<div class="seg" id="annTabs">${tab('feature', '新しい機能', newIn(false))}${tab('fix', '直したこと', newIn(true))}</div>
+    <div class="list" style="margin-top:14px">${list.length ? list.map(({a, i}) => `<div class="card annItem"><div class="pills" style="margin:0 0 4px"><span class="pill ${isFix(a) ? 'new' : 'after'}">${isFix(a) ? '修正' : '機能'}</span><span class="annDate">${esc(a.date.replace(/-/g, '/'))}</span>${i < annUnseen ? '<span class="annNew">NEW</span>' : ''}</div><div>${esc(a.text)}</div></div>`).join('') : '<div class="lead">まだありません。</div>'}</div>`;
+}
+// ---- 表示の色（端末と同じ／ライト／ダーク）。現場ナビと同じ考え方 ----
+const getTheme = () => { try { const t = localStorage.getItem('gk-theme'); return t === 'light' || t === 'dark' ? t : 'auto'; } catch (e) { return 'auto'; } };
+function applyTheme(t){
+  const el = document.documentElement;
+  if (t === 'light' || t === 'dark') el.setAttribute('data-theme', t); else el.removeAttribute('data-theme');
+  const dark = t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', dark ? '#1c2320' : '#f7f5ef');
+}
+function setTheme(t){ try { if (t === 'auto') localStorage.removeItem('gk-theme'); else localStorage.setItem('gk-theme', t); } catch (e) {} applyTheme(t); render(); }
+const themeSec = () => `<h2>表示の色</h2><div class="card"><div class="seg">${[['auto','端末と同じ'],['light','ライト'],['dark','ダーク']].map(([k, l]) => `<button type="button" data-theme-set="${k}" class="${getTheme() === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(getTheme()));
 
 // ---- ここから：パックの取り込み・端末への保存・設定（試作には無かった部分） ----
 const DB_NAME = 'genba-karte', STORE_META = 'meta', STORE_TASU = 'tasu';
@@ -320,9 +355,9 @@ async function importFile(file){
 }
 
 function welcome(){
-  return `<div class="brand">${img('icon-96.png')}<div><b>現場カルテ</b><span>建てた時も、その後も。</span></div></div>
+  return `<div class="brand">${img('icon-96.png')}<div><b>現場カルテ</b><span>建てた時も、その後も。</span></div>${acts()}</div>
     <div class="hero">${img('hero.webp')}</div>
-    <div class="card" style="margin-top:-18px;position:relative"><b style="font-size:17px;color:var(--heading)">カルテパックを取り込んでください</b>
+    <div class="card welcomeCard" style="margin-top:-18px;position:relative"><b style="font-size:17px;color:var(--heading)">カルテパックを取り込んでください</b>
       <p class="lead" style="margin:6px 0 14px">事例カードと現場の一覧は、アプリには入っていません。受け取った「カルテパック」のファイル（.json）を選ぶと、この端末に入ります。</p>
       <button class="btn green" id="imp">${ic('down')}ファイルから取り込む</button>
       <a class="more" href="?demo=1" id="demo">作りもののデータで試す（デモ）</a></div>
@@ -338,6 +373,7 @@ function settei(){
     <div class="card">${TASU.length ? `<div class="list" style="gap:6px;margin-bottom:12px">${TASU.slice().reverse().slice(0, 30).map(x => `<div class="rw"><span class="k">${esc(x['物件'])}　${esc(x['場面'] || '')}</span><div class="v">${esc(x['題'])}</div><button class="chip" data-del="${esc(x.uid)}" style="margin-top:6px">消す</button></div>`).join('')}</div>
         <button class="btn green" id="exp">${ic('save')}まとめて書き出す（${TASU.length} 件）</button>
         <p class="lead" style="margin:10px 0 0">書き出したファイルを、決まった場所に置いてください。書き出しても、端末の中の物は消えません。</p>` : '<div class="lead" style="margin:0">まだありません。「足す」から入れられます。</div>'}</div>
+    ${themeSec()}
     <h2>${ic('gear')}アプリ</h2>
     <div class="card"><div class="lead">現場カルテ v${APP_VERSION}</div><button class="btn green" id="upd" style="background:var(--surface);color:var(--primary);border:1.5px solid var(--primary)">アプリ本体を最新にする</button>
       <p class="lead" style="margin:10px 0 0">取り込んだパックと、足した物は、端末に残ります。</p></div>`;
@@ -368,11 +404,14 @@ async function updateApp(){
 function render(){
   const tab = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/')[0] || 'home';
   const nav = document.querySelector('.tab');
-  if (!D && tab !== 'settei') { document.body.classList.add('home'); nav.hidden = true; $('#app').innerHTML = welcome(); window.scrollTo(0, 0); return; }
+  if (tab !== 'oshirase') annOpened = false;
+  if (!D && tab !== 'settei' && tab !== 'oshirase') { document.body.classList.add('home'); nav.hidden = true; $('#app').innerHTML = welcome(); window.scrollTo(0, 0); return; }
   nav.hidden = false;
   renderApp();
 }
 document.addEventListener('click', e => {
+  const th = e.target.closest('[data-theme-set]'); if (th) { setTheme(th.dataset.themeSet); return; }
+  const an = e.target.closest('[data-ann]'); if (an) { annTab = an.dataset.ann; render(); return; }
   if (e.target.closest('#imp')) { $('#packFile').click(); return; }
   if (e.target.closest('#exp')) { exportTasu(); return; }
   if (e.target.closest('#upd')) { updateApp(); return; }
@@ -382,6 +421,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => { if (e.target.id === 'kiSel') { lastKi = e.target.value; render(); return; }
   if (e.target.id === 'packFile' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; } });
 async function boot(){
+  applyTheme(getTheme());
   try { await dbOpen(); TASU = (await dbAll(STORE_TASU)) || []; } catch (e) { toast('この端末の保存場所が使えません（プライベートブラウズでは保存されません）'); }
   const demo = /[?&]demo=1/.test(location.search);
   try { const p = !demo && db ? await dbGet(STORE_META, 'pack') : null; if (p && !packProblem(p)) usePack(p); } catch (e) {}

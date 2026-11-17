@@ -130,6 +130,62 @@ test("デモ：そう言えばを足すと端末に残り、書き出せる", as
   await expect(page.locator("#f-out")).toContainText("入れてください");
 });
 
+test("お知らせ：ベルの印、機能と修正のタブ、開くと既読になる", async ({ page }) => {
+  await page.goto(URL + "?demo=1");
+  await expect(page.locator(".bellDot")).toBeVisible();
+  await page.locator(".bellBtn").click();
+  await expect(page.locator("#title")).toHaveText("お知らせ");
+  // 最初は「新しい機能」。機能の印だけが並び、NEW が付く
+  await expect(page.locator("#annTabs .on")).toContainText("新しい機能");
+  await expect(page.locator(".annItem").first().locator(".pill")).toHaveText("機能");
+  await expect(page.locator(".annItem .annNew").first()).toBeVisible();
+  await page.locator('[data-ann="fix"]').click();
+  await expect(page.locator(".annItem").first().locator(".pill")).toHaveText("修正");
+  await expect(page.locator(".annItem .pill", { hasText: "機能" })).toHaveCount(0);
+  // 一度開いたら、ホームのベルの印は消える。開き直すと NEW も消える
+  await page.goto(URL + "?demo=1");
+  await expect(page.locator(".bellBtn")).toBeVisible();
+  await expect(page.locator(".bellDot")).toHaveCount(0);
+  await page.locator(".bellBtn").click();
+  await expect(page.locator(".annItem").first()).toBeVisible();
+  await expect(page.locator(".annNew")).toHaveCount(0);
+});
+
+test("表示の色：ダークを選ぶと暗くなり、開き直しても残る。端末と同じに戻せる", async ({ page }) => {
+  await page.goto(URL + "?demo=1#/settei");
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(await bg()).toBe("rgb(247, 245, 239)");
+  await page.locator('[data-theme-set="dark"]').click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await bg()).toBe("rgb(28, 35, 32)");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator('[data-theme-set="dark"]')).toHaveClass(/on/);
+  await page.locator('[data-theme-set="auto"]').click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
+  expect(await bg()).toBe("rgb(247, 245, 239)");
+  // 端末がダークの時は、何も選ばなくても暗くなる。ライトを選ぶと明るいまま
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await bg()).toBe("rgb(28, 35, 32)");
+  await page.locator('[data-theme-set="light"]').click();
+  expect(await bg()).toBe("rgb(247, 245, 239)");
+});
+
+test("設定とお知らせの絵が現場ナビと同じ・お知らせが新しい順", () => {
+  const app = read("app.js");
+  const navi = fs.readFileSync(path.join(DIR, "..", "genba-manual", "app.js"), "utf8");
+  const naviIcon = (name) => navi.match(new RegExp("\\n  " + name + ": '([^']+)',"))[1];
+  const myIcon = (name) => app.match(new RegExp("\\n  " + name + ":'([^']+)',"))[1];
+  expect(myIcon("gear"), "設定の絵（歯車）").toBe(naviIcon("settings"));
+  expect(myIcon("bell"), "お知らせの絵（ベル）").toBe(naviIcon("bell"));
+  const block = app.slice(app.indexOf("const ANNOUNCEMENTS = ["), app.indexOf("];", app.indexOf("const ANNOUNCEMENTS = [")));
+  const rows = [...block.matchAll(/\{ date: "(\d{4}-\d{2}-\d{2})", type: "(\w+)", text: "/g)];
+  expect(rows.length).toBeGreaterThan(0);
+  const dates = rows.map((r) => r[1]);
+  expect(dates).toEqual([...dates].sort().reverse());
+  expect(rows.every((r) => ["feature", "fix"].includes(r[2]))).toBe(true);
+});
+
 test("版数がそろっている・社内データが入っていない", () => {
   const app = read("app.js");
   const html = read("index.html");
