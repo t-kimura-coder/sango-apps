@@ -130,6 +130,29 @@ test("デモ：そう言えばを足すと端末に残り、書き出せる", as
   await expect(page.locator("#f-out")).toContainText("入れてください");
 });
 
+test("デモ：足す画面の現場は、期で絞って選べる", async ({ page }) => {
+  await page.goto(URL + "?demo=1#/tasu");
+  const names = () => page.locator("#f-b option").allTextContents();
+  // 最初は、一番新しい期（55期）の現場だけ
+  await expect(page.locator("#f-ki .on")).toHaveText("55期");
+  expect(await names()).toEqual(["現場を選んでください（1 件）", "見本一郎様邸（26-91）"]);
+  await page.locator('#f-ki [data-tk="54"]').click();
+  expect(await names()).toEqual(["現場を選んでください（1 件）", "サンプル商店（26-92）"]);
+  // 選んだ現場は、期を変えても、その期にあれば選ばれたまま。書いた文も消えない
+  await page.locator("#f-t").fill("書きかけ");
+  await page.locator("#f-b").selectOption("26-92");
+  await page.locator('#f-ki [data-tk=""]').click();
+  expect((await names()).length).toBe(4);
+  await expect(page.locator("#f-b")).toHaveValue("26-92");
+  await expect(page.locator("#f-t")).toHaveValue("書きかけ");
+  await page.locator('#f-ki [data-tk="x"]').click();
+  expect(await names()).toEqual(["現場を選んでください（1 件）", "作例様邸（A55-91）"]);
+  // 現場のカルテから開いた時は、その現場の期が選ばれている
+  await page.goto(URL + "?demo=1#/tasu/26-92");
+  await expect(page.locator("#f-ki .on")).toHaveText("54期");
+  await expect(page.locator("#f-b")).toHaveValue("26-92");
+});
+
 test("お知らせ：ベルの印、機能と修正のタブ、開くと既読になる", async ({ page }) => {
   await page.goto(URL + "?demo=1");
   await expect(page.locator(".bellDot")).toBeVisible();

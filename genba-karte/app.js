@@ -1,9 +1,10 @@
 // 現場カルテ（genba-karte）。過去の現場の事例を、言葉から引く・現場ごとに並べる・振り返る時に足す。
 // 社内データ（事例カード・現場名・札・言い換え）はここに書かない。カルテパックの JSON を取り込む。作りは 設計メモ.md
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する（現場ナビと同じ形）
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-18", type: "feature", text: "「そう言えばを足す」で、現場を期で絞って選べるようにしました。最初は一番新しい期の現場だけが並びます（期の入ったカルテパックを取り込んだ時）" },
   { date: "2026-11-18", type: "feature", text: "ダークモードを足しました。設定の「表示の色」で、端末と同じ・ライト・ダークを選べます" },
   { date: "2026-11-18", type: "feature", text: "お知らせを足しました（ホーム右上のベル）。「新しい機能」と「直したこと」に分けて出します" },
   { date: "2026-11-18", type: "fix", text: "設定のボタンの絵を、現場ナビと同じ歯車にしました" },
@@ -219,14 +220,21 @@ function card(id){
 }
 const SCENES = ['建てた時','引渡しの後','1年点検','2年点検','リフォーム・修理'];
 const ROLES = ['工事担当','設計担当','工事事務','リフォーム担当','アフター担当','その他'];
+/** 足す画面の現場の選択肢。ki＝期（''＝すべて、'x'＝期が分からない現場） */
+function tasuOpts(ki, sel){
+  const all = Object.keys(BUKKEN).filter(x => !ki || (ki === 'x' ? !kiOf(x) : String(kiOf(x)) === ki));
+  const ks = [...all.filter(x => /^\d/.test(x)).sort().reverse(), ...all.filter(x => !/^\d/.test(x)).sort().reverse()];
+  return `<option value="">現場を選んでください（${ks.length} 件）</option>` + ks.map(x => `<option value="${esc(x)}"${x === sel ? ' selected' : ''}>${esc(NAMES[x] ? NAMES[x] + '（' + x + '）' : x + '　' + bukkenLabel(x))}</option>`).join('');
+}
 function tasu(k, cid){
   const base = cid && byId[cid];
-  const all = Object.keys(BUKKEN), ks = [...all.filter(x => /^\d/.test(x)).sort().reverse(), ...all.filter(x => !/^\d/.test(x)).sort().reverse()];
-  const opts = ks.map(x => `<option value="${esc(x)}"${x === k ? ' selected' : ''}>${esc(NAMES[x] ? NAMES[x] + '（' + x + '）' : x + '　' + bukkenLabel(x))}</option>`).join('');
+  // 現場が多いと選びにくいので、期で絞る。最初は、開いた現場の期（無ければ一番新しい期）
+  const kis = kiList(), ki0 = k && BUKKEN[k] ? (kiOf(k) ? String(kiOf(k)) : 'x') : (kis.length ? String(kis[0]) : '');
+  const opts = tasuOpts(ki0, k);
   const sel = base && isAfter(base) ? (base['場面'].includes('2年') ? '2年点検' : '1年点検') : '建てた時';
   return `<div class="tasu-head"><p>振り返っていて「そう言えばこんな事もあった」と思い出した事を、あとから足して残します。その時に気付いた事は、現場ナビに入れてください。</p>${img('note.webp')}</div>
     ${base ? `<div class="info">次のカードに足します：<b>${esc(base.id)}</b> ${esc(base['題'])}</div>` : ''}
-    <label class="f">${ic('pin')}現場を選ぶ<span class="must">必須</span></label><select class="inp" id="f-b"><option value="">現場を選んでください</option>${opts}</select>
+    <label class="f">${ic('pin')}現場を選ぶ<span class="must">必須</span></label>${kis.length ? `<div class="chips" id="f-ki" style="margin:0 0 8px">${[...kis.map(x => [String(x), x + '期']), ['x', '期が不明'], ['', 'すべて']].map(([v, l]) => `<button type="button" class="chip${v === ki0 ? ' on' : ''}" data-tk="${v}">${l}</button>`).join('')}</div>` : ''}<select class="inp" id="f-b">${opts}</select>
     <label class="f">${ic('note')}何があった<span class="must">必須</span><small>一つの出来事だけ</small></label><textarea class="inp" id="f-t" placeholder="例：2階の建具が冬になると閉まりにくくなった">${base ? esc(base['題']) : ''}</textarea>
     <label class="f">${ic('cal')}いつの事か<span class="must">必須</span></label><div class="seg" id="f-s">${SCENES.map(s => `<button type="button" data-s="${s}" class="${s === sel ? 'on' : ''}">${s}</button>`).join('')}</div>
     <label class="f">${ic('cause')}何が要因で<small>分からなければ空のまま</small></label><textarea class="inp" id="f-g" placeholder="考えられる原因"></textarea>
@@ -410,6 +418,7 @@ function render(){
   renderApp();
 }
 document.addEventListener('click', e => {
+  const tk = e.target.closest('[data-tk]'); if (tk) { const cur = $('#f-b').value; document.querySelectorAll('#f-ki .chip').forEach(b => b.classList.toggle('on', b === tk)); $('#f-b').innerHTML = tasuOpts(tk.dataset.tk, cur); return; }
   const th = e.target.closest('[data-theme-set]'); if (th) { setTheme(th.dataset.themeSet); return; }
   const an = e.target.closest('[data-ann]'); if (an) { annTab = an.dataset.ann; render(); return; }
   if (e.target.closest('#imp')) { $('#packFile').click(); return; }
