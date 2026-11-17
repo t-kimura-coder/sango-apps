@@ -55,6 +55,40 @@ test("デモ：現場のカルテに、建てた時 → その後 のつなが�
   await expect(page.locator(".rw .k")).toContainText(["何が要因で", "どうなった", "どうした方が良かった"]);
 });
 
+test("デモ：現場一覧を期でくくれる。事例も期で絞れる", async ({ page }) => {
+  await page.goto(URL + "?demo=1#/genba");
+  // 最初は振り返り会の年でくくる
+  await expect(page.locator(".year").first()).toContainText("2026年の振り返り会");
+  await page.locator('[data-g="ki"]').click();
+  const heads = await page.locator(".year").allTextContents();
+  expect(heads.map((h) => h.replace(/\s.*$/, ""))).toEqual(["55期", "54期", "期が分からない現場"]);
+  await expect(page.locator(".g-row .ki").first()).toHaveText("55期");
+  // 選んだくくり方は、開き直しても残る
+  await page.reload();
+  await expect(page.locator(".year").first()).toContainText("55期");
+  // 事例を引く：期で絞ると、その期の現場のカードだけになる
+  await page.goto(URL + "?demo=1#/hiku");
+  await page.locator("#q").fill("床");
+  await page.locator("#q").press("Enter");
+  const all = await page.locator(".case").count();
+  await page.locator("#kiSel").selectOption("54");
+  await expect(page.locator(".case")).toHaveCount(0);
+  await page.locator("#kiSel").selectOption("55");
+  await expect(page.locator(".case")).toHaveCount(all);
+});
+
+test("期の入っていないパックでは、期のボタンが出ない", async ({ page }) => {
+  await page.goto(URL);
+  const demo = await page.evaluate(() => window.KARTE_DEMO);
+  const bukken = Object.fromEntries(Object.entries(demo.bukken).map(([k, v]) => [k, { ...v, "期": undefined }]));
+  await page.locator("#packFile").setInputFiles({ name: "pack.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ ...demo, demo: false, bukken })) });
+  await page.locator(".tile").first().waitFor();
+  await page.goto(URL + "#/genba");
+  await expect(page.locator(".g-row").first()).toBeVisible();
+  await expect(page.locator('[data-g="ki"]')).toHaveCount(0);
+  await expect(page.locator(".g-row .ki")).toHaveCount(0);
+});
+
 test("パックをファイルから取り込むと、端末に残る", async ({ page }) => {
   await page.goto(URL);
   const demo = await page.evaluate(() => window.KARTE_DEMO);

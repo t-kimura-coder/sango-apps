@@ -1,7 +1,7 @@
 // キャッシュ対象を変更したら CACHE_VERSION を上げること
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const CACHE_NAME = `genba-karte-v${CACHE_VERSION}`;
-const APP_SHELL = ['./', 'index.html', 'app.js?v=1', 'demo.js?v=1', 'style.css?v=1', 'manifest.webmanifest', 'icon-96.png?v=1', 'icon-180.png?v=1', 'icon-192.png?v=1', 'icon-512.png?v=1',
+const APP_SHELL = ['./', 'index.html', 'app.js?v=2', 'demo.js?v=2', 'style.css?v=2', 'manifest.webmanifest', 'icon-96.png?v=1', 'icon-180.png?v=1', 'icon-192.png?v=1', 'icon-512.png?v=1',
   'art/icon-96.png', 'art/hero.webp', 'art/deco.webp', 'art/empty.webp', 'art/note.webp', 'art/tile-hiku.webp', 'art/tile-genba.webp', 'art/tile-tasu.webp', 'art/tile-taisaku.webp',
   'art/kind-house.webp', 'art/kind-reform.webp', 'art/kind-shop.webp'];
 // 事例カード・現場名などの社内データはアプリに含めない。カルテパック（JSON）を取り込んで IndexedDB に保存する

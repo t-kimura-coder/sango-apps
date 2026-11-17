@@ -78,6 +78,9 @@ h2 .more{margin-left:auto;font-size:13px;color:var(--primary);font-weight:700}
 .g-row .c{font-size:12px;color:var(--sub);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
 .g-row .c b{color:var(--primary);font-size:14px}
 .g-row .chev{margin-left:auto;color:var(--muted)}
+.ki{display:inline-block;font-size:11px;font-weight:700;background:var(--primary-soft);color:var(--primary);border-radius:6px;padding:0 6px;margin-right:6px}
+select.chip{appearance:auto;padding-right:8px}
+.year small{font-weight:400}
 .kigo{font-size:11px;font-weight:700;color:var(--wood-text);font-variant-numeric:tabular-nums}
 
 .case{display:block;background:var(--surface);border-radius:var(--r-md);box-shadow:var(--shadow);padding:14px}

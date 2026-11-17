@@ -1,6 +1,6 @@
 // 現場カルテ（genba-karte）。過去の現場の事例を、言葉から引く・現場ごとに並べる・振り返る時に足す。
 // 社内データ（事例カード・現場名・札・言い換え）はここに書かない。カルテパックの JSON を取り込む。作りは 設計メモ.md
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 // カード・現場名・札・言い換えは社内データ。アプリには入れず、カルテパック（JSON）を取り込んで端末（IndexedDB）に置く
 let D = null, CARDS = [], BUKKEN = {}, LISTS = {工程:[], 部位:[], 症状:[]}, ALIAS = {}, NAMES = {}, HAS_NAMES = false, byId = {};
 let TASU = [];   // この端末で足した「そう言えば」
@@ -53,13 +53,14 @@ function pickTags(q){
   for (const [w,[k,n]] of Object.entries(ALIAS)) if (rest.includes(w)) t[k].add(n);
   return t;
 }
-function search(q, filter){
+function search(q, filter, ki){
   const t = pickTags(q), qq = q.replace(/[ 　]/g, '');
   const words = Object.keys(ALIAS).filter(w => qq.includes(w));
   const out = [];
   for (const c of CARDS) {
     if (filter === 'new' && isAfter(c)) continue;
     if (filter === 'after' && !isAfter(c)) continue;
+    if (ki && String(kiOf(c['物件'])) !== String(ki)) continue;
     let p = 0; const hit = [];
     for (const k of ['工程','部位','症状']) for (const n of c[k] || []) if (t[k].has(n)) { p += 3; hit.push(n); }
     const body = ((c['題']||'') + (c['状況']||'')).replace(/[ 　]/g, '');
@@ -85,6 +86,9 @@ function caseRow(c, hit){
     <div class="rows">${rw('', 'cause', '何が要因で', c['原因'], '記録なし')}${rw('next', 'bulb', 'どうした方が良かった', c['次からの手'], '記録なし（振り返る時に足す）')}</div>
     <div class="tags">${tags.slice(0,6).map(x => `<span class="tag${hit && hit.includes(x) ? ' hit' : ''}">${esc(x)}</span>`).join('')}</div></a>`;
 }
+const kiOf = k => (BUKKEN[k] || {})['期'];
+const kiList = () => [...new Set(Object.keys(BUKKEN).map(kiOf).filter(Boolean))].sort((a, b) => b - a);
+const kiPill = k => kiOf(k) ? `<span class="ki">${esc(kiOf(k))}期</span>` : '';
 function bukkenLabel(k){ const b = BUKKEN[k] || {}; return [b['種類'], b['用途'], b['地域'], b['季節']].filter(x => x && x !== '記録なし').join('・'); }
 function kindImg(k){ const b = BUKKEN[k] || {}, y = String(b['用途'] || '');
   if (String(b['種類'] || '').includes('リフォーム')) return 'kind-reform.webp';
@@ -93,7 +97,7 @@ function bukkenRow(k){
   const cs = CARDS.filter(c => c['物件'] === k), a = cs.filter(isAfter).length;
   return `<a class="g-row" href="#/genba/${encodeURIComponent(k)}">
     <div class="thumb">${img(kindImg(k))}</div>
-    <div style="min-width:0"><div class="n">${esc(gname(k))}</div><div class="s">${NAMES[k] ? `<span class="kigo">${esc(k)}</span>　` : ''}${esc(bukkenLabel(k))}</div>
+    <div style="min-width:0"><div class="n">${esc(gname(k))}</div><div class="s">${kiPill(k)}${NAMES[k] ? `<span class="kigo">${esc(k)}</span>　` : ''}${esc(bukkenLabel(k))}</div>
       <div class="c"><span>${ic('hammer')} 建てた時 <b>${cs.length - a}</b>件</span><span>${ic('sprout')} その後 <b>${a}</b>件</span></div></div>
     <span class="chev">${ic('chev')}</span></a>`;
 }
@@ -125,12 +129,12 @@ function home(){
       <div class="stat"><b>${Object.keys(BUKKEN).length}</b><span>現場</span></div></div>
     <div class="foot">現場カルテ v${APP_VERSION}・カード ${esc(D.version || D.built || '')} 版${D.demo ? '・<b>デモ（作りもののデータ）</b>' : ''}<br>${HAS_NAMES ? '<b>社内のみ</b>：現場名（お客様の名前）を表示しています。画面を外に出さないでください' : '現場名は入っていません（記号で表示）'}</div>`;
 }
-let lastQ = '', lastF = 'all';
+let lastQ = '', lastF = 'all', lastKi = '';
 function hiku(){
   const q = lastQ;
   let res = '';
   if (q) {
-    const {t, out} = search(q, lastF);
+    const {t, out} = search(q, lastF, lastKi);
     const qq = q.replace(/[ 　]/g, '');
     const gb = Object.keys(NAMES).filter(k => qq.length >= 2 && (NAMES[k].replace(/[ 　]/g, '').includes(qq) || k === qq)).sort().reverse();
     if (gb.length) res += `<h2>${ic('home')}現場<small>名前が合う現場</small></h2><div class="list">${gb.map(bukkenRow).join('')}</div>`;
@@ -142,14 +146,22 @@ function hiku(){
   }
   const f = (k, l) => `<button class="chip${lastF === k ? ' on' : ''}" data-f="${k}">${l}</button>`;
   return `${searchBox(q)}
-    <div class="chips">${f('all','すべて')}${f('new','建てた時')}${f('after','その後')}</div>
+    <div class="chips">${f('all','すべて')}${f('new','建てた時')}${f('after','その後')}${kiList().length ? `<select class="chip" id="kiSel" aria-label="期で絞る"><option value="">期：すべて</option>${kiList().map(x => `<option value="${x}"${String(x) === String(lastKi) ? ' selected' : ''}>${x}期</option>`).join('')}</select>` : ''}</div>
     ${q ? res : `<h2>よく引く言葉</h2>${chipsHtml()}<h2>症状の札から</h2><div class="chips">${LISTS['症状'].map(w => `<button class="chip" data-q="${esc(w)}">${esc(w)}</button>`).join('')}</div>`}`;
 }
+/** 現場一覧のくくり方：'kai'＝振り返り会の年、'ki'＝期（パックの物件に「期」がある時だけ選べる） */
+let groupBy = (() => { try { return localStorage.getItem('gk-group') || 'kai'; } catch (e) { return 'kai'; } })();
 function genbaList(){
-  const all = Object.keys(BUKKEN), grp = k => /^\d/.test(k) ? k.slice(0,2) : 'A';
-  const ks = [...all.filter(k => grp(k) !== 'A').sort().reverse(), ...all.filter(k => grp(k) === 'A').sort().reverse()];
-  let y = '', h = `<p class="lead">現場を選ぶと、建てた時の振り返りと、その後の点検の記録が並びます。全 ${ks.length} 件。</p>`;
-  ks.forEach((k, i) => { if (grp(k) !== y) { y = grp(k); h += `<div class="year">${y === 'A' ? '点検の記録だけの現場（振り返り会の記録なし）' : '20' + y + '年の振り返り会'}</div><div class="list">`; }
+  const all = Object.keys(BUKKEN), hasKi = kiList().length > 0, mode = hasKi && groupBy === 'ki' ? 'ki' : 'kai';
+  const grp = mode === 'ki' ? (k => kiOf(k) ? String(kiOf(k)) : 'x') : (k => /^\d/.test(k) ? k.slice(0,2) : 'A');
+  const last = mode === 'ki' ? 'x' : 'A';
+  const order = (a, b) => grp(a) === grp(b) ? (a < b ? 1 : -1) : grp(a) === last ? 1 : grp(b) === last ? -1 : (grp(a) < grp(b) ? 1 : -1);
+  const ks = all.slice().sort(order);
+  const head = g => mode === 'ki' ? (g === 'x' ? '期が分からない現場' : g + '期') : (g === 'A' ? '点検の記録だけの現場（振り返り会の記録なし）' : '20' + g + '年の振り返り会');
+  const b = (k, l) => `<button class="chip${mode === k ? ' on' : ''}" data-g="${k}">${l}</button>`;
+  let y = null, h = `<p class="lead">現場を選ぶと、建てた時の振り返りと、その後の点検の記録が並びます。全 ${ks.length} 件。</p>
+    ${hasKi ? `<div class="chips" style="margin:0 0 4px">${b('kai','振り返り会の年でくくる')}${b('ki','期でくくる')}</div>` : ''}`;
+  ks.forEach((k, i) => { if (grp(k) !== y) { y = grp(k); h += `<div class="year">${head(y)}<small>　${ks.filter(x => grp(x) === y).length} 件</small></div><div class="list">`; }
     h += bukkenRow(k); if (i === ks.length - 1 || grp(ks[i+1]) !== y) h += '</div>'; });
   return h;
 }
@@ -157,7 +169,7 @@ function genba(k){
   const cs = CARDS.filter(c => c['物件'] === k), a = cs.filter(isAfter), n = cs.filter(c => !isAfter(c));
   const link = a.filter(c => (c['関連']||[]).some(r => byId[r] && !isAfter(byId[r])));
   return `<div class="card detail"><div class="g-row" style="box-shadow:none;padding:0;background:none"><div class="thumb">${img(kindImg(k))}</div>
-        <div><h3 style="margin:0">${esc(gname(k))}</h3><div class="s" style="font-size:12px;color:var(--muted)">${NAMES[k] ? `<span class="kigo">${esc(k)}</span>　` : ''}${esc(bukkenLabel(k))}</div></div></div>
+        <div><h3 style="margin:0">${esc(gname(k))}</h3><div class="s" style="font-size:12px;color:var(--muted)">${kiPill(k)}${NAMES[k] ? `<span class="kigo">${esc(k)}</span>　` : ''}${esc(bukkenLabel(k))}</div></div></div>
       <div class="stats"><div class="stat"><b>${n.length}</b><span>建てた時</span></div><div class="stat"><b>${a.length}</b><span>その後</span></div><div class="stat"><b>${link.length}</b><span>つながり</span></div></div></div>
     ${link.length ? `<h2>建てた時 → その後<small>同じ現場で部位が近い物</small></h2><div class="list">${link.map(c => {
         const r = c['関連'].map(x => byId[x]).find(x => x && !isAfter(x));
@@ -244,6 +256,7 @@ document.addEventListener('submit', e => { if (e.target.id === 'sf') { e.prevent
 document.addEventListener('click', e => {
   const q = e.target.closest('[data-q]'); if (q) { go(q.dataset.q); return; }
   const f = e.target.closest('[data-f]'); if (f) { lastF = f.dataset.f; render(); return; }
+  const g = e.target.closest('[data-g]'); if (g) { groupBy = g.dataset.g; try { localStorage.setItem('gk-group', groupBy); } catch (er) {} render(); return; }
   const s = e.target.closest('[data-s]'); if (s) { document.querySelectorAll('#f-s button').forEach(b => b.classList.toggle('on', b === s)); return; }
   if (e.target.closest('#back')) { history.length > 1 ? history.back() : (location.hash = '#/'); return; }
   if (e.target.closest('[data-tab="hiku"]')) lastQ = '';
@@ -366,7 +379,8 @@ document.addEventListener('click', e => {
   const del = e.target.closest('[data-del]');
   if (del && confirm('この1件を端末から消します。よろしいですか？')) { dbDel(STORE_TASU, del.dataset.del).then(() => { TASU = TASU.filter(x => x.uid !== del.dataset.del); render(); }); }
 });
-document.addEventListener('change', e => { if (e.target.id === 'packFile' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; } });
+document.addEventListener('change', e => { if (e.target.id === 'kiSel') { lastKi = e.target.value; render(); return; }
+  if (e.target.id === 'packFile' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; } });
 async function boot(){
   try { await dbOpen(); TASU = (await dbAll(STORE_TASU)) || []; } catch (e) { toast('この端末の保存場所が使えません（プライベートブラウズでは保存されません）'); }
   const demo = /[?&]demo=1/.test(location.search);
