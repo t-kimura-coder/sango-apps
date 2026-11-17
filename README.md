@@ -8,6 +8,7 @@
 | `genba-viewer/` | 現場ナビ 見守り（管理者ビューア・PC用。現場ナビの報告をBox Driveのフォルダから一覧し、返信を書き出す） | https://t-kimura-coder.github.io/sango-apps/genba-viewer/ |
 | `sango-support/` | 山郷サポート（建物から業者の連絡先を調べて電話、トラブルと対応を写真付きで記録→管理者へ送る） | https://t-kimura-coder.github.io/sango-apps/sango-support/ |
 | `sango-admin/` | 山郷サポート 管理者ビューア（PC用。リーダーが報告した症例をBox Driveのフォルダから一覧し、金額・原因・メモを書き足して整理、まとめ・CSV書き出し） | https://t-kimura-coder.github.io/sango-apps/sango-admin/ |
+| `genba-karte/` | 現場カルテ（過去の現場の事例を言葉から引く、現場ごとに建てた時とその後を並べる、振り返る時に足す。事例と現場名は「カルテパック」JSONを取り込む） | https://t-kimura-coder.github.io/sango-apps/genba-karte/ （まだ公開していない。main に入れた時から） |
 
 ## ルール
 - **社内データ（マニュアル本文・顧客情報・Excel等）は載せない。** 公開するのは仕組みだけで、社内データは各iPhoneでJSONを取り込む

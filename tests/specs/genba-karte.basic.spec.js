@@ -1,0 +1,112 @@
+// 現場カルテ（genba-karte）の基本：開く・デモで引く・パックの取り込み・足して書き出す・版数のそろい
+// データは作りものだけ（genba-karte/demo.js と、この中で組む小さなパック）。本物の事例・現場名は入れない
+const fs = require("fs");
+const path = require("path");
+const { test, expect } = require("@playwright/test");
+
+const DIR = path.join(__dirname, "..", "..", "genba-karte");
+const read = (f) => fs.readFileSync(path.join(DIR, f), "utf8");
+const URL = "genba-karte/";
+
+/** 画面のエラーを集める（絵が無いなどの 404 は数えない） */
+function watchErrors(page) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  return errors;
+}
+
+test("パックが無い時は、取り込みの案内が出る", async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto(URL);
+  await expect(page.getByText("カルテパックを取り込んでください")).toBeVisible();
+  await expect(page.locator("#imp")).toBeVisible();
+  await expect(page.locator("nav.tab")).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("デモ：ホームが出て、言葉から事例を引ける", async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto(URL + "?demo=1");
+  await expect(page.locator(".tile")).toHaveCount(4);
+  await expect(page.locator(".g-row").first()).toContainText("サンプル商店");
+  await page.locator("#q").fill("床鳴りがする");
+  await page.locator("#q").press("Enter");
+  await expect(page.locator(".case").first()).toContainText("寝室で床鳴りがした");
+  await expect(page.locator(".case").first().locator(".pill.after")).toBeVisible();
+  // その後だけに絞ると、建てた時のカードは出ない
+  await page.locator('[data-f="after"]').click();
+  await expect(page.locator(".case .pill.new")).toHaveCount(0);
+  // 現場名でも探せる
+  await page.locator("#q").fill("見本");
+  await page.locator("#q").press("Enter");
+  await expect(page.locator(".g-row")).toContainText(["見本一郎様邸"]);
+  expect(errors).toEqual([]);
+});
+
+test("デモ：現場のカルテに、建てた時 → その後 のつながりが出る", async ({ page }) => {
+  await page.goto(URL + "?demo=1#/genba/26-91");
+  await expect(page.locator("#title")).toHaveText("見本一郎様邸");
+  await expect(page.getByText("同じ出来事かは未確認")).toBeVisible();
+  await expect(page.locator(".line.after .case")).toHaveCount(1);
+  await expect(page.locator(".line.new .case")).toHaveCount(2);
+  // カードを開くと、3つの見出しが出る
+  await page.locator(".line.after .case").click();
+  await expect(page.locator(".rw .k")).toContainText(["何が要因で", "どうなった", "どうした方が良かった"]);
+});
+
+test("パックをファイルから取り込むと、端末に残る", async ({ page }) => {
+  await page.goto(URL);
+  const demo = await page.evaluate(() => window.KARTE_DEMO);
+  const pack = { ...demo, version: "test-1", demo: false, cards: demo.cards.slice(0, 2) };
+  await page.locator("#packFile").setInputFiles({ name: "pack.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(pack)) });
+  await expect(page.locator(".tile")).toHaveCount(4);
+  await expect(page.locator(".foot")).toContainText("test-1");
+  // 開き直しても、取り込んだパックで開く
+  await page.reload();
+  await expect(page.locator(".tile")).toHaveCount(4);
+  await expect(page.locator(".stat b").first()).toHaveText("2");
+});
+
+test("形の違うファイルは取り込まない", async ({ page }) => {
+  await page.goto(URL);
+  await page.locator("#packFile").setInputFiles({ name: "x.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ kind: "something-else" })) });
+  await expect(page.locator("#toast")).toContainText("取り込めませんでした");
+  await expect(page.getByText("カルテパックを取り込んでください")).toBeVisible();
+});
+
+test("デモ：そう言えばを足すと端末に残り、書き出せる", async ({ page }) => {
+  await page.goto(URL + "?demo=1#/tasu/26-91");
+  await page.locator("#f-t").fill("2階の建具が冬に閉まらない");
+  await page.locator('#f-s [data-s="2年点検"]').click();
+  await page.locator("#f-n").fill("枠のすき間を多めに取る");
+  await expect(page.locator("#f-tags")).toContainText("開閉の不具合");
+  await page.locator("#f-save").click();
+  await expect(page.locator("#title")).toHaveText("設定");
+  await expect(page.locator(".rw .v").first()).toHaveText("2階の建具が冬に閉まらない");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.locator("#exp").click()]);
+  const out = JSON.parse(fs.readFileSync(await dl.path(), "utf8"));
+  expect(out.kind).toBe("genba-karte-tasu");
+  expect(out.items).toHaveLength(1);
+  expect(out.items[0]).toMatchObject({ "物件": "26-91", "場面": "2年点検", "次からの手": "枠のすき間を多めに取る", "確認": "未確認" });
+  expect(out.items[0]["症状"]).toContain("開閉の不具合");
+  // 現場と「何があった」が無いと保存しない
+  await page.goto(URL + "?demo=1#/tasu");
+  await page.locator("#f-save").click();
+  await expect(page.locator("#f-out")).toContainText("入れてください");
+});
+
+test("版数がそろっている・社内データが入っていない", () => {
+  const app = read("app.js");
+  const html = read("index.html");
+  const sw = read("service-worker.js");
+  const v = Number(app.match(/const APP_VERSION = (\d+);/)[1]);
+  const ver = (text, file) => Number((text.match(new RegExp(file.replace(".", "\\.") + "\\?v=(\\d+)")) || [])[1]);
+  expect(ver(html, "app.js"), "index.html の app.js?v=").toBe(v);
+  expect(ver(sw, "app.js"), "service-worker.js の app.js?v=").toBe(v);
+  expect(ver(sw, "style.css"), "service-worker.js の style.css?v=").toBe(ver(html, "style.css"));
+  expect(sw).toMatch(/const CACHE_VERSION = \d+;/);
+  // デモのデータは、作りものの印が付いている
+  expect(read("demo.js")).toMatch(/demo: true/);
+  for (const m of read("demo.js").matchAll(/"題": "([^"]+)"/g)) expect(m[1]).toMatch(/^（作りもの）/);
+});

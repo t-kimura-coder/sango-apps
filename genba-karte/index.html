@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f5ef">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="現場カルテ">
+<title>現場カルテ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=1">
+<link rel="apple-touch-icon" href="icon-180.png?v=1">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <img class="deco" src="art/deco.webp" alt="" onerror="this.remove()">
+  <button class="back" id="back" aria-label="戻る"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>戻る</button>
+  <h1 id="title">現場カルテ</h1>
+</div></div>
+<main class="app" id="app"></main>
+<nav class="tab"><div class="tab-in" id="tabs"></div></nav>
+<input type="file" id="packFile" accept=".json,application/json" hidden>
+<script src="demo.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>

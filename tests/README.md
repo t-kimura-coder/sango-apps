@@ -29,6 +29,7 @@ npx playwright test  # 全部（15秒ほど）
 | `specs/genba-manual.report.spec.js` | 週の報告を Box へ送る：報告 JSON の中身（schema 8・お客様向けの印・項目名・チェックの固定番号・お客様向けの材料・上司へのメモ）、写真の名前がそろう、送ったあとの報告済み・お客様向けの番号、取り消して送り直すと同じ report_id |
 | `specs/genba-manual.sendweek.spec.js` | 送る週を選ぶ：先週を選んで送ると week・period が先週／前の週の写真は畳まれ今週の一覧に出ない／「この週の報告に入れる」で送られる／未報告の週が無ければ選択は出ない／先週で報告なし・写真なし・取り消し |
 | `specs/genba-manual.version.spec.js` | 版数のそろい（`APP_VERSION`・`index.html` の `?v=`・`APP_SHELL`）、お知らせが新しい順 |
+| `specs/genba-karte.basic.spec.js` | 現場カルテ：パックが無い時の案内／デモで言葉から引く・その後だけに絞る・現場名で探す／現場のカルテのつながり／パックをファイルから取り込むと端末に残る／形の違うファイルは取り込まない／足して書き出す（JSON の中身）／版数のそろい・デモが作りものだけ |
 | `tools/summarize.js` | 結果を短くまとめる（落ちたテストと理由） |
 | `tools/check-report.js` | 動作チェックの報告を GitHub の `check-reports` の枝に置く／前回チェックしたコミットを返す |
 
