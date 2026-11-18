@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -363,6 +363,12 @@ function replyListHtml(list) {
   if (!a.length) return `<div class="note replyNone">山郷への連絡は、まだありません</div>`;
   return `<div class="replyH">これまでの連絡（山郷に見えています。新しい順）</div><ol class="replyLog">${a.map((x, i) => `<li><span class="replyT">${esc(fmtDT(x.t))}${x.by ? "　" + esc(x.by) : ""}</span><span class="replyX">${esc(x.text)}</span>${i === 0 ? `<button type="button" class="linkBtn" id="replyUndo">取り消す</button>` : ""}</li>`).join("")}</ol>`;
 }
+/** 本社メモの経過（新しい順。山郷には見えない）。一番新しい1件だけ取り消せる */
+function memoListHtml(list) {
+  const a = (list || []).slice().reverse();
+  if (!a.length) return `<div class="note replyNone">メモは、まだありません</div>`;
+  return `<ol class="replyLog memoLog">${a.map((x, i) => `<li><span class="replyT">${esc(fmtDT(x.t)) || "（日時なし）"}${x.by ? "　" + esc(x.by) : ""}</span><span class="replyX">${esc(x.text)}</span>${i === 0 ? `<button type="button" class="linkBtn" id="memoUndo">取り消す</button>` : ""}</li>`).join("")}</ol>`;
+}
 const fmtDT = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 
 /* ---------- 症例の場所（リーダーが図で選んだ部屋）。「図で場所を見る」で、その部屋に色を付けた図を開く ---------- */
@@ -415,8 +421,11 @@ function viewDetail(main, id) {
         <div><label>山郷への請求額（円）</label><input type="number" id="fBill" min="0" step="1" value="${esc(it.bill_amount == null ? "" : it.bill_amount)}"></div>
         <div><label>請求月</label><input type="month" id="fMonth" value="${esc(it.bill_month || "")}"></div>
         <div class="checkRow"><input type="checkbox" id="fBilled"${it.billed ? " checked" : ""}><label for="fBilled" style="margin:0;color:inherit">請求済み</label></div>
-        <div class="wide"><label>メモ</label><textarea id="fMemo" maxlength="1000">${esc(it.memo || "")}</textarea></div>
       </div>
+      <div class="memoBox"><label for="fMemoAdd">本社メモを足す（日時と名前つきで下に積まれます。前のメモは書き換えません）</label>
+        <textarea id="fMemoAdd" maxlength="500" rows="2" placeholder="例）メーカーから見積 299,000円。注文書は署名して返送"></textarea>
+        <div class="btnRow"><button type="button" class="btn" id="fMemoSend">メモを足す</button><span class="note">「保存する」を押した時も、書きかけのメモは一緒に足されます</span></div>
+        <div id="memoList">${memoListHtml(it.memos)}</div></div>
       <div class="btnRow"><button class="btn primary" id="fSave">保存する</button><span class="sum" id="gross"></span><span class="note">${it.at ? "最終更新 " + new Date(Number(it.at)).toLocaleString("ja-JP") + (it.by ? "　" + esc(it.by) : "") : ""}</span></div></div>`;
   const upGross = () => { const g = gross({ cost: $("fCost").value, bill_amount: $("fBill").value }); $("gross").textContent = g == null ? "" : "粗利 " + g.toLocaleString("ja-JP") + "円"; };
   upGross(); $("fCost").oninput = upGross; $("fBill").oninput = upGross;
@@ -439,6 +448,25 @@ function viewDetail(main, id) {
   };
   const bindUndo = () => { const u = $("replyUndo"); if (u) u.onclick = () => { if (confirm("一番新しい連絡を取り消しますか？（山郷の画面からも消えます）")) replyCall({ reply_undo: true }, u, "取り消しました"); }; };
   bindUndo();
+  const memoCall = async (patch, btn, okMsg) => {
+    if (replyBusy) return false;
+    replyBusy = true; if (btn) btn.disabled = true;
+    try {
+      const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
+      if (!j.item) throw new Error("窓口の返事に保存結果がありません");
+      S.items = { ...S.items, [r.id]: j.item };
+      if (tok === viewTok && $("memoList")) { $("memoList").innerHTML = memoListHtml(j.item.memos); bindMemoUndo(); }
+      toast(okMsg); return true;
+    } catch (e) { alert("保存できませんでした。電波や窓口の状態を確認して、もう一度試してください。\n（" + String((e && e.message) || e) + "）"); return false; }
+    finally { replyBusy = false; if (btn) btn.disabled = false; }
+  };
+  const bindMemoUndo = () => { const u = $("memoUndo"); if (u) u.onclick = () => { if (confirm("一番新しいメモを取り消しますか？")) memoCall({ memo_undo: true }, u, "メモを取り消しました"); }; };
+  bindMemoUndo();
+  $("fMemoSend").onclick = async () => {
+    const t = $("fMemoAdd").value.trim();
+    if (!t) { toast("メモの文を入れてください"); $("fMemoAdd").focus(); return; }
+    if (await memoCall({ memo_add: t }, $("fMemoSend"), "メモを足しました")) $("fMemoAdd").value = "";
+  };
   $("fReplySend").onclick = async () => {
     const t = $("fReply").value.trim();
     if (!t) { toast("連絡の文を入れてください"); $("fReply").focus(); return; }
@@ -449,7 +477,8 @@ function viewDetail(main, id) {
     if (saveBusy) return;
     saveBusy = true; $("fSave").disabled = true;
     try {
-      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, visit_at: $("fVisit").value, estimate: $("fEstm").value.trim(), billed: $("fBilled").checked, memo: $("fMemo").value.trim() };
+      const patch = { vendor: $("fVendor").value.trim(), progress: $("fProg").value, arranged_at: $("fArr").value, est_no: $("fEst").value.trim(), cost: $("fCost").value, bill_amount: $("fBill").value, bill_month: $("fMonth").value, bill_kind: $("fKind").value, visit_at: $("fVisit").value, estimate: $("fEstm").value.trim(), billed: $("fBilled").checked };
+      const memoT = $("fMemoAdd").value.trim(); if (memoT) patch.memo_add = memoT;   // 書きかけのメモも一緒に足す
       if (patch.billed && !patch.bill_month) { toast("請求済みにするには、請求月を入れてください"); return; }
       const j = await apiCall({ action: "honshaSave", id: r.id, patch, by: getLS("name", "木村") }, 40000);
       if (!j.item) throw new Error("窓口の返事に保存結果がありません");
@@ -607,7 +636,7 @@ function viewHelp(main) {
   main.innerHTML = `<h2>使い方</h2>
     ${sec("画面の見方", ["左のメニューは、<b>マップ・依頼・請求・使い方・設定</b>です。最初に開くのは<b>マップ</b>（山郷の敷地）です。", "マップの建物は、色と数字で状況が分かります。<b>オレンジ＝未手配あり</b>、黄土色＝請求待ちあり、紺＝進行中。右上の数字が、対応が必要な依頼の数です。新着がある建物は、ふちが脈打ちます。", "建物を押すと、マップの下に<b>建物の画像と状況</b>が出ます。「<b>この建物を開く</b>」で、その建物の依頼の一覧へ進みます。スマホでは、まずエリア（北・中央・東）を押して拡大します。", "マップに無い建物（店舗バックヤード・外構）は、マップの下の建物の一覧から選びます。", "画面の上に<b>赤い帯</b>が出たら、遅れがあります（「依頼から3日たっても未手配」「施工完了から30日たっても未請求」）。「見る」で、その依頼だけを表示します。朝のメールでも知らせます。"])}
     ${sec("この画面でできること", ["山郷のリーダーが「対応を依頼する」で送った依頼を、一覧で受けて、<b>業者への手配の進み具合</b>と、<b>山郷への請求</b>を管理します。", "山郷側の管理者・リーダーには、ここに入れた金額・粗利・手配先は、見えません。"])}
-    ${sec("依頼を受けて、手配する", ["依頼が届くと、メールが来ます。この画面を開くと、「<b>新着</b>」の印が付いた依頼が、一覧に出ます（急ぎは先頭）。", "依頼を開くと、写真・内容と、この建物・分類の<b>担当業者（電話番号つき）</b>が出ます。業者の名前を押すと、「手配先」に入ります。", "<b>手配先・進捗・手配した日・見積番号</b>を入れて「保存」。進捗は、「未手配 → 手配済み → 施工待ち → 施工完了」と進めます。上の帯で、今どこかが分かります。", "上の4つの数字（未手配・進行中・請求待ち・今月の請求）を押すと、その状態の依頼だけが出ます。"])}
+    ${sec("依頼を受けて、手配する", ["依頼が届くと、メールが来ます。この画面を開くと、「<b>新着</b>」の印が付いた依頼が、一覧に出ます（急ぎは先頭）。", "依頼を開くと、写真・内容と、この建物・分類の<b>担当業者（電話番号つき）</b>が出ます。業者の名前を押すと、「手配先」に入ります。", "<b>手配先・進捗・手配した日・見積番号</b>を入れて「保存」。進捗は、「未手配 → 手配済み → 施工待ち → 施工完了」と進めます。上の帯で、今どこかが分かります。", "業者とのやり取りなどは「<b>本社メモを足す</b>」で残します（山郷には見えません）。日時と名前つきで積まれ、前のメモは書き換えません。間違えた時は、一番新しい1件だけ取り消せます。", "上の4つの数字（未手配・進行中・請求待ち・今月の請求）を押すと、その状態の依頼だけが出ます。"])}
     ${sec("山郷に返事する（山郷に表示されます）", ["依頼の詳細の「<b>山郷への返事</b>」に、<b>訪問予定日</b>・<b>ひとこと</b>・<b>業者の金額の目安</b>を入れて保存すると、リーダー・管理者の画面の「手配の状況」に出ます。", "山郷に見えるのは、手配の段階（手配済み・施工待ち・施工完了）と、この3つだけです。<b>手配先の名前・粗利を乗せた請求額・粗利は、見えません。</b>金額の目安は、業者の金額を、そのまま入れます。"])}
     ${sec("業者の「直接連絡OK」（解禁）", ["まだ山郷からの修繕実績がない業者は「<b>本社経由</b>」です。山郷のリーダーの画面では、電話番号を押すと、本社に電話するか、症例で対応を依頼するように案内されます。", "依頼の手配先が本社経由の業者だと、手配の欄に「<b>初回です</b>」の案内が出ます。施工が完了したら、業者に「今後は山郷から直接連絡がいく」と伝えて、了承をもらいます（請求の流れも確認）。", "左のメニューの「<b>業者</b>」に、本社経由の業者と、本社経由で手配した件数・施工完了の件数が出ます。了承をもらったら「<b>直接連絡OKにする</b>」→ 2つの確認にチェック → 押すと、業者データが配り直され、リーダーの画面には次に開いた時に反映されます。", "間違えた時は、「直接連絡OKの業者」の「本社経由に戻す」で戻せます。"])}
     ${sec("業者を登録する・電話や担当を直す", ["「<b>業者</b>」の画面の上の「<b>業者を登録する</b>」で、建物・分類を選び、業者の名前・電話・担当者を入れて「登録して、配り直す」。山郷のリーダー・管理者の画面の「連絡先」に、次に開いた時に出ます。足した業者は「本社経由」から始まります。", "担当や電話が変わった時は、一覧の「<b>電話・担当・建物を直す</b>」。電話・担当を直すと、その業者の、すべての建物・分類の連絡先が変わります。同じ枠で、担当する建物・分類を「＋足す」「外す」もできます。", "ここで直した分は、窓口に残ります。元の表（csv）から業者データを置き直しても、戻りません。"])}

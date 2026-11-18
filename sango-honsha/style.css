@@ -211,6 +211,10 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .vAct { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .vEditBox .form { margin-bottom: 8px; }
 .vSpots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.memoBox { margin-top: 12px; }
+.memoBox label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+.memoBox textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.memoBox .btnRow { margin-top: 6px; }
 .vAddRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .vAddRow select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; max-width: 100%; }
 .vAddLbl { font-size: 13px; color: var(--muted); }
