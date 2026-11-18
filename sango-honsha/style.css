@@ -211,6 +211,19 @@ table.tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1p
 .vAct { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .vEditBox .form { margin-bottom: 8px; }
 .vSpots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.relList { list-style: none; padding: 0; margin: 0 0 6px; }
+.relList li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.followBox { margin-top: 10px; }
+.followBox label[for] { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+.followBox textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.docAdd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.docAdd input[type="text"] { flex: 1 1 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.docList { list-style: none; padding: 0; margin: 10px 0 0; }
+.docList li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.docList .docOpen { font-size: 15px; font-weight: 700; text-align: left; }
+.docList .docRm { margin-left: auto; }
+.docNote { font-size: 13px; }
+.docPanel.drop { outline: 3px dashed var(--navy); outline-offset: -6px; }
 .memoBox { margin-top: 12px; }
 .memoBox label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
 .memoBox textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

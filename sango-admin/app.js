@@ -3,7 +3,7 @@
    管理者が金額・原因・メモを書き足して整理する。書き足した内容はフォルダ内の「管理データ.json」1ファイルに保存する。
    編集できるのは山郷側の管理者のPC1台だけ（ほかのPCは閲覧専用）。社内データはアプリに持たない。 */
 
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 const ADMIN_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const ADMIN_FILE = "管理データ.json";
 const CAUSES = ["経年劣化", "施工不良", "使い方", "自然災害", "不明", "その他"];
@@ -614,16 +614,27 @@ function hqMsgsHtml(st) {
   const dt = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
   return `<div class="reqLine"><b>本社からの連絡</b></div><ol class="hqMsgs">${a.map((x, i) => `<li${i === 0 ? ' class="new"' : ""}>${x.t ? `<span class="hqT">${esc(dt(x.t))}</span>` : ""}<span class="hqX">${esc(x.text)}</span></li>`).join("")}</ol>`;
 }
+/** 本社が立てた「続きの依頼」（元の依頼には follows、続きの依頼には parent）。2026-11-18 */
+const hasRec = (id) => typeof S !== "undefined" && Array.isArray(S.records) && S.records.some((x) => x.id === id);
+function followsHtml(st) {
+  if (!st) return "";
+  const lbl = (k) => ((REQ_STEPS.find(([x]) => x === k) || [])[1] || "");
+  const d = (s) => { const t = new Date(s); return isNaN(t) ? "" : (t.getMonth() + 1) + "/" + t.getDate(); };
+  let h = "";
+  if (st.parent) h += `<div class="reqLine followLine"><b>元の依頼：</b>${hasRec(st.parent.id) ? `<a href="#/r/${encodeURIComponent(st.parent.id)}">${esc(d(st.parent.created_at))}　${esc(st.parent.what)}</a>` : `${esc(d(st.parent.created_at))}　${esc(st.parent.what)}`}<div class="mutedText">本社が、元の依頼の続きとして立てた依頼です。</div></div>`;
+  if (st.follows && st.follows.length) h += `<div class="reqLine followLine"><b>続きの依頼（本社が立てました）</b><ul class="followList">${st.follows.map((f) => `<li>${hasRec(f.id) ? `<a href="#/r/${encodeURIComponent(f.id)}">${esc(f.what)}</a>` : esc(f.what)}<span class="chip">${esc(lbl(f.state))}</span>${f.visit_at ? `<span class="mutedText">訪問予定 ${esc(String(f.visit_at).replace(/-/g, "/"))}</span>` : ""}${f.reply ? `<div class="mutedText">本社から：${esc(f.reply)}</div>` : ""}</li>`).join("")}</ul></div>`;
+  return h;
+}
 function reqStatusHtml(st) {
   const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
   const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
   return `<h3>手配の状況</h3><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
-    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${followsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<span class="note">　※目安です。確定の金額ではありません</span></div>` : ""}
     ${!st ? `<div class="note">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
 /* ---------- 本社からの新着。端末ごとに「見た時点」（段階＋一番新しい連絡の日時）を持つ。初めての時は、今ある分を見たことにする ---------- */
 let HQ_ST = null, hqAt = 0;
-const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") : "");
+const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") + (st.follows || []).map((f) => "|" + f.state + (f.t || "")).join("") : "");   // 続きの依頼の段階・連絡が変わった時も新着にする
 function hqSeen() { try { return JSON.parse(getLS("hq-seen", "") || "null"); } catch (e) { return null; } }
 function hqTake(status) {
   HQ_ST = status || {};
@@ -819,6 +830,7 @@ $("globalSearch").addEventListener("input", (e) => { F.q = e.target.value; if (r
 $("reloadBtn").innerHTML = icon("reload");
 /* ---------- お知らせ（ベル）：新機能と、修正・改善 ---------- */
 const ANNOUNCEMENTS = [ // 新しいものを先頭に。機能を足したら、ここに足す
+  { date: "2026-11-18", type: "feature", text: "依頼の対応の途中で別の対応が必要になった時（補修の時に別の傷が見つかった、など）、本社が「続きの依頼」を立てるようになりました。依頼の「手配の状況」に、元の依頼・続きの依頼が出て、押すとそちらを開けます。続きの依頼は、送った人が「本社」の依頼として一覧にも出ます。" },
   { date: "2026-11-16", type: "feature", text: "本社から依頼に新しい連絡が来ると、マップの上に「本社から新しい連絡があります」の帯と、症例一覧（スマホは「依頼」タブ）に件数の印が出るようになりました。一覧にも「本社から新着」の印が付きます。症例を開いて見ると消えます。" },
   { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },

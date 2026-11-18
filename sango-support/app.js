@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 62;
+const APP_VERSION = 63;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-18", type: "feature", text: "依頼の対応の途中で別の対応が必要になった時（補修の時に別の傷が見つかった、など）、本社が「続きの依頼」を立てるようになりました。元の依頼の「手配の状況」に、続きの依頼とその進み具合が出ます。" },
   { date: "2026-11-16", type: "feature", text: "本社から依頼に新しい連絡が来ると、ホームに「本社から新しい連絡があります」の帯と、下の「症例」タブに赤い点が出るようになりました。自分の症例の一覧にも「本社から新着」の印が付きます。開いて見ると消えます。" },
   { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
   { date: "2026-11-06", type: "feature", text: "店舗と宇の現地確認の結果を、建物の中の図に入れました（確かめた機器に印、無かった機器は外し、図に無かった床下点検口・散水栓・避難はしご・非常用照明・壁の給気口・ルフロなどを足しました）。点検に「灯油の残量チェック」「点検口がふさがっていないか」「避難はしごの自主点検」「ルフロの目視・清掃」「壁の給気口のフィルター洗浄・交換」を足し、凍結対策に「散水栓の水落とし」を足しました。" },
@@ -829,16 +830,26 @@ function hqMsgsHtml(st) {
   const dt = (s) => { const d = new Date(s); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
   return `<div class="reqLine"><b>本社からの連絡</b></div><ol class="hqMsgs">${a.map((x, i) => `<li${i === 0 ? ' class="new"' : ""}>${x.t ? `<span class="hqT">${esc(dt(x.t))}</span>` : ""}<span class="hqX">${esc(x.text)}</span></li>`).join("")}</ol>`;
 }
+/** 本社が立てた「続きの依頼」（元の依頼には follows、続きの依頼には parent）。2026-11-18 */
+function followsHtml(st) {
+  if (!st) return "";
+  const lbl = (k) => ((REQ_STEPS.find(([x]) => x === k) || [])[1] || "");
+  const d = (s) => { const t = new Date(s); return isNaN(t) ? "" : (t.getMonth() + 1) + "/" + t.getDate(); };
+  let h = "";
+  if (st.parent) h += `<div class="reqLine followLine"><b>元の依頼：</b>${esc(d(st.parent.created_at))}　${esc(st.parent.what)}<div class="mutedText">本社が、元の依頼の続きとして立てた依頼です。</div></div>`;
+  if (st.follows && st.follows.length) h += `<div class="reqLine followLine"><b>続きの依頼（本社が立てました）</b><ul class="followList">${st.follows.map((f) => `<li>${esc(f.what)}<span class="chip">${esc(lbl(f.state))}</span>${f.visit_at ? `<span class="mutedText">訪問予定 ${esc(String(f.visit_at).replace(/-/g, "/"))}</span>` : ""}${f.reply ? `<div class="mutedText">本社から：${esc(f.reply)}</div>` : ""}</li>`).join("")}</ul></div>`;
+  return h;
+}
 function reqStatusHtml(st) {
   const cur = st ? Math.max(0, REQ_STEPS.findIndex(([k]) => k === st.state)) : 0;
   const est = st && st.estimate !== "" && st.estimate != null ? (typeof st.estimate === "number" ? st.estimate.toLocaleString("ja-JP") + "円" : esc(st.estimate)) : "";
   return `<div class="fieldLabel">手配の状況</div><ol class="reqSteps">${REQ_STEPS.map(([k, l], i) => `<li class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i + 1}</span>${l}</li>`).join("")}</ol>
-    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
+    ${st && st.visit_at ? `<div class="reqLine"><b>訪問予定日：</b>${esc(String(st.visit_at).replace(/-/g, "/"))}</div>` : ""}${hqMsgsHtml(st)}${followsHtml(st)}${est ? `<div class="reqLine"><b>業者の金額の目安：</b>${est}<div class="mutedText">※目安です。確定の金額ではありません。</div></div>` : ""}
     ${!st ? `<div class="mutedText">本社が確認しています。手配が進むと、ここに出ます。</div>` : ""}`;
 }
 /* ---------- 本社からの新着。端末ごとに「見た時点」（段階＋一番新しい連絡の日時）を持つ。初めての時は、今ある分を見たことにする ---------- */
 let HQ_ST = null, hqAt = 0;
-const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") : "");
+const hqKey = (st) => (st ? st.state + "|" + (((st.replies || []).slice(-1)[0] || {}).t || "") + (st.follows || []).map((f) => "|" + f.state + (f.t || "")).join("") : "");   // 続きの依頼の段階・連絡が変わった時も新着にする
 function hqSeen() { try { return JSON.parse(getSetting("hq-seen", "") || "null"); } catch (e) { return null; } }
 function hqTake(status) {
   HQ_ST = status || {};

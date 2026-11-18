@@ -342,3 +342,8 @@ body.mobileMode .settingBox { max-width: none; }
 .hqBanner span { margin-left: auto; font-weight: 700; text-decoration: underline; }
 .chip.hqNewChip { background: #a3322a; color: #fff; font-weight: 700; }
 .mTabs a { position: relative; } .mBadge { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; padding: 0 5px; border-radius: 9px; background: #a3322a; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+
+/* 続きの依頼（2026-11-18） */
+.followLine .followList { list-style: none; padding: 0; margin: 4px 0 0; }
+.followLine .followList li { padding: 6px 0; border-top: 1px dashed #d8d2c4; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.followLine .followList li .mutedText { flex-basis: 100%; }
