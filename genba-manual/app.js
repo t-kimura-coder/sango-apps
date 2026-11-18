@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 136;
+const APP_VERSION = 137;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-18", type: "feature", text: "上司が口頭で答えてくれた疑問が分かるようになりました。上司が見守りで「口頭で回答済み」を押すと、疑問のメモの下に「○○さんが口頭で回答済み」（一言があれば添えて）と出ます。その疑問には「答えをメモする」（聞いた答えを自分の言葉で書く。あとで直せます。自分だけに見え、上司の見守りには出ません）と「今回はメモしない」が付きます。ホームの「やること」には「口頭で答えてもらった疑問：答えのメモ待ち」が1行出ます。閉じるだけでは消えず、メモするか「今回はメモしない」を選ぶと減ります（催促の通知は出ません）" },
   { date: "2026-11-07", type: "feature", text: "報告タブの「① 写真を入れる」を見やすくしました。「撮る」「取り込む」が一番上になり、工程を選ばなくても押せます（選んでいない時は「未振り分け」に入ります。写真を先に入れて、あとで振り分けるのが基本です）。その下の「＋ 工程を追加」のすぐ下に、工程のボタンと写真の一覧が続けて並びます。撮影メモは「撮影メモ」の1行にたたみました（押すと開き、開け閉めは次も覚えています）。また、先週の分をまだ送っていない時は、③に「どの週の報告として送りますか」が出ます。送る週（今週・先週…）を選ぶと、その週の写真だけが出て、選んだ週の報告として送れます。前の週の写真は「前の週の写真」にたたんであり、「この週の報告に入れる」で今選んでいる週に入れることもできます。未報告の週が無い時は、今までどおりです" },
   { date: "2026-11-06", type: "fix", text: "報告まわりの細かい不具合を直しました：振り分けていない写真が「報告済みにする」「アプリ外で報告」で報告済みになることがあった、写真なしで送った報告が過去の報告で「写真削除済み」と出て取り消せなかった、お客様名の欄に「必須」と出ていた、①で写真を振り分けると②で打っている途中のキーボードが閉じた、別の現場に切り替えても前の現場の工程が選ばれていた、別の端末で入れたお客様名が届かなかった" },
   { date: "2026-11-06", type: "feature", text: "項目のチェックが全部済んだ時、チェックポイントの上に緑の「COMPLETE！」の帯が出るようにしました。項目のボタンも済んだものは緑になり、工程の項目が全部済むと工程名にも ✓ が付きます" },
@@ -5009,7 +5010,7 @@ function renderMemoSection(it) {
     `<div class="noteList">${notes
       .map(
         (n) =>
-          `<div class="noteItem"><div class="noteHead"><span class="noteBadge ${n.type}">${esc(noteLabel(n))}</span>` +
+          `<div class="noteItem" data-noteid="${esc(n.id)}"><div class="noteHead"><span class="noteBadge ${n.type}">${esc(noteLabel(n))}</span>` +
           `<span class="noteMeta">${esc(fmtDateTime(n.at))}${n.by ? " " + esc(n.by) : ""}</span>` +
           (n.type === "question"
             ? `<button class="noteStatus${n.status === "resolved" ? " done" : (n.replies || []).some((r) => !r.mine) ? " replied" : ""}" data-status="${esc(n.id)}">${n.status === "resolved" ? "解決済み" : (n.replies || []).some((r) => !r.mine) ? "返信あり" : "回答待ち"}</button>`
@@ -5019,10 +5020,13 @@ function renderMemoSection(it) {
           (n.replies || [])
             .map(
               (r) =>
-                `<div class="noteReply${r.readAt ? "" : " unread"}${r.mine ? " mine" : ""}"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(r.mine ? "自分" : r.from || "上司")}</b>` +
-                `<span>${esc(fmtDateTime(r.at))}</span>${r.readAt ? "" : '<span class="newMark">新着</span>'}</div><div class="noteText">${esc(r.text)}</div></div>`
+                `<div class="noteReply${r.readAt ? "" : " unread"}${r.mine ? " mine" : ""}${r.oral ? " oral" : ""}"><div class="noteReplyHead">${icon(ICONS.reply, 14)}<b>${esc(r.mine ? "自分" : r.oral ? (r.from || "上司") + "さんが口頭で回答済み" : r.from || "上司")}</b>` +
+                `<span>${esc(fmtDateTime(r.at))}</span>${r.readAt ? "" : '<span class="newMark">新着</span>'}</div>` +
+                (r.oral ? (r.oralNote ? `<div class="noteText">${esc(r.oralNote)}</div>` : "") : `<div class="noteText">${esc(r.text)}</div>`) +
+                `</div>`
             )
             .join("") +
+          answerMemoHtml(n) +
           // 書き足す：見出しに入れると狭くて折り返すので、メモの下に置く
           (n.type !== "notice" || (n.replies || []).length ? `<div class="noteFoot"><button class="noteMore" data-more="${esc(n.id)}">${icon(ICONS.reply, 14)}書き足す</button></div>` : "") +
           `</div>`
@@ -5056,6 +5060,8 @@ function renderMemoSection(it) {
   if (memoOpenFor === it.id && memoMode === "contact" && $("cSaveBtn")) bindContactForm(it);
   sec.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => resolveContact(it, b.dataset.resolve)));
   sec.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => addNoteFollowup(it, b.dataset.more)));
+  sec.querySelectorAll("[data-ansmemo]").forEach((b) => b.addEventListener("click", () => openAnswerMemo(it, b.dataset.ansmemo)));
+  sec.querySelectorAll("[data-anskip]").forEach((b) => b.addEventListener("click", () => skipAnswerMemo(it, b.dataset.anskip)));
   fillContactPhotos(sec);
   const cancel = $("memoCancelBtn");
   if (cancel)
@@ -5585,7 +5591,8 @@ async function syncGas(manual = false) {
           hit.n.replies = hit.n.replies || [];
           if (hit.n.replies.some((y) => y.id === m.id)) return;
           const self = samePerson(m.from, me); // 上司として自分で返したものは、もう見ているので新着にしない
-          hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: self ? new Date().toISOString() : null });
+          const oralRp = !!(m.payload && m.payload.oral && m.payload.from_role === "上司"); // 口頭で答えた印（見守りの「口頭で回答済み」）
+          hit.n.replies.push({ id: m.id, from: m.from, text: (m.payload && m.payload.text) || "", at: m.at, readAt: self ? new Date().toISOString() : null, ...(oralRp ? { oral: true, oralNote: String(m.payload.oral_note || "") } : {}) });
           hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
           changed.add(hit.r);
           if (!self) replies++;
@@ -5654,6 +5661,126 @@ function openFeedback() {
     setTimeout(() => ta.focus(), 300);
   });
 }
+/* ---------- 口頭で答えてもらった疑問の「答えのメモ」（2026-11-18） ----------
+   上司が見守りで「口頭で回答済み」を押すと、疑問に oral の返信が付く（r.oral）。監督は、その答えを自分の言葉でメモしておく。
+   メモは自分だけのもの：上司の見守りには出さない（週の報告 JSON にも入れない）。GAS の別シート「答えのメモ」にだけ足していく。
+   n.answerMemos = [{ ver, text, at }]（直したら新しい版を足す。消さない）／ n.answerMemoSkip = { at }（「今回はメモしない」） */
+function hasOralReply(n) {
+  return n.type === "question" && (n.replies || []).some((r) => r.oral && !r.mine);
+}
+// 答えのメモ待ち＝口頭の返信が来ていて、メモも「今回はメモしない」も選んでいない疑問（閉じるだけでは減らない）
+function isOralMemoPending(n) {
+  return hasOralReply(n) && !(n.answerMemos || []).length && !n.answerMemoSkip;
+}
+function answerMemoHtml(n) {
+  if (!hasOralReply(n)) return "";
+  const memos = n.answerMemos || [];
+  const last = memos[memos.length - 1];
+  if (last) {
+    return (
+      `<div class="ansMemo done"><div class="ansMemoHead">${icon(ICONS.edit || ICONS.report, 14)}<b>答えのメモ</b><span>${memos.length > 1 ? "版" + last.ver + "・" : ""}${esc(fmtDateTime(last.at))}</span></div>` +
+      `<div class="noteText">${esc(last.text)}</div>` +
+      `<div class="ansMemoFoot"><span class="ansMemoPrivate">自分だけに見えます（上司の見守りには出ません）</span><button class="noteMore" data-ansmemo="${esc(n.id)}">${icon(ICONS.edit || ICONS.reply, 14)}直す</button></div></div>`
+    );
+  }
+  return (
+    `<div class="ansMemo need"><div class="ansMemoHead">${icon(ICONS.edit || ICONS.report, 14)}<b>口頭で聞いた答えをメモしておきましょう</b></div>` +
+    `<div class="mutedText">自分が理解した答えを書きます。自分だけに見えます（上司の見守りには出ません）</div>` +
+    `<div class="ansMemoBtns"><button class="btn btnPrimary ansMemoBtn" data-ansmemo="${esc(n.id)}">答えをメモする</button>` +
+    (n.answerMemoSkip ? `<span class="ansMemoSkipped">今回はメモしない（選択済み）</span>` : `<button class="btn btnOutline ansMemoBtn" data-anskip="${esc(n.id)}">今回はメモしない</button>`) +
+    `</div></div>`
+  );
+}
+// GAS に残す形（後で現場カルテ・振り返り会に写せるように、1件でそろうようにする）
+function answerMemoPayload(it, n, state, memo) {
+  const site = currentSite() || {};
+  return {
+    note_id: n.id,
+    state, // "memo"＝答えのメモ／"skip"＝今回はメモしない
+    ver: memo ? memo.ver : 0,
+    memo: memo ? memo.text : "",
+    memo_at: memo ? memo.at : "",
+    at: new Date().toISOString(),
+    by: getSetting(USER_NAME_KEY) || n.by || "",
+    site_id: site.id || "",
+    kouji_no: site.koujiNo || "",
+    site: site.name || "",
+    process: processOf(it.cat).name,
+    item_id: it.id,
+    item_no: it.no || "",
+    item: it.name,
+    question: n.text,
+    boss_answers: (n.replies || [])
+      .filter((r) => !r.mine)
+      .map((r) => ({ from: r.from || "", at: r.at, source: r.oral ? "口頭（上司の一言）" : "アプリの返信", oral: !!r.oral, text: r.oral ? r.oralNote || "" : r.text })),
+    manual_version: manualMeta ? manualMeta.version : "",
+    app_version: APP_VERSION,
+  };
+}
+function openAnswerMemo(it, id) {
+  const rec0 = checkRecOf(it.id);
+  const n0 = (rec0.notes || []).find((x) => x.id === id);
+  if (!n0) return;
+  const last0 = (n0.answerMemos || []).slice(-1)[0];
+  openSheet(last0 ? "答えのメモを直す" : "答えをメモする", (body, close) => {
+    const q = document.createElement("div");
+    q.className = "mutedText";
+    q.textContent = "疑問：" + n0.text;
+    const ora = (n0.replies || []).filter((r) => r.oral && !r.mine).slice(-1)[0];
+    const a = document.createElement("div");
+    a.className = "mutedText";
+    a.textContent = ora ? `${ora.from || "上司"}さんが口頭で回答済み${ora.oralNote ? "：" + ora.oralNote : ""}` : "";
+    const ta = document.createElement("textarea");
+    ta.className = "sheetTextarea";
+    ta.id = "ansMemoInput";
+    ta.placeholder = "聞いた答えを、自分の言葉で（例：2階トイレの排水は梁の下を通す。勾配は…）";
+    ta.value = last0 ? last0.text : "";
+    const w = document.createElement("div");
+    w.className = "mutedText";
+    w.textContent = "自分だけに見えます。上司の見守りには出ません。直した時は新しい版として残り、前の版も消えません。";
+    body.append(q, a, ta, w);
+    body.appendChild(
+      sheetButton("保存する", "btnPrimary btnLarge", async () => {
+        const text = ta.value.trim();
+        if (!text) return ta.focus();
+        const rec = checkRecOf(it.id); // 開いている間に返信が届いていても消さないよう、今のメモを取り直す
+        const n = (rec.notes || []).find((x) => x.id === id);
+        if (!n) return close();
+        const memos = (n.answerMemos = n.answerMemos || []);
+        if (memos.length && memos[memos.length - 1].text === text) return close(); // 変わっていなければ版を増やさない
+        const memo = { ver: memos.length + 1, text, at: new Date().toISOString() };
+        memos.push(memo);
+        n.updatedAt = memo.at;
+        await saveCheckRec(rec);
+        enqueueGas({ kind: "memo", id: `${n.id}.m${memo.ver}`, thread: n.id, ver: memo.at, payload: answerMemoPayload(it, n, "memo", memo) });
+        close();
+        renderMemoSection(it);
+        toast(memo.ver > 1 ? "答えのメモを直しました（新しい版として残しました）" : "答えをメモしました");
+      })
+    );
+    body.appendChild(sheetButton("やめる", "btnGhost", close));
+    setTimeout(() => ta.focus(), 300);
+  });
+}
+async function skipAnswerMemo(it, id) {
+  const rec = checkRecOf(it.id);
+  const n = (rec.notes || []).find((x) => x.id === id);
+  if (!n || (n.answerMemos || []).length) return;
+  n.answerMemoSkip = { at: new Date().toISOString() };
+  n.updatedAt = n.answerMemoSkip.at;
+  await saveCheckRec(rec);
+  enqueueGas({ kind: "memo", id: `${n.id}.skip`, thread: n.id, ver: n.answerMemoSkip.at, payload: answerMemoPayload(it, n, "skip", null) });
+  renderMemoSection(it);
+  toast("今回はメモしないことにしました");
+}
+// ホームの「やること」に出す：答えのメモ待ちの疑問（全現場。古い口頭の返信から順）
+function pendingOralMemos(sums) {
+  const oralAt = (n) => (n.replies || []).filter((r) => r.oral && !r.mine).reduce((m, r) => (r.at > m ? r.at : m), "");
+  return sums
+    .flatMap((x) => Object.values(x.recs || {}).flatMap((r) => (r.notes || []).filter(isOralMemoPending).map((n) => ({ site: x.site, rec: r, n }))))
+    .sort((a, b) => (oralAt(a.n) < oralAt(b.n) ? -1 : 1));
+}
+
 // 疑問への書き足し（上司とのやりとりを続ける）
 function addNoteFollowup(it, id) {
   const rec = checkRecOf(it.id);
@@ -6078,7 +6205,7 @@ async function onRepliesPicked() {
       already++;
       return;
     }
-    hit.n.replies.push({ id: x.id, from: x.from || "", text: x.text || "", at: x.at || new Date().toISOString(), readAt: null });
+    hit.n.replies.push({ id: x.id, from: x.from || "", text: x.text || "", at: x.at || new Date().toISOString(), readAt: null, ...(x.oral ? { oral: true, oralNote: String(x.oral_note || "") } : {}) });
     hit.n.replies.sort((p, q) => (p.at < q.at ? -1 : 1));
     changed.add(hit.r);
     added++;
@@ -6727,6 +6854,29 @@ async function renderDash() {
     })
   );
   if (waits.length > 2) todo.push({ site: "全体", icon: ICONS.reply, cls: "muted", html: `ほかの返事待ち <b>${waits.length - 2}件</b>`, go: () => toast("返事待ちは、それぞれの項目の「気づき・疑問メモ」に出ています") });
+  // 口頭で答えてもらった疑問：答えのメモ待ち（1行にまとめる。メモする・「今回はメモしない」を選ぶまで消えない。催促の通知は出さない）
+  const oralWaits = pendingOralMemos(sums);
+  if (oralWaits.length) {
+    const oralSites = [...new Set(oralWaits.map((x) => x.site.id))];
+    todo.push({
+      site: oralSites.length === 1 ? siteNameOf(oralSites[0]) : `${oralSites.length}現場`,
+      icon: ICONS.edit || ICONS.reply,
+      cls: "wood",
+      html: `口頭で答えてもらった疑問：答えのメモ待ち <b class="em">${oralWaits.length}件</b>`,
+      go: async () => {
+        const w = oralWaits[0];
+        if (w.site.id !== currentSiteId) await setCurrentSite(w.site.id);
+        const it = allManualItems().find((x) => x.id === w.rec.itemId);
+        if (!it) return toast("この項目はマニュアルに見つかりませんでした");
+        currentMTab = "check";
+        await openGroup(groupOfProcess(it.cat).id, it.id);
+        setTimeout(() => {
+          const el = document.querySelector(`[data-noteid="${CSS.escape(w.n.id)}"]`) || $("memoSection");
+          if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+        }, 300);
+      },
+    });
+  }
   // 打合せの宿題（期限の近い順に3件まで）
   const tasks = openTasks(sites);
   tasks.slice(0, 3).forEach(({ s, t }) =>

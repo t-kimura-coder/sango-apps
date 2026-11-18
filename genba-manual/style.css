@@ -1343,3 +1343,16 @@ img.imgBroken { visibility: hidden; }
 .olderThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .olderBtns .btn { flex: 1 1 140px; min-height: 46px; font-size: var(--fs-sm); padding: 0 8px; }
 .laterNote { margin-top: 4px; }
+/* 口頭で答えてもらった疑問：返信の表示と答えのメモ（2026-11-18） */
+.noteReply.oral { border-left-color: var(--color-ok-text, #2e7d32); }
+.ansMemo { margin: 8px 0 0 12px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px dashed var(--color-wood, #b07a3c); background: var(--color-wood-soft); }
+.ansMemo.done { border-style: solid; }
+.ansMemoHead { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--color-text-sub); }
+.ansMemoHead b { color: var(--color-heading); }
+.ansMemoHead span { margin-left: auto; }
+.ansMemoBtns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.ansMemoBtn { min-height: 40px; padding: 0 14px; font-size: 14px; }
+.ansMemoSkipped { font-size: var(--fs-xs); color: var(--color-text-sub); }
+.ansMemoFoot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.ansMemoFoot .noteMore { margin-left: auto; white-space: nowrap; }
+.ansMemoPrivate { font-size: var(--fs-xs); color: var(--color-text-sub); }
