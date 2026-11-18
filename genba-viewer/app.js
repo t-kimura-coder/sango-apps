@@ -6,7 +6,7 @@
    ========================================================== */
 
 const APP_NAME = "現場ナビ 見守り"; // 名前を変える時はここと index.html の title / manifest
-const APP_VERSION = 63;
+const APP_VERSION = 64;
 const LS = "genba-viewer-"; // localStorage の接頭辞（同じドメインの他アプリと分ける）
 const LATE_DAYS = 8; // 最終報告からこの日数たったら「報告の遅れ」
 const REPLY_DIR = "返信";
@@ -346,7 +346,7 @@ function applyGas() {
   });
   Object.values(gasStore.replies).forEach((m) => {
     const p = m.payload || {};
-    addReplyToData({ kind: "genba-reply", id: m.id, note_id: m.thread, from: m.from, from_role: p.from_role || "", text: p.text || "", at: m.at });
+    addReplyToData({ kind: "genba-reply", id: m.id, note_id: m.thread, from: m.from, from_role: p.from_role || "", text: p.text || "", at: m.at, oral: !!p.oral, oral_note: p.oral ? String(p.oral_note || "") : "" });
   });
   updateNavBadge();
 }
@@ -1543,7 +1543,13 @@ function stamp(d = new Date()) {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-async function sendReply(n, text, ack = false) {
+// 口頭で答えた時の返信の本文（一言があれば添える）
+function oralReplyText(note) {
+  const s = String(note || "").trim();
+  return "口頭で回答しました" + (s ? "：" + s : "");
+}
+// oral＝{ note } を渡すと「口頭で回答済み」の返信になる（返信に oral: true の印が付く。状態は今の返信と同じ「返信済み」）
+async function sendReply(n, text, ack = false, oral = null) {
   const me = getLS("name");
   if (!me) {
     alert("先に設定で、あなたの名前を登録してください（返信に名前が入ります）。");
@@ -1570,6 +1576,10 @@ async function sendReply(n, text, ack = false) {
     at: new Date().toISOString(),
   };
   if (ack) rp.ack = true; // 「確認した」（返信不要の気づきに、見たことだけを伝える）
+  if (oral) {
+    rp.oral = true; // 口頭で答えた印（監督の現場ナビに「○○さんが口頭で回答済み」と出る）
+    rp.oral_note = String(oral.note || "").trim().slice(0, 200);
+  }
   rp.from_role = "上司";
   const fileName = safeName(`返信_${n.siteName}_${n.personName}_${stamp()}_${rp.id.slice(0, 6)}.json`);
   const body = JSON.stringify(rp, null, 2);
@@ -1577,7 +1587,7 @@ async function sendReply(n, text, ack = false) {
   const viaGas = (!demoMode || n.viaGas) && (await postGas({ kind: "reply", id: rp.id, thread: n.id, to: n.gasFrom || n.personName, payload: rp }));
   if (viaGas && n.viaGas) {
     addReplyToData(rp);
-    toast(ack ? "確認したことを伝えました（監督の現場ナビにすぐ届きます）" : "返信を送りました（監督の現場ナビにすぐ届きます）");
+    toast(ack ? "確認したことを伝えました（監督の現場ナビにすぐ届きます）" : oral ? "口頭で回答したことを伝えました（監督の現場ナビにすぐ届きます）" : "返信を送りました（監督の現場ナビにすぐ届きます）");
     return true;
   }
   if (demoMode) {
@@ -2059,7 +2069,9 @@ function openNote(id) {
     (replies.length
       ? `<div class="card"><div class="origHead">${icon("reply", 20)}<span>これまでのやりとり</span></div>${replies
           .map((r) =>
-            r.ack
+            r.oral
+              ? `<div class="pastReply ack oral"><div class="prMeta"><b>${esc(r.from)}</b>　${fmtDateTime(r.at)}</div><div class="prText">${icon("check", 16, 2.6)}口頭で回答済み${r.oral_note ? "：" + esc(r.oral_note) : ""}</div></div>`
+              : r.ack
               ? `<div class="pastReply ack"><div class="prMeta"><b>${esc(r.from)}</b>　${fmtDateTime(r.at)}</div><div class="prText">${icon("check", 16, 2.6)}確認しました</div></div>`
               : `<div class="pastReply${r.from_role === "監督" ? " fromSite" : ""}"><div class="prMeta"><b>${esc(r.from)}</b>${r.from_role === "監督" ? "（監督）" : ""}　${fmtDateTime(r.at)}</div><div class="prText">${esc(r.text)}</div></div>`
           )
@@ -2068,9 +2080,15 @@ function openNote(id) {
     (isNotice
       ? `<div class="shareNote">${icon("bulb", 18)}<span>気づきは<b>返信不要</b>です。見たら「確認した」を押すと、監督の現場ナビに「確認しました」と届きます。必要な時だけ、下に返信を書いてください。</span></div>`
       : "") +
-    `<div class="card"><div class="origHead">${icon("save", 20)}<span>${isNotice ? "返信（必要な時だけ）" : "返信内容"}</span></div>` +
+    `<div class="card"><div class="origHead">${icon("save", 20)}<span>${isNotice ? "返信（必要な時だけ）" : "返信内容"}</span>` +
+    // 疑問に口頭で答えた時：返信を書かずに「口頭で回答済み」を伝える（監督の現場ナビに印つきで届く）
+    (n.type === "question" && !n.noId ? `<button type="button" id="oralBtn" class="btn btnOutline oralBtn">${icon("check", 16, 2.6)}口頭で回答済み</button>` : "") +
+    `</div>` +
     `<textarea id="replyText" class="replyText${isNotice ? " small" : ""}" maxlength="1000" placeholder="${isNotice ? "返信しなくても大丈夫です。伝えたいことがある時だけ書いてください。" : `${esc(n.personName || "監督")}さんへの返信を入力してください。&#10;現場の状況に寄り添った、わかりやすい内容を心がけましょう。`}"></textarea>` +
-    `<div class="replyCount"><span id="replyCount">0</span> / 1000</div></div>`;
+    `<div class="replyCount"><span id="replyCount">0</span> / 1000</div>` +
+    `<div id="oralBox" class="oralBox" hidden><div class="oralLead">口頭で答えた内容を、一言だけ残せます（書かなくてもかまいません）。</div>` +
+    `<input id="oralNote" class="oralNote" type="text" maxlength="200" placeholder="答えを一言（任意）　例：配管は梁の下を通してよい">` +
+    `<div class="oralBtns"><button type="button" id="oralCancel" class="btn btnOutline">やめる</button><button type="button" id="oralSend" class="btn btnPrimary">${icon("send", 18)}口頭で回答済みにする</button></div></div></div>`;
   $("drawerFoot").innerHTML = n.noId
     ? `<div class="noReply">このメモは古い版の現場ナビから届いたため、返信しても監督のアプリに届きません。直接伝えてください。</div>`
     : isNotice
@@ -2128,6 +2146,23 @@ function openNote(id) {
       route();
       openNote(id);
     });
+  if ($("oralBtn")) {
+    $("oralBtn").addEventListener("click", () => {
+      $("oralBox").hidden = !$("oralBox").hidden;
+      if (!$("oralBox").hidden) $("oralNote").focus();
+    });
+    $("oralCancel").addEventListener("click", () => ($("oralBox").hidden = true));
+    $("oralSend").addEventListener("click", async () => {
+      $("oralSend").disabled = true;
+      const note = $("oralNote").value.trim();
+      const ok = await sendReply(n, oralReplyText(note), false, { note });
+      if (!ok) return ($("oralSend").disabled = false);
+      setDraft(id, "");
+      updateNavBadge();
+      route();
+      openNote(id);
+    });
+  }
   if ($("asQBtn")) $("asQBtn").addEventListener("click", () => toggleAsQuestion(n));
   const go = (d) => {
     const next = order[pos + d];

@@ -931,3 +931,11 @@ h1, h2 { margin: 0; color: var(--color-heading); }
 .wkPlanList li:first-child { border-top: none; }
 .wkPlanName small { color: var(--color-text-muted); }
 .wkPlanMore summary { cursor: pointer; color: var(--color-text-muted); margin-top: 4px; }
+/* 口頭で回答済み（疑問の返信欄の横のボタンと、一言の入力欄） */
+.oralBtn { min-height: 40px; padding: 0 12px; font-size: 14px; white-space: nowrap; }
+.oralBox { margin-top: 12px; padding: 12px; border: 1px dashed var(--color-border); border-radius: 12px; background: var(--color-primary-soft); }
+.oralBox[hidden] { display: none; }
+.oralLead { font-size: 14px; color: var(--color-text-muted); margin-bottom: 8px; }
+.oralNote { width: 100%; min-height: 46px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 10px; font: inherit; color: var(--color-text); background: var(--color-surface); }
+.oralBtns { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 10px; }
+.oralBtns .btn { min-height: 48px; }
