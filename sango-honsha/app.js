@@ -1,7 +1,7 @@
 "use strict";
 /* 山郷サポート 本社：山郷から来た「対応の依頼」の進捗（業者への手配）と、山郷への請求を管理する。
    窓口（GAS）の honshaList / honshaSave だけを使う。合言葉は「本社用」（山郷側の管理者には渡さない）。 */
-const APP_VERSION = 37;
+const APP_VERSION = 39;
 const HONSHA_API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（人ごとの合言葉が無ければ使えない）
 const P = "sango-honsha-";
 const $ = (id) => document.getElementById(id);
@@ -435,7 +435,7 @@ function viewDetail(main, id) {
         <div class="btnRow"><button type="button" class="btn primary" id="fReplySend">山郷に送る</button><span class="note">日程が決まっていなくても送れます</span></div></div>
       <div id="replyList">${replyListHtml(it.replies)}</div></div>
     <div class="panel"><h3>手配と請求（山郷側には見えません）</h3>
-      ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.direct === false ? `<span class="chip hq" title="まだ山郷からの修繕実績がない業者。山郷のリーダーの画面では、電話が本社に回ります">本社経由</span>` : ""}${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
+      ${en ? `<div class="cands"><div class="note">この建物・分類の担当業者（業者データより）${en.none ? "：設置なし" : ""}</div>${cands.map((c) => `<span class="cand"><button type="button" class="candBtn" data-v="${esc(c.name)}">${esc(c.name)}</button>${c.use ? `<span class="note">（${esc(c.use)}）</span>` : ""}${c.direct === false ? `<span class="chip hq" title="まだ山郷からの修繕実績がない業者。山郷のリーダーの画面では、電話が本社に回ります">本社経由</span>` : ""}${c.phone ? `<a class="tel" href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ""))}">${esc(c.phone)}</a>` : ""}</span>`).join("") || `<span class="note">登録なし</span>`}${en.note ? `<div class="note">備考：${esc(en.note.slice(0, 120))}</div>` : ""}</div>` : ""}
       <div id="hqVNote">${hqVendorNote(it.vendor, r.id)}</div>
       <div class="form">
         <div><label>手配先の業者</label><input type="text" id="fVendor" list="vendorList" maxlength="60" value="${esc(it.vendor || "")}"><datalist id="vendorList">${vendors.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></div>
@@ -624,7 +624,7 @@ function viewVendors(main) {
   const editBox = (c) => vEdit !== c.key ? "" : `<div class="vConfirm vEditBox">
         <div class="form"><div><label>電話番号</label><input type="tel" id="veP" maxlength="30" value="${esc(c.phone)}"></div><div><label>担当者</label><input type="text" id="veT" maxlength="40" value="${esc(c.contact)}"></div></div>
         <div class="note">この業者の、すべての建物・分類の連絡先が変わります。</div>
-        <div class="vSpots">${c.spots.map((e) => `<span class="vSpot">${esc(nm(e.b, S.master.buildings, "name"))}・${esc(nm(e.c, S.master.categories, "label"))} <button class="linkBtn vRmBtn" data-b="${esc(e.b)}" data-c="${esc(e.c)}">外す</button></span>`).join("")}</div>
+        <div class="vSpots">${c.spots.map((e) => { const u = ((e.companies || []).find((x) => (x.key || coKey(x.name)) === c.key) || {}).use || ""; return `<span class="vSpot">${esc(nm(e.b, S.master.buildings, "name"))}・${esc(nm(e.c, S.master.categories, "label"))}${u ? `<span class="vSpotUse">${esc(u)}</span>` : ""} <button class="linkBtn vUseBtn" data-b="${esc(e.b)}" data-c="${esc(e.c)}" data-u="${esc(u)}">用途</button> <button class="linkBtn vRmBtn" data-b="${esc(e.b)}" data-c="${esc(e.c)}">外す</button></span>`; }).join("")}</div>
         <div class="vAddRow"><span class="vAddLbl">担当する所を足す</span><select id="veB"><option value="">建物</option>${(S.master.buildings || []).map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select><select id="veC"><option value="">分類</option>${(S.master.categories || []).map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("")}</select><button class="btn small" id="veAdd">＋足す</button></div>
         <div class="btnRow"><button class="btn primary" id="veGo">電話・担当を保存して、配り直す</button><button class="btn" id="veCancel">やめる</button></div></div>`;
   const row = (c) => `<div class="vRow${c.st.done ? " ready" : ""}" data-k="${esc(c.key)}">
@@ -649,6 +649,7 @@ function viewVendors(main) {
         <div><label>業者の名前</label><input type="text" id="vaN" maxlength="60" list="vaList" placeholder="例）キッチンハウス"><datalist id="vaList">${all.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist></div>
         <div><label>電話番号</label><input type="tel" id="vaP" maxlength="30" placeholder="例）011-000-0000"></div>
         <div><label>担当者</label><input type="text" id="vaT" maxlength="40" placeholder="例）山田"></div>
+        <div><label>用途（何の時にかけるか。任意）</label><input type="text" id="vaU" maxlength="40" placeholder="例）修理（エラー表示・故障）"></div>
         <div><label>今の連絡先</label><div class="meta" id="vaNow">建物と分類を選ぶと出ます</div></div>
       </div>
       <div class="btnRow"><button class="btn primary" id="vaGo">登録して、配り直す</button></div></div>
@@ -700,8 +701,17 @@ function viewVendors(main) {
       if (!c || !b || !cat) { alert("建物と分類を選んでください"); return; }
       const where = nm(b, S.master.buildings, "name") + "・" + nm(cat, S.master.categories, "label");
       if (c.spots.some((e) => e.b === b && e.c === cat)) { alert(`${where} には、もう入っています`); return; }
-      setVendor({ op: "add", name: c.name, b, c: cat, phone: c.phone, contact: c.contact }, `「${c.name}」を ${where} に足しました`, true);
+      // 用途は、同じ分類のほかの建物で入れてある用途を引き継ぐ（例：宇・ガスに足すと、香・ガスの「機器の交換…」が付く）。違う分類の用途は引き継がない
+      const useOf = (e) => ((e.companies || []).find((x) => (x.key || coKey(x.name)) === c.key) || {}).use || "";
+      const inherit = (c.spots.find((e) => e.c === cat && useOf(e)) ? useOf(c.spots.find((e) => e.c === cat && useOf(e))) : "");
+      setVendor(Object.assign({ op: "add", name: c.name, b, c: cat, phone: c.phone, contact: c.contact }, inherit ? { use: inherit } : {}), `「${c.name}」を ${where} に足しました${inherit ? `（用途「${inherit}」を引き継ぎ）` : ""}`, true);
     };
+    main.querySelectorAll(".vUseBtn").forEach((b) => (b.onclick = () => {
+      const where = nm(b.dataset.b, S.master.buildings, "name") + "・" + nm(b.dataset.c, S.master.categories, "label");
+      const u = prompt(`${where} で「${c.name}」に何の時にかけるか（例：修理（エラー表示・故障））。空にすると消します。`, b.dataset.u || "");
+      if (u === null || !c) return;
+      setVendor({ op: "use", name: c.name, b: b.dataset.b, c: b.dataset.c, use: u.trim() }, `「${c.name}」の ${where} での用途を${u.trim() ? "直しました" : "消しました"}`, true);
+    }));
     main.querySelectorAll(".vRmBtn").forEach((b) => (b.onclick = () => {
       const where = nm(b.dataset.b, S.master.buildings, "name") + "・" + nm(b.dataset.c, S.master.categories, "label");
       if (c && confirm(`「${c.name}」を、${where} の連絡先から外しますか？`)) setVendor({ op: "remove", name: c.name, b: b.dataset.b, c: b.dataset.c }, `「${c.name}」を ${where} から外しました`, true);
@@ -719,7 +729,7 @@ function viewVendors(main) {
     const where = nm(b, S.master.buildings, "name") + "・" + nm(cat, S.master.categories, "label");
     const known = cm.get(coKey(n));
     if (!confirm(`「${n}」を ${where} の連絡先に足しますか？${known ? "\n（今ある業者です。電話・担当は、すべての建物で、ここに入れた値になります）" : "\n（新しい業者です。本社経由から始まります）"}`)) return;
-    setVendor({ op: "add", name: known ? known.name : n, b, c: cat, phone: $("vaP").value.trim() || (known ? known.phone : ""), contact: $("vaT").value.trim() || (known ? known.contact : "") }, `「${n}」を ${where} に足しました`);
+    setVendor({ op: "add", name: known ? known.name : n, b, c: cat, phone: $("vaP").value.trim() || (known ? known.phone : ""), contact: $("vaT").value.trim() || (known ? known.contact : ""), use: $("vaU").value.trim() }, `「${n}」を ${where} に足しました`);
   };
 }
 
@@ -732,7 +742,7 @@ function viewHelp(main) {
     ${sec("依頼を受けて、手配する", ["業者の見積 PDF などは、依頼の詳細の「<b>見積・書類</b>」に入れて残せます（本社だけ。山郷には見えません）。押すと開けます。", "依頼が届くと、メールが来ます。この画面を開くと、「<b>新着</b>」の印が付いた依頼が、一覧に出ます（急ぎは先頭）。", "依頼を開くと、写真・内容と、この建物・分類の<b>担当業者（電話番号つき）</b>が出ます。業者の名前を押すと、「手配先」に入ります。", "<b>手配先・進捗・手配した日・見積番号</b>を入れて「保存」。進捗は、「未手配 → 手配済み → 施工待ち → 施工完了」と進めます。上の帯で、今どこかが分かります。", "業者とのやり取りなどは「<b>本社メモを足す</b>」で残します（山郷には見えません）。日時と名前つきで積まれ、前のメモは書き換えません。間違えた時は、一番新しい1件だけ取り消せます。", "上の4つの数字（未手配・進行中・請求待ち・今月の請求）を押すと、その状態の依頼だけが出ます。"])}
     ${sec("山郷に返事する（山郷に表示されます）", ["依頼の詳細の「<b>山郷への返事</b>」に、<b>訪問予定日</b>・<b>ひとこと</b>・<b>業者の金額の目安</b>を入れて保存すると、リーダー・管理者の画面の「手配の状況」に出ます。", "山郷に見えるのは、手配の段階（手配済み・施工待ち・施工完了）と、この3つだけです。<b>手配先の名前・粗利を乗せた請求額・粗利は、見えません。</b>金額の目安は、業者の金額を、そのまま入れます。"])}
     ${sec("業者の「直接連絡OK」（解禁）", ["まだ山郷からの修繕実績がない業者は「<b>本社経由</b>」です。山郷のリーダーの画面では、電話番号を押すと、本社に電話するか、症例で対応を依頼するように案内されます。", "依頼の手配先が本社経由の業者だと、手配の欄に「<b>初回です</b>」の案内が出ます。施工が完了したら、業者に「今後は山郷から直接連絡がいく」と伝えて、了承をもらいます（請求の流れも確認）。", "左のメニューの「<b>業者</b>」に、本社経由の業者と、本社経由で手配した件数・施工完了の件数が出ます。了承をもらったら「<b>直接連絡OKにする</b>」→ 2つの確認にチェック → 押すと、業者データが配り直され、リーダーの画面には次に開いた時に反映されます。", "間違えた時は、「直接連絡OKの業者」の「本社経由に戻す」で戻せます。"])}
-    ${sec("業者を登録する・電話や担当を直す", ["「<b>業者</b>」の画面の上の「<b>業者を登録する</b>」で、建物・分類を選び、業者の名前・電話・担当者を入れて「登録して、配り直す」。山郷のリーダー・管理者の画面の「連絡先」に、次に開いた時に出ます。足した業者は「本社経由」から始まります。", "担当や電話が変わった時は、一覧の「<b>電話・担当・建物を直す</b>」。電話・担当を直すと、その業者の、すべての建物・分類の連絡先が変わります。同じ枠で、担当する建物・分類を「＋足す」「外す」もできます。", "ここで直した分は、窓口に残ります。元の表（csv）から業者データを置き直しても、戻りません。"])}
+    ${sec("業者を登録する・電話や担当を直す", ["「<b>業者</b>」の画面の上の「<b>業者を登録する</b>」で、建物・分類を選び、業者の名前・電話・担当者を入れて「登録して、配り直す」。山郷のリーダー・管理者の画面の「連絡先」に、次に開いた時に出ます。足した業者は「本社経由」から始まります。", "担当や電話が変わった時は、一覧の「<b>電話・担当・建物を直す</b>」。電話・担当を直すと、その業者の、すべての建物・分類の連絡先が変わります。同じ枠で、担当する建物・分類を「＋足す」「外す」もできます。「用途」で、その建物・分類で何の時にかけるか（例：修理（エラー表示・故障））を入れると、山郷のリーダーの画面で業者名の下に出ます。", "ここで直した分は、窓口に残ります。元の表（csv）から業者データを置き直しても、戻りません。"])}
     ${sec("請求を管理する", ["依頼の詳細で、<b>請求区分</b>（請求する／請求しない＝保証・サービス／未定）を選びます。「請求しない」は、施工完了で、請求待ちに出ずに「請求なし」で終わります。", "<b>業者への支払い</b>と<b>山郷への請求額</b>を入れると、<b>粗利</b>が自動で出ます。", "請求書を出したら、<b>請求月</b>を入れて「請求済み」にチェックして保存します（請求月が無いと、請求済みにできません）。請求書そのものは、見積アプリのPDFで、これまでどおり社内で処理します。", "「請求」の画面に、<b>請求待ち</b>（施工完了で、まだ請求していないもの）と、<b>月ごとの請求額・粗利</b>が出ます。「CSVに出す」で、Excelで開けます。"])}
     ${sec("過去の症例", ["「依頼」の一覧と、建物の画面にある「<b>過去の症例</b>」で、これまでの修繕の記録（業者・金額・原因・メモ）を見られます（見るだけです）。", "新しい順に150件まで出ます。建物とキーワードで絞り込めます。山郷に見せない<b>本社用メモ</b>（茶色の枠）が付くことがあります。"])}
     ${sec("困った時", ["「窓口につながりません」は、ネットワークを確認して、右上の「↻」を押します。", "新しい機能が出ない時は、設定の「更新」にある2つのボタンを押します。", "山郷側の管理者が使う管理者ビューアとは、別の画面です（合言葉の役割が違うため）。"])}`;

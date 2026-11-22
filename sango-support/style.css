@@ -395,3 +395,8 @@ textarea { min-height: 84px; }
 .followLine .followList { list-style: none; padding: 0; margin: 4px 0 0; }
 .followLine .followList li { padding: 6px 0; border-top: 1px dashed #d8d2c4; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .followLine .followList li .mutedText { flex-basis: 100%; }
+
+/* 分類の注意・業者の用途（2026-11-22） */
+.catAlert { display: flex; gap: 8px; align-items: flex-start; background: #fdecea; border: 1px solid #e8a39b; border-left: 5px solid #c0392b; color: #8e2a20; border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; font-weight: 700; line-height: 1.6; }
+.catAlert svg { flex: none; width: 20px; height: 20px; margin-top: 3px; }
+.vUse { display: inline-block; margin: 2px 0 4px; padding: 2px 10px; border-radius: 999px; background: #e8f0e8; color: #2f5a3a; font-size: 13px; font-weight: 700; }

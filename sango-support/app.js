@@ -2,11 +2,12 @@
 /* 山郷サポート：建物から入って業者の連絡先を調べ、トラブルと対応を写真付きで記録するPWA。
    社内データ（建物・業者・電話）はアプリに持たず、「マスターパック」JSONを取り込んで端末内（IndexedDB）に保存する。 */
 
-const APP_VERSION = 63;
+const APP_VERSION = 64;
 const ART_V = 3; // 絵を差し替えたら上げる
 const API_URL = "https://script.google.com/macros/s/AKfycbwK_-2R23HZfPtWS_NUzknStSt2DGKExK7EAyhzfQq598QIhcY0u8LLmpcE_q18OD0y/exec"; // 窓口のURL（合言葉が無ければ使えない）
 const BOX_UPLOAD_EMAIL = "______.7imjq60uox1556sk@u.box.com"; // Box「8.山郷サポート/報告」のアップロード用（アップロード専用なので公開しても読まれない）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-22", type: "feature", text: "分類「ガス」が増えました（ガス衣類乾燥機など）。連絡先に「修理（エラー表示・故障）の時」のように、何の時にかける所かが出るようになりました。ガス漏れ・ガスの臭いの時の注意も、ガスの連絡先の上に出ます。" },
   { date: "2026-11-18", type: "feature", text: "依頼の対応の途中で別の対応が必要になった時（補修の時に別の傷が見つかった、など）、本社が「続きの依頼」を立てるようになりました。元の依頼の「手配の状況」に、続きの依頼とその進み具合が出ます。" },
   { date: "2026-11-16", type: "feature", text: "本社から依頼に新しい連絡が来ると、ホームに「本社から新しい連絡があります」の帯と、下の「症例」タブに赤い点が出るようになりました。自分の症例の一覧にも「本社から新着」の印が付きます。開いて見ると消えます。" },
   { date: "2026-11-16", type: "feature", text: "依頼の「手配の状況」で、本社からの連絡が、日時つきで新しい順に並ぶようになりました（一番新しい連絡は黄色）。前の連絡も残るので、手配の流れが追えます。" },
@@ -461,9 +462,12 @@ function contactHtml(bid, cid) {
   const e = entryOf(bid, cid);
   let h = "";
   if (e.none) h += `<div class="empty">この建物には設置されていません。</div>`;
+  const cat = cById(cid);
+  if (cat && cat.alert && !e.none) h += `<div class="catAlert">${icon("info")}${esc(cat.alert)}</div>`;   // 分類の注意（ガス漏れの時など。業者データの categories[].alert）
   e.companies.forEach((co) => {
     const hold = co.direct === false;   // 本社経由：まだ山郷からの修繕実績がない業者（業者データの direct が空）。番号は見せるが、押すと注意と本社への電話
     h += `<div class="vendorCard${hold ? " hold" : ""}"><div class="vName">${esc(co.name)}${hold ? `<span class="tag warn">本社経由</span>` : ""}</div>
+      ${co.use ? `<div class="vUse">${esc(co.use)}の時</div>` : ""}
       <div class="vSub">${co.contact ? "担当：" + esc(co.contact) : "担当者名は未登録"}</div>
       ${hold ? `<div class="vHold">${icon("info")}まだ山郷からの修繕の実績がない業者です。まずは本社（木村）に連絡してください。本社から業者へつなぎます。</div>` : ""}
       ${!co.phone ? `<span class="callBtn big off">電話番号は未登録</span>`
