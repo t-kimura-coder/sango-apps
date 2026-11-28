@@ -226,6 +226,38 @@ test("新しい版が配られると、ホームのやることに出る（半�
   await app.waitForFunction(() => !tebikiUpdateAvailable());
 });
 
+test("ホームの「資料」：手引書の行→一覧→戻るとホーム。無くした後はその行から受け取れる", async ({ app, errors }) => {
+  await receiveBoth(app);
+  await app.evaluate(() => goDash());
+  await expect(app.locator("#dashShiryoHead")).toBeVisible();
+  await expect(app.locator("#dashShiryo .shiryoRow")).toHaveCount(1);
+  await expect(app.locator("#dashShiryo .shiryoRow")).toContainText("標準施工手引書（図面3枚・test-t1版）");
+  // 次に見る項目と検索の間
+  const order = await app.evaluate(() => {
+    const kids = [...$("dashView").querySelectorAll("#dashNext, #dashShiryo, .openSearchBtn")];
+    return kids.map((e) => e.id || "search");
+  });
+  expect(order).toEqual(["dashNext", "dashShiryo", "search"]);
+  await app.locator("#dashShiryo .shiryoRow").click();
+  await expect(app.locator("#tebikiListView")).toBeVisible();
+  await app.locator("#tebikiListBackBtn").click();
+  await expect(app.locator("#dashView")).toBeVisible();
+  // 工程タブから入った時の戻るは工程タブ
+  await app.evaluate(() => goManual());
+  await app.locator("#tebikiEntryBtn").click();
+  await app.locator("#tebikiListBackBtn").click();
+  await expect(app.locator("#manualView")).toBeVisible();
+  // 削除した後：ホームの行から受け取れる
+  await app.evaluate(() => deleteTebiki());
+  await app.waitForFunction(() => !tebikiMeta);
+  await app.evaluate(() => goDash());
+  await expect(app.locator("#dashShiryo .shiryoRow")).toContainText("まだありません");
+  await app.locator("#dashShiryo .shiryoRow").click();
+  await app.waitForFunction(() => tebikiMeta && tebikiMeta.pages.length === 3, null, { timeout: 45000 });
+  await expect(app.locator("#dashShiryo .shiryoRow")).toContainText("図面3枚");
+  expect(errors).toEqual([]);
+});
+
 testNone("手引書がまだ無い時は、静かに飛ばす（案内・エラー・入口なし）", async ({ app, gas, errors }) => {
   const alerts = [];
   app.on("dialog", (d) => d.type() === "alert" && alerts.push(d.message()));
@@ -235,6 +267,8 @@ testNone("手引書がまだ無い時は、静かに飛ばす（案内・エラ�
   expect(alerts).toEqual([]);
   expect(await app.evaluate(() => tebikiMeta)).toBeNull();
   await expect(app.locator("#tebikiEntryBtn")).toHaveCount(0); // 工程タブに入口を出さない
+  await app.evaluate(() => goDash());
+  await expect(app.locator("#dashShiryoHead")).toBeHidden(); // ホームの「資料」も出さない
   // 項目にも欄は出ない
   await app.evaluate(() => openGroup(groupOfProcess("p02").id, "m902"));
   await expect(app.locator("#tebikiRow .tbRow")).toHaveCount(0);

@@ -1415,6 +1415,8 @@ img.imgBroken { visibility: hidden; }
   .tbZoom { bottom: 40px; }
 }
 .tbFind { margin-bottom: var(--space-sm); }
+.shiryoIcon { font-size: 20px; }
+.shiryoRow .dashSub { color: var(--color-text-muted); font-size: var(--fs-sm); }
 .tbFind .searchInput { width: 100%; }
 .tbFound { display: flex; flex-direction: column; gap: var(--space-sm); }
 .tbFound .tbSearchHead { margin-top: 0; }

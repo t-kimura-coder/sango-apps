@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 140;
+const APP_VERSION = 141;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-28", type: "feature", text: "ホームの「次に見る項目」の下に「資料」の段を足しました。今は「📘 標準施工手引書」が1行あり、押すと章ごとの一覧（上に「手引書の中を探す」欄）が開きます。まだこの iPhone に無い時は、その行から受け取れます（約18MB・Wi-Fiで）。これから会社の資料が増えたら、この段に並びます。工程タブの入口もこれまでどおりです" },
   { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面を見ている時に iPhone を横にすると、横の幅いっぱいに図が大きくなるようにしました（上の帯と下のボタンも細くなります）。縦に戻すと縦の幅に合わせ直します。画面の向きのロックがかかっていると横になりません。iPhone のコントロールセンターでロックを外してください" },
   { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面の画面から、下の目次をなくしました。図面が画面いっぱいに見えます。隣のページへは下の「‹ 前 ／ 次 ›」か、左右に払って移れます。ほかのページを探す時は「← 戻る」で一覧へ。一覧のいちばん上に「手引書の中を探す」欄を足しました。言葉を打つと当たったページだけに絞られ、押すとその言葉に黄色の色が付いた図面が開きます。戻ると、打った言葉と一覧はそのまま残っています。工程タブの検索でも、今までどおりマニュアルの下に手引書が出ます" },
   { date: "2026-11-28", type: "feature", text: "工程の中で標準施工手引書（会社の施工の図面）が見られるようになりました。マニュアルの項目の一番下に、その項目に関係する手引書のページが並びます。工程タブの「📘 手引書を章から見る」から章ごとの一覧も開けます。工程タブの検索でも手引書の中の言葉を探せます（出たものを押すと、その言葉に色が付いた図面が開きます）。設定から「手引書を受け取る」を押すと、このiPhoneに入ります（約18MB・Wi-Fiで）。マニュアルを新しく受け取る時は、続けて手引書も受け取ります。" },
@@ -6790,7 +6791,9 @@ async function renderTebikiRow(it) {
 
 /* ----- 工程タブの入口と、章から見る一覧 ----- */
 
-function goTebikiList() {
+let tbListFrom = "manual"; // 一覧の「戻る」の行き先（ホームの資料から来た時はホームへ）
+function goTebikiList(from) {
+  tbListFrom = from === "dash" ? "dash" : "manual";
   $("tbFindInput").value = ""; // 工程タブから入り直す時は、前に打った言葉を消す
   renderTebikiList();
   showView("tebikiListView");
@@ -7003,7 +7006,7 @@ async function tbShowPage(no) {
 
 function initTebikiViewer() {
   $("tebikiListBackBtn").innerHTML = icon(ICONS.back, 26);
-  $("tebikiListBackBtn").addEventListener("click", goManual);
+  $("tebikiListBackBtn").addEventListener("click", () => (tbListFrom === "dash" ? goDash() : goManual()));
   $("tbClose").addEventListener("click", closeTebikiViewer);
   // iPhone を横・縦にしたら、その向きの幅いっぱいに合わせ直す（iOS は回転の後に resize が来る）
   let refitTimer = null;
@@ -7510,7 +7513,44 @@ async function renderDash() {
     b.addEventListener("click", () => openGroup(groupOfProcess(x.it.cat).id, x.it.id));
     nextBox.appendChild(b);
   });
+  renderDashShiryo();
   fitNames();
+}
+
+// ---- 資料（今は標準施工手引書だけ。会社の資料が増えたら行を足す） ----
+function renderDashShiryo() {
+  const box = $("dashShiryo");
+  box.innerHTML = "";
+  const rows = [];
+  if (tebikiMeta) {
+    rows.push({
+      text: `標準施工手引書<span class="dashSub">（図面${tebikiMeta.pages.length}枚・${esc(tebikiMeta.version)}版${tebikiUpdateAvailable() ? "・新しい版あり" : ""}）</span>`,
+      go: () => goTebikiList("dash"),
+    });
+  } else {
+    let latest = "";
+    try {
+      latest = localStorage.getItem(TEBIKI_LATEST_KEY) || "";
+    } catch (e) {
+      /* ignore */
+    }
+    // 配っている（と分かっている）のに、この iPhone に無い時だけ。その場で受け取れる
+    if (latest && manualMeta && gasOn())
+      rows.push({
+        text: `標準施工手引書<span class="dashSub">（この iPhone にまだありません。押すと受け取ります・約18MB・Wi-Fiで）</span>`,
+        go: async () => {
+          if (await receiveTebikiViaGas(false)) renderDash();
+        },
+      });
+  }
+  $("dashShiryoHead").hidden = box.hidden = !rows.length;
+  rows.forEach((x) => {
+    const b = document.createElement("button");
+    b.className = "dashRow shiryoRow";
+    b.innerHTML = `<span class="dashIcon wood shiryoIcon">📘</span><span class="dashRowText">${x.text}</span><span class="chev">${icon(ICONS.chevron, 18)}</span>`;
+    b.addEventListener("click", x.go);
+    box.appendChild(b);
+  });
 }
 
 function goDash() {
