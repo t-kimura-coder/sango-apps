@@ -1403,6 +1403,17 @@ img.imgBroken { visibility: hidden; }
 .tbNav button { flex: 1; min-width: 0; border: 0; border-radius: 8px; padding: 8px 6px; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 13px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .tbNav button:last-child { text-align: right; }
 .tbNav button:disabled { opacity: 0.3; }
+/* iPhone を横にした時：上の帯・下のボタンを細くして図を大きく。切り欠きの側はよける */
+@media (orientation: landscape) and (max-height: 520px) {
+  .tbHead { padding: calc(env(safe-area-inset-top) + 3px) calc(env(safe-area-inset-right) + 10px) 3px calc(env(safe-area-inset-left) + 10px); }
+  .tbX { padding: 4px 10px; }
+  .tbTtl { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tbTtl small { display: none; }
+  .tbBody { padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left); background: #2b2f2e; }
+  .tbNav { padding: 2px 8px calc(env(safe-area-inset-bottom) + 2px); }
+  .tbNav button { padding: 5px 6px; font-size: 12px; }
+  .tbZoom { bottom: 40px; }
+}
 .tbFind { margin-bottom: var(--space-sm); }
 .tbFind .searchInput { width: 100%; }
 .tbFound { display: flex; flex-direction: column; gap: var(--space-sm); }

@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 139;
+const APP_VERSION = 140;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面を見ている時に iPhone を横にすると、横の幅いっぱいに図が大きくなるようにしました（上の帯と下のボタンも細くなります）。縦に戻すと縦の幅に合わせ直します。画面の向きのロックがかかっていると横になりません。iPhone のコントロールセンターでロックを外してください" },
   { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面の画面から、下の目次をなくしました。図面が画面いっぱいに見えます。隣のページへは下の「‹ 前 ／ 次 ›」か、左右に払って移れます。ほかのページを探す時は「← 戻る」で一覧へ。一覧のいちばん上に「手引書の中を探す」欄を足しました。言葉を打つと当たったページだけに絞られ、押すとその言葉に黄色の色が付いた図面が開きます。戻ると、打った言葉と一覧はそのまま残っています。工程タブの検索でも、今までどおりマニュアルの下に手引書が出ます" },
   { date: "2026-11-28", type: "feature", text: "工程の中で標準施工手引書（会社の施工の図面）が見られるようになりました。マニュアルの項目の一番下に、その項目に関係する手引書のページが並びます。工程タブの「📘 手引書を章から見る」から章ごとの一覧も開けます。工程タブの検索でも手引書の中の言葉を探せます（出たものを押すと、その言葉に色が付いた図面が開きます）。設定から「手引書を受け取る」を押すと、このiPhoneに入ります（約18MB・Wi-Fiで）。マニュアルを新しく受け取る時は、続けて手引書も受け取ります。" },
   { date: "2026-11-18", type: "feature", text: "上司が口頭で答えてくれた疑問が分かるようになりました。上司が見守りで「口頭で回答済み」を押すと、疑問のメモの下に「○○さんが口頭で回答済み」（一言があれば添えて）と出ます。その疑問には「答えをメモする」（聞いた答えを自分の言葉で書く。あとで直せます。自分だけに見え、上司の見守りには出ません）と「今回はメモしない」が付きます。ホームの「やること」には「口頭で答えてもらった疑問：答えのメモ待ち」が1行出ます。閉じるだけでは消えず、メモするか「今回はメモしない」を選ぶと減ります（催促の通知は出ません）" },
@@ -6934,6 +6935,15 @@ function tbSetScale(s, cx, cy) {
   stage.scrollLeft = px * tbScale - cx;
   stage.scrollTop = py * tbScale - cy;
 }
+function tbRefit() {
+  const stage = $("tbStage"),
+    paper = $("tbPaper");
+  const fx = paper.clientWidth ? stage.scrollLeft / paper.clientWidth : 0,
+    fy = paper.clientHeight ? stage.scrollTop / paper.clientHeight : 0;
+  paper.style.width = stage.clientWidth * tbScale + "px";
+  stage.scrollLeft = fx * paper.clientWidth;
+  stage.scrollTop = fy * paper.clientHeight;
+}
 // 拡大はせず、全体表示のまま色だけ付ける
 function tbMarkBoxes(list) {
   const paper = $("tbPaper");
@@ -6995,6 +7005,13 @@ function initTebikiViewer() {
   $("tebikiListBackBtn").innerHTML = icon(ICONS.back, 26);
   $("tebikiListBackBtn").addEventListener("click", goManual);
   $("tbClose").addEventListener("click", closeTebikiViewer);
+  // iPhone を横・縦にしたら、その向きの幅いっぱいに合わせ直す（iOS は回転の後に resize が来る）
+  let refitTimer = null;
+  window.addEventListener("resize", () => {
+    if (currentView !== "tebikiView") return;
+    clearTimeout(refitTimer);
+    refitTimer = setTimeout(tbRefit, 150);
+  });
   $("tbFindInput").addEventListener("input", tbApplyFind);
   $("tbFindInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("tbFindInput").blur();

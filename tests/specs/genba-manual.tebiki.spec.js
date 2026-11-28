@@ -188,6 +188,12 @@ test("図面の画面：目次は無く図が全画面。前後のページ・�
   await app.locator("#tbNext").click();
   await expect(app.locator("#tbTtl")).toContainText("201");
   await expect(app.locator("#tbNext")).toBeDisabled(); // 最後のページ
+  // 横にすると横の幅いっぱいに合わせ直す。縦に戻すと縦の幅に
+  const before = app.viewportSize();
+  await app.setViewportSize({ width: before.height, height: before.width });
+  await app.waitForFunction(() => Math.abs($("tbPaper").clientWidth - $("tbStage").clientWidth) < 2 && $("tbStage").clientWidth > 600);
+  await app.setViewportSize(before);
+  await app.waitForFunction(() => Math.abs($("tbPaper").clientWidth - $("tbStage").clientWidth) < 2 && $("tbStage").clientWidth < 500);
   await app.locator("#tbPrev").click();
   await expect(app.locator("#tbTtl")).toContainText("102");
   // 拡大・縮小・全体
