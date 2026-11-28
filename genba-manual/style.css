@@ -1417,6 +1417,6 @@ img.imgBroken { visibility: hidden; }
 .tbFind { margin-bottom: var(--space-sm); }
 .shiryoIcon { font-size: 20px; }
 .shiryoRow .dashSub { color: var(--color-text-muted); font-size: var(--fs-sm); }
-.tbFind .searchInput { width: 100%; }
+.tbFind .searchInput { width: 100%; margin-right: 0; }
 .tbFound { display: flex; flex-direction: column; gap: var(--space-sm); }
 .tbFound .tbSearchHead { margin-top: 0; }

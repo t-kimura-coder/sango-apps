@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 141;
+const APP_VERSION = 142;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-28", type: "fix", text: "標準施工手引書まわりの細かい所を直しました：マニュアルを受け取り直すたびに、変わっていない手引書（約18MB）まで受け取り直していた、手引書を削除するとホームの「やること」に受け取りの案内が出続けた、まだ手引書が無い時の「やること」の文が分かりにくかった、一覧の「手引書の中を探す」欄が右に少しはみ出していた、一覧を見ている間に同期が走ると一覧が描き直されて位置がずれることがあった" },
   { date: "2026-11-28", type: "feature", text: "ホームの「次に見る項目」の下に「資料」の段を足しました。今は「📘 標準施工手引書」が1行あり、押すと章ごとの一覧（上に「手引書の中を探す」欄）が開きます。まだこの iPhone に無い時は、その行から受け取れます（約18MB・Wi-Fiで）。これから会社の資料が増えたら、この段に並びます。工程タブの入口もこれまでどおりです" },
   { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面を見ている時に iPhone を横にすると、横の幅いっぱいに図が大きくなるようにしました（上の帯と下のボタンも細くなります）。縦に戻すと縦の幅に合わせ直します。画面の向きのロックがかかっていると横になりません。iPhone のコントロールセンターでロックを外してください" },
   { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面の画面から、下の目次をなくしました。図面が画面いっぱいに見えます。隣のページへは下の「‹ 前 ／ 次 ›」か、左右に払って移れます。ほかのページを探す時は「← 戻る」で一覧へ。一覧のいちばん上に「手引書の中を探す」欄を足しました。言葉を打つと当たったページだけに絞られ、押すとその言葉に黄色の色が付いた図面が開きます。戻ると、打った言葉と一覧はそのまま残っています。工程タブの検索でも、今までどおりマニュアルの下に手引書が出ます" },
@@ -1894,7 +1895,6 @@ function rerenderCurrentView(siteChanged = false) {
   const fns = {
     dashView: renderDash,
     manualView: renderManual,
-    tebikiListView: renderTebikiList,
     albumView: renderAlbum,
     requiredView: () => renderRequired(true),
     reportView: renderReport,
@@ -6659,6 +6659,8 @@ async function receiveTebikiViaGas(auto = false) {
       if (!auto) toast("標準施工手引書は、まだ配られていません");
       return false;
     }
+    // マニュアルの後に続けて受け取る時、手引書が変わっていなければ受け取り直さない（約18MB を無駄にしない）
+    if (auto && tebikiMeta && info.updated && localStorage.getItem(TEBIKI_GOT_KEY) === info.updated) return false;
     const parts = [];
     for (let i = 0; i < info.chunks; i++) {
       setProcessing(true, `標準施工手引書を受け取っています... ${i + 1} / ${info.chunks}`);
@@ -6750,7 +6752,10 @@ async function deleteTebiki() {
   await dbDeleteMany("meta", ["tebiki"]);
   await loadTebikiMeta();
   try {
-    localStorage.removeItem(TEBIKI_GOT_KEY);
+    // 自分で消したので、今配っている版は「受け取り済み」の扱いにする（やることに出続けない。新しい版が出たらまた出る）
+    const latest = localStorage.getItem(TEBIKI_LATEST_KEY) || "";
+    if (latest) localStorage.setItem(TEBIKI_GOT_KEY, latest);
+    else localStorage.removeItem(TEBIKI_GOT_KEY);
   } catch (e) {
     /* ignore */
   }
@@ -6775,8 +6780,8 @@ async function renderTebikiRow(it) {
   if (!box || !it) return;
   const pgs = tebikiPagesForItem(it);
   box.innerHTML = "";
-  if (!pgs.length) return; // 当たる手引書が無い項目には、欄を出さない
   releaseUrls("tebikiRow");
+  if (!pgs.length) return; // 当たる手引書が無い項目には、欄を出さない
   box.innerHTML =
     `<div class="tbRow"><h3>📘 手引書（${pgs.length}枚）</h3><div class="tbRowList">` +
     pgs.map((pg) => `<button class="tbMini" type="button" data-no="${esc(pg.no)}"><img alt=""><span><b>${esc(pg.no)}</b> ${esc(pg.title)}</span></button>`).join("") +
@@ -7364,7 +7369,7 @@ async function renderDash() {
   if (manualUpdateAvailable())
     todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `マニュアルの新しい版があります <b class="em">受け取る</b>`, go: () => openSettings() });
   if (tebikiUpdateAvailable())
-    todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `標準施工手引書の${tebikiMeta ? "新しい版" : "ページ"}があります <b class="em">受け取る</b>`, go: () => openSettings() });
+    todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `${tebikiMeta ? "標準施工手引書の新しい版があります" : "標準施工手引書が配られています"} <b class="em">受け取る</b>`, go: () => openSettings() });
   const offers = await pendingSharedOffers();
   if (gen !== renderGen.dash) return; // 後から始まった描き直しに任せる
   offers.forEach((o) =>

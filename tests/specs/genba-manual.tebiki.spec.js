@@ -258,6 +258,34 @@ test("ホームの「資料」：手引書の行→一覧→戻るとホーム�
   expect(errors).toEqual([]);
 });
 
+test("バグチェック：同じ版は自動で受け取り直さない・削除後はやることに出続けない・はみ出さない", async ({ app, gas, errors }) => {
+  await receiveBoth(app);
+  const chunks = () => gas.calls.filter((c) => c.action === "tebikiChunk").length;
+  const n = chunks();
+  await app.evaluate(() => receiveTebikiViaGas(true)); // マニュアルの後に続けて呼ばれる時と同じ
+  expect(chunks()).toBe(n); // 変わっていないので受け取らない
+  await app.evaluate(() => receiveTebikiViaGas(false)); // 自分で押した時は受け取る
+  expect(chunks()).toBeGreaterThan(n);
+  // 削除した後：やることには出ない（ホームの資料の行からは受け取れる）
+  await app.evaluate(() => deleteTebiki());
+  await app.waitForFunction(() => !tebikiMeta);
+  expect(await app.evaluate(() => tebikiUpdateAvailable())).toBe(false);
+  await app.evaluate(() => goDash());
+  await expect(app.locator("#dashTodo")).not.toContainText("標準施工手引書");
+  await expect(app.locator("#dashShiryo .shiryoRow")).toContainText("まだありません");
+  // 新しい版が出たら、また出る
+  await app.evaluate(() => localStorage.setItem("genba-photo-tebiki-latest", "2099-01-01T00:00:00Z"));
+  await app.evaluate(() => goDash());
+  await expect(app.locator("#dashTodo")).toContainText("標準施工手引書が配られています");
+  // 一覧の検索欄が横にはみ出さない
+  await app.evaluate(() => receiveTebikiViaGas(false));
+  await app.waitForFunction(() => !!tebikiMeta);
+  await app.evaluate(() => goTebikiList());
+  const over = await app.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(over).toBeLessThanOrEqual(0);
+  expect(errors).toEqual([]);
+});
+
 testNone("手引書がまだ無い時は、静かに飛ばす（案内・エラー・入口なし）", async ({ app, gas, errors }) => {
   const alerts = [];
   app.on("dialog", (d) => d.type() === "alert" && alerts.push(d.message()));
