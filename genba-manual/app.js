@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 138;
+const APP_VERSION = 139;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-28", type: "feature", text: "標準施工手引書の図面の画面から、下の目次をなくしました。図面が画面いっぱいに見えます。隣のページへは下の「‹ 前 ／ 次 ›」か、左右に払って移れます。ほかのページを探す時は「← 戻る」で一覧へ。一覧のいちばん上に「手引書の中を探す」欄を足しました。言葉を打つと当たったページだけに絞られ、押すとその言葉に黄色の色が付いた図面が開きます。戻ると、打った言葉と一覧はそのまま残っています。工程タブの検索でも、今までどおりマニュアルの下に手引書が出ます" },
   { date: "2026-11-28", type: "feature", text: "工程の中で標準施工手引書（会社の施工の図面）が見られるようになりました。マニュアルの項目の一番下に、その項目に関係する手引書のページが並びます。工程タブの「📘 手引書を章から見る」から章ごとの一覧も開けます。工程タブの検索でも手引書の中の言葉を探せます（出たものを押すと、その言葉に色が付いた図面が開きます）。設定から「手引書を受け取る」を押すと、このiPhoneに入ります（約18MB・Wi-Fiで）。マニュアルを新しく受け取る時は、続けて手引書も受け取ります。" },
   { date: "2026-11-18", type: "feature", text: "上司が口頭で答えてくれた疑問が分かるようになりました。上司が見守りで「口頭で回答済み」を押すと、疑問のメモの下に「○○さんが口頭で回答済み」（一言があれば添えて）と出ます。その疑問には「答えをメモする」（聞いた答えを自分の言葉で書く。あとで直せます。自分だけに見え、上司の見守りには出ません）と「今回はメモしない」が付きます。ホームの「やること」には「口頭で答えてもらった疑問：答えのメモ待ち」が1行出ます。閉じるだけでは消えず、メモするか「今回はメモしない」を選ぶと減ります（催促の通知は出ません）" },
   { date: "2026-11-07", type: "feature", text: "報告タブの「① 写真を入れる」を見やすくしました。「撮る」「取り込む」が一番上になり、工程を選ばなくても押せます（選んでいない時は「未振り分け」に入ります。写真を先に入れて、あとで振り分けるのが基本です）。その下の「＋ 工程を追加」のすぐ下に、工程のボタンと写真の一覧が続けて並びます。撮影メモは「撮影メモ」の1行にたたみました（押すと開き、開け閉めは次も覚えています）。また、先週の分をまだ送っていない時は、③に「どの週の報告として送りますか」が出ます。送る週（今週・先週…）を選ぶと、その週の写真だけが出て、選んだ週の報告として送れます。前の週の写真は「前の週の写真」にたたんであり、「この週の報告に入れる」で今選んでいる週に入れることもできます。未報告の週が無い時は、今までどおりです" },
@@ -6789,6 +6790,7 @@ async function renderTebikiRow(it) {
 /* ----- 工程タブの入口と、章から見る一覧 ----- */
 
 function goTebikiList() {
+  $("tbFindInput").value = ""; // 工程タブから入り直す時は、前に打った言葉を消す
   renderTebikiList();
   showView("tebikiListView");
 }
@@ -6797,7 +6799,6 @@ async function renderTebikiList() {
   if (!tebikiMeta) return;
   releaseUrls("tebikiList");
   const pages = tebikiMeta.pages;
-  $("tebikiListNote").textContent = `製本と同じ並び（章・シート番号の順）です。${pages.length}枚。押すと図面を開きます。`;
   let ch = null;
   let html = "";
   for (const pg of pages) {
@@ -6814,11 +6815,28 @@ async function renderTebikiList() {
   const list = $("tebikiChapters");
   list.innerHTML = html;
   list.querySelectorAll(".tbCard").forEach((b) => b.addEventListener("click", () => openTebikiViewer(b.dataset.no)));
+  tbApplyFind();
   for (const b of list.querySelectorAll(".tbCard")) {
     const rec = await dbGet("tebikiPages", b.dataset.no);
     if (!rec || !b.isConnected) continue;
     b.querySelector("img").src = blobUrl("tebikiList", rec.thumb || rec.img);
   }
+}
+
+// 一覧の「手引書の中を探す」：言葉があれば当たったページだけ（📘の形）、無ければ章ごとの一覧
+function tbApplyFind() {
+  if (!tebikiMeta) return;
+  const q = $("tbFindInput").value.trim();
+  const box = $("tebikiFound");
+  box.innerHTML = "";
+  $("tebikiChapters").hidden = !!q;
+  if (!q) {
+    $("tebikiListNote").textContent = `製本と同じ並び（章・シート番号の順）です。${tebikiMeta.pages.length}枚。押すと図面を開きます。`;
+    return;
+  }
+  const found = searchTebiki(q);
+  $("tebikiListNote").textContent = found.length ? "押すと、その言葉に色が付いた図面が開きます。" : "見つかりませんでした。別の言葉や、短い言葉で試してください。";
+  renderTebikiSearch(box, q, found);
 }
 
 /* ----- 検索（工程タブの検索ボックスで、手引書の見出しと行も探す） ----- */
@@ -6868,7 +6886,7 @@ function renderTebikiSearch(box, q, found) {
       (hits.length > TEBIKI_SEARCH_LINES ? `<button class="tbLn more" type="button" data-no="${esc(pg.no)}">ほか ${hits.length - TEBIKI_SEARCH_LINES} か所 → ページを開く</button>` : "");
     card.querySelectorAll("button").forEach((b) =>
       b.addEventListener("click", () => {
-        $("searchInput").blur();
+        if (document.activeElement) document.activeElement.blur();
         openTebikiViewer(b.dataset.no, { term: q });
       })
     );
@@ -6958,7 +6976,6 @@ async function tbShowPage(no) {
   tbScale = 1;
   $("tbPaper").style.width = stage.clientWidth + "px";
   stage.scrollTo(0, 0);
-  tbRenderToc();
   const rec = await dbGet("tebikiPages", cur.no);
   if (seq !== tbSeq) return; // 読んでいる間に別のページへ移った
   const img = $("tbImg");
@@ -6974,44 +6991,14 @@ async function tbShowPage(no) {
   if (img.complete && tbUrl) go();
 }
 
-// 目次：全ページを章ごとに並べ、今のページだけ要点（見出し）を開く
-function tbRenderToc() {
-  const pages = tebikiMeta.pages;
-  let ch = "";
-  let html = `<div class="grab"><span>目次（押すとそのページ・その場所へ）</span><span>${pages.length}枚</span></div>`;
-  for (const pg of pages) {
-    if (pg.chapter !== ch) {
-      ch = pg.chapter;
-      html += `<div class="ch">${esc(ch)}</div>`;
-    }
-    const on = pg.no === tbCur.no;
-    html += `<div class="pg${on ? " cur" : ""}" data-no="${esc(pg.no)}"><b>${esc(pg.no)}</b><span>${esc(pg.title)}</span></div>`;
-    if (on) {
-      html += `<div class="hs">${(pg.heads || [])
-        .map((h, idx) => ({ h, idx }))
-        .filter(({ h }) => h.lv > 0)
-        .map(({ h, idx }) => `<div class="h lv${h.lv}${h.at ? "" : " no"}" data-i="${idx}">${esc(h.t)}</div>`)
-        .join("")}</div>`;
-    }
-  }
-  const s = $("tbSheet");
-  s.innerHTML = html;
-  s.querySelectorAll(".pg").forEach((e) => (e.onclick = () => tbShowPage(e.dataset.no)));
-  s.querySelectorAll(".h").forEach(
-    (e) =>
-      (e.onclick = () => {
-        const h = tbCur.heads[+e.dataset.i];
-        if (h && h.at) tbMarkBoxes([h.at]); // 見出しの場所に色だけ付ける（拡大しない）
-      })
-  );
-  const c = s.querySelector(".pg.cur");
-  if (c) s.scrollTop = c.offsetTop - 75;
-}
-
 function initTebikiViewer() {
   $("tebikiListBackBtn").innerHTML = icon(ICONS.back, 26);
   $("tebikiListBackBtn").addEventListener("click", goManual);
   $("tbClose").addEventListener("click", closeTebikiViewer);
+  $("tbFindInput").addEventListener("input", tbApplyFind);
+  $("tbFindInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("tbFindInput").blur();
+  });
   $("receiveTebikiBtn").addEventListener("click", () => receiveTebikiViaGas(false));
   $("deleteTebikiBtn").addEventListener("click", deleteTebiki);
   const stage = $("tbStage"),

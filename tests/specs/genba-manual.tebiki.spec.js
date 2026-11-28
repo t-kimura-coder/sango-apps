@@ -1,5 +1,5 @@
 // 標準施工手引書（2026-11-28）：工程タブの中で手引書の図面を見られる。
-// マニュアルを受け取ったあと続けて受け取る／項目の一番下に関係するページ／章から見る一覧／検索の📘／図面の画面（色・隣のページ・目次）。
+// マニュアルを受け取ったあと続けて受け取る／項目の一番下に関係するページ／章から見る一覧と「手引書の中を探す」／検索の📘／図面の画面（色・隣のページ）。
 // 手引書は fixtures/fake-tebiki.js の作りもの（3ページ）。本物の手引書・図は使わない。
 const { test: base, expect, receiveManual } = require("../fixtures/app");
 const { useFakeGas } = require("../fixtures/fake-gas");
@@ -97,6 +97,39 @@ test("工程タブの「📘 手引書を章から見る」から、章ごとの
   expect(errors).toEqual([]);
 });
 
+test("一覧の「手引書の中を探す」：当たったページだけに絞る→開くと色→戻ると言葉と結果が残る。入り直すと消える", async ({ app, errors }) => {
+  await receiveBoth(app);
+  await app.evaluate(() => goTebikiList());
+  await app.locator("#tbFindInput").fill("かぶり厚さ");
+  await expect(app.locator("#tebikiChapters")).toBeHidden();
+  await expect(app.locator("#tebikiFound .tbHit")).toHaveCount(2); // 101 と 102
+  await expect(app.locator("#tebikiFound .tbHit").first().locator("mark").first()).toHaveText("かぶり厚さ");
+  await app.locator("#tebikiFound .tbHit").first().locator(".tbHd").click();
+  await expect(app.locator("#tebikiView")).toBeVisible();
+  await expect(app.locator("#tbTtl")).toContainText("101");
+  await expect(app.locator("#tbPaper .tbBox")).toHaveCount(2);
+  expect(await app.evaluate(() => tbScale)).toBe(1);
+  await app.locator("#tbClose").click();
+  await expect(app.locator("#tebikiListView")).toBeVisible();
+  await expect(app.locator("#tbFindInput")).toHaveValue("かぶり厚さ");
+  await expect(app.locator("#tebikiFound .tbHit")).toHaveCount(2);
+  // 見つからない言葉
+  await app.locator("#tbFindInput").fill("そんなことば");
+  await expect(app.locator("#tebikiFound .tbHit")).toHaveCount(0);
+  await expect(app.locator("#tebikiListNote")).toContainText("見つかりませんでした");
+  // 消すと章ごとの一覧に戻る
+  await app.locator("#tbFindInput").fill("");
+  await expect(app.locator("#tebikiChapters")).toBeVisible();
+  await expect(app.locator(".tbCard")).toHaveCount(3);
+  // 工程タブから入り直すと言葉は消える
+  await app.locator("#tbFindInput").fill("アンカー");
+  await app.locator("#tebikiListBackBtn").click();
+  await app.locator("#tebikiEntryBtn").click();
+  await expect(app.locator("#tbFindInput")).toHaveValue("");
+  await expect(app.locator("#tebikiChapters")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("検索：マニュアルの当たりが先、手引書の当たりは📘の下。開くと言葉の当たる行すべてに色が付き、隣のページでも同じ言葉に色が付く", async ({ app, errors }) => {
   await receiveBoth(app);
   await app.evaluate(() => openSearch());
@@ -137,33 +170,23 @@ test("検索：マニュアルの当たりが先、手引書の当たりは📘�
   expect(errors).toEqual([]);
 });
 
-test("図面の画面：前後のページ・目次・見出しの場所に色（拡大しない）・拡大ボタン", async ({ app, errors }) => {
+test("図面の画面：目次は無く図が全画面。前後のページ・拡大ボタン", async ({ app, errors }) => {
   await receiveBoth(app);
   await app.evaluate(() => goTebikiList());
   await app.locator(".tbCard").first().click();
   await expect(app.locator("#tbTtl")).toContainText("101");
+  // 目次は図面の画面に出さない（2026-11-28 木村さん：iPhone の縦で図が小さくなるため）
+  await expect(app.locator("#tbSheet")).toHaveCount(0);
+  const h = await app.evaluate(() => ({ stage: $("tbStage").getBoundingClientRect().height, view: window.innerHeight }));
+  expect(h.stage).toBeGreaterThan(h.view * 0.7);
+  // 一覧から開いた時は色を付けない
+  expect(await app.locator("#tbPaper .tbBox").count()).toBe(0);
   // 先頭ページ：「前」は押せず、「次」に次のページの名前
   await expect(app.locator("#tbPrev")).toBeDisabled();
   await expect(app.locator("#tbNext")).toHaveText("102 Ⅱ：テストアンカー ›");
-  // 目次：全ページが章ごと。今のページが目立ち、見出し（lv>0）が開く。場所が無い見出し（at なし）は灰色
-  await expect(app.locator("#tbSheet .ch")).toHaveText(["テスト基礎工事", "テスト木工事"]);
-  await expect(app.locator("#tbSheet .pg")).toHaveCount(3);
-  await expect(app.locator("#tbSheet .pg.cur")).toContainText("101");
-  await expect(app.locator("#tbSheet .h")).toHaveText(["Ａ：テストかぶり厚さ", "スペーサー間隔"]); // lv0 は出さない
-  // 見出しを押すと、その見出しの場所だけに色が付く。拡大はしない
-  expect(await app.locator("#tbPaper .tbBox").count()).toBe(0);
-  await app.locator("#tbSheet .h", { hasText: "スペーサー間隔" }).click();
-  await expect(app.locator("#tbPaper .tbBox")).toHaveCount(1);
-  const left = await app.locator("#tbPaper .tbBox").evaluate((e) => parseFloat(e.style.left));
-  expect(left).toBeGreaterThan(9); // 見出しの枠 x0=0.1 の付近（余白をひいて 9.6%）
-  expect(left).toBeLessThan(10);
-  expect(await app.evaluate(() => tbScale)).toBe(1);
-  // 目次のページを押すとそのページへ。場所の無い見出し（201）は灰色で押しても何も起きない
-  await app.locator("#tbSheet .pg", { hasText: "Ⅰ：テスト建て方" }).click();
+  await app.locator("#tbNext").click();
+  await app.locator("#tbNext").click();
   await expect(app.locator("#tbTtl")).toContainText("201");
-  await expect(app.locator("#tbSheet .h.no")).toHaveCount(1);
-  await app.locator("#tbSheet .h.no").click();
-  await expect(app.locator("#tbPaper .tbBox")).toHaveCount(0);
   await expect(app.locator("#tbNext")).toBeDisabled(); // 最後のページ
   await app.locator("#tbPrev").click();
   await expect(app.locator("#tbTtl")).toContainText("102");

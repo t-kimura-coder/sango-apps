@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=90">
+<link rel="stylesheet" href="style.css?v=91">
 </head>
 <body>
 
@@ -358,7 +358,9 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
     <span class="iconBtnSpacer"></span>
   </header>
   <div class="viewBody">
+    <div class="tbFind"><input id="tbFindInput" class="searchInput" type="search" enterkeyhint="search" placeholder="手引書の中を探す（例：かぶり、アンカー）" autocomplete="off"></div>
     <div id="tebikiListNote" class="hint"></div>
+    <div id="tebikiFound" class="tbFound"></div>
     <div id="tebikiChapters" class="tbChapters"></div>
   </div>
 </section>
@@ -375,7 +377,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
       <div class="tbZoom"><button id="tbZin" type="button" aria-label="拡大">＋</button><button id="tbZout" type="button" aria-label="縮小">－</button><button id="tbZfit" type="button" class="tbFit">全体</button></div>
       <div class="tbNav"><button id="tbPrev" type="button"></button><button id="tbNext" type="button"></button></div>
     </div>
-    <div class="tbSheet" id="tbSheet"></div>
   </div>
 </section>
 
@@ -544,6 +545,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=138"></script>
+<script src="app.js?v=139"></script>
 </body>
 </html>
