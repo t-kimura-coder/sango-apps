@@ -1,7 +1,7 @@
 "use strict";
 
 // index.htmlのapp.js/style.css読み込み時の?v=番号と合わせて手動更新する
-const APP_VERSION = 137;
+const APP_VERSION = 138;
 
 // Boxのアップロード用メールアドレス（アップロード専用なので公開されても問題ない、と判断済み）。
 // 決まったらここに書く。空のあいだは設定画面で入力したアドレスを使う
@@ -10,6 +10,7 @@ const BOX_UPLOAD_EMAIL = "____________.3hytytn6hfzb6y1u@u.box.com"; // Box「7.�
 // お知らせ。機能追加・不具合修正のたびに、先頭へ {date, type: "feature"|"fix", text} を追記する
 // （自動では増えないので、書き忘れるとお知らせが古いまま残る）
 const ANNOUNCEMENTS = [
+  { date: "2026-11-28", type: "feature", text: "工程の中で標準施工手引書（会社の施工の図面）が見られるようになりました。マニュアルの項目の一番下に、その項目に関係する手引書のページが並びます。工程タブの「📘 手引書を章から見る」から章ごとの一覧も開けます。工程タブの検索でも手引書の中の言葉を探せます（出たものを押すと、その言葉に色が付いた図面が開きます）。設定から「手引書を受け取る」を押すと、このiPhoneに入ります（約18MB・Wi-Fiで）。マニュアルを新しく受け取る時は、続けて手引書も受け取ります。" },
   { date: "2026-11-18", type: "feature", text: "上司が口頭で答えてくれた疑問が分かるようになりました。上司が見守りで「口頭で回答済み」を押すと、疑問のメモの下に「○○さんが口頭で回答済み」（一言があれば添えて）と出ます。その疑問には「答えをメモする」（聞いた答えを自分の言葉で書く。あとで直せます。自分だけに見え、上司の見守りには出ません）と「今回はメモしない」が付きます。ホームの「やること」には「口頭で答えてもらった疑問：答えのメモ待ち」が1行出ます。閉じるだけでは消えず、メモするか「今回はメモしない」を選ぶと減ります（催促の通知は出ません）" },
   { date: "2026-11-07", type: "feature", text: "報告タブの「① 写真を入れる」を見やすくしました。「撮る」「取り込む」が一番上になり、工程を選ばなくても押せます（選んでいない時は「未振り分け」に入ります。写真を先に入れて、あとで振り分けるのが基本です）。その下の「＋ 工程を追加」のすぐ下に、工程のボタンと写真の一覧が続けて並びます。撮影メモは「撮影メモ」の1行にたたみました（押すと開き、開け閉めは次も覚えています）。また、先週の分をまだ送っていない時は、③に「どの週の報告として送りますか」が出ます。送る週（今週・先週…）を選ぶと、その週の写真だけが出て、選んだ週の報告として送れます。前の週の写真は「前の週の写真」にたたんであり、「この週の報告に入れる」で今選んでいる週に入れることもできます。未報告の週が無い時は、今までどおりです" },
   { date: "2026-11-06", type: "fix", text: "報告まわりの細かい不具合を直しました：振り分けていない写真が「報告済みにする」「アプリ外で報告」で報告済みになることがあった、写真なしで送った報告が過去の報告で「写真削除済み」と出て取り消せなかった、お客様名の欄に「必須」と出ていた、①で写真を振り分けると②で打っている途中のキーボードが閉じた、別の現場に切り替えても前の現場の工程が選ばれていた、別の端末で入れたお客様名が届かなかった" },
@@ -316,7 +317,7 @@ function fmtMMDD(key) {
 /* ---------- IndexedDB ---------- */
 
 const DB_NAME = "genba-photo";
-const DB_VERSION = 4; // v2: マニュアルパック用の manualPages / meta、v3: 現場ごとのチェック記録 checks、v4: 写真の画像を images に分ける
+const DB_VERSION = 5; // v2: マニュアルパック用の manualPages / meta、v3: 現場ごとのチェック記録 checks、v4: 写真の画像を images に分ける、v5: 標準施工手引書の図 tebikiPages
 // 写真の画像（blob / thumb）は images に、印や工程などの情報は photos に分けて持つ。
 // iPhone（WebKit）では、読み出した写真をそのまま保存し直すと画像データが消えて「？」になることがあるため、
 // 画像は写真を作った時に1回だけ書き、印を付ける・外すなどの更新では画像に触らない
@@ -356,6 +357,7 @@ function openDB() {
           c.continue();
         };
       }
+      if (!db.objectStoreNames.contains("tebikiPages")) db.createObjectStore("tebikiPages", { keyPath: "no" }); // 手引書の図（Blob）。文字は meta の "tebiki"
       if (!db.objectStoreNames.contains("checks")) {
         // key = "<siteId>|<itemId>"。marks は「区分|チェック文」→ {at, by}（後で品質管理に使えるよう、誰がいつ付けたかを残す）
         const s = db.createObjectStore("checks", { keyPath: "key" });
@@ -841,6 +843,8 @@ const VIEW_TABS = {
   announceView: "",
   searchView: "",
   helpView: "",
+  tebikiListView: "manual",
+  tebikiView: "manual",
 };
 let currentView = "dashView";
 let viewBeforeSettings = "dashView";
@@ -849,7 +853,7 @@ function showView(id) {
   setTimeout(fitNames, 80); // 画面が見えてから長い現場名の大きさを合わせる（見えていない間は測れないため）
   currentView = id;
   Object.keys(VIEW_TABS).forEach((v) => ($(v).hidden = v !== id));
-  $("tabBar").hidden = id === "shotView";
+  $("tabBar").hidden = id === "shotView" || id === "tebikiView";
   const tab = VIEW_TABS[id];
   document.querySelectorAll(".tabBtn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   window.scrollTo(0, 0);
@@ -1887,6 +1891,7 @@ function rerenderCurrentView(siteChanged = false) {
   const fns = {
     dashView: renderDash,
     manualView: renderManual,
+    tebikiListView: renderTebikiList,
     albumView: renderAlbum,
     requiredView: () => renderRequired(true),
     reportView: renderReport,
@@ -4102,6 +4107,14 @@ async function renderManual() {
   renderGroupGrid($("manualGroups"), !!currentSiteId);
   const reqBox = $("manualReq");
   reqBox.innerHTML = "";
+  if (tebikiMeta) {
+    const t = document.createElement("button");
+    t.className = "manualReqBtn tebikiEntry";
+    t.id = "tebikiEntryBtn";
+    t.innerHTML = `<span class="mrIcon">${icon(ICONS.book || ICONS.list, 20)}</span><span class="mrText"><b>📘 手引書を章から見る</b><small>標準施工手引書 ${tebikiMeta.pages.length}枚</small></span>${icon(ICONS.chevron, 18)}`;
+    t.addEventListener("click", goTebikiList);
+    reqBox.appendChild(t);
+  }
   const site = currentSite();
   const lastId = manualMeta ? lastItemOf(currentSiteId, "_last") : null;
   const lastIt = lastId && manualMeta.items.find((x) => x.id === lastId);
@@ -4494,7 +4507,9 @@ async function renderItem() {
     html += `<div class="secHead">${icon(ICONS.report, 22)}マニュアル原本<span class="secRight">ピンチで拡大</span></div><div class="docPages" id="docPages"></div>`;
     html += relatedSoonHtml();
   }
+  html += `<div id="tebikiRow"></div>`; // 一番下：関係する標準施工手引書のページ（無ければ空のまま）
   box.innerHTML = html;
+  renderTebikiRow(it);
 
   box.querySelectorAll(".checkRow").forEach((row) => bindCheckRow(row, it));
   setPrepProg(it);
@@ -6117,7 +6132,9 @@ async function syncStates(manual = false) {
       rerenderCurrentView(); // 同じ現場の人のチェック・写真で、済み・次の項目・撮り忘れが変わる
     }
     try {
-      if ((await checkManualVersion()) && manualUpdateAvailable() && currentView === "dashView") renderDash();
+      const mv = await checkManualVersion();
+      const tv = await checkTebikiVersion();
+      if ((mv || tv) && (manualUpdateAvailable() || tebikiUpdateAvailable()) && currentView === "dashView") renderDash();
     } catch (e) {
       /* ignore */
     }
@@ -6386,9 +6403,10 @@ function renderSearch() {
   }
   if (!q) return;
   const results = searchManual(q);
+  const tebikiFound = searchTebiki(q); // 手引書の当たりは、マニュアルの当たりの下にまとめて出す
   const count = document.createElement("div");
   count.className = "searchCount";
-  count.textContent = results.length ? `${results.length}件見つかりました` : "見つかりませんでした。別の言葉や、短い言葉で試してください。";
+  count.textContent = results.length ? `${results.length}件見つかりました` : tebikiFound.length ? "マニュアルの項目には見つかりませんでした。" : "見つかりませんでした。別の言葉や、短い言葉で試してください。";
   box.appendChild(count);
   results.forEach(({ entry, hit }) => {
     const { it, g } = entry;
@@ -6406,6 +6424,7 @@ function renderSearch() {
     });
     box.appendChild(b);
   });
+  renderTebikiSearch(box, q, tebikiFound);
 }
 
 // iPhoneでキーボードを出すため、タップの処理の中で同期的にフォーカスする
@@ -6458,8 +6477,8 @@ function manualUpdateAvailable() {
 // 合言葉でマニュアルを受け取る（GAS が会社の Google ドライブから分けて渡す。約30MB なので Wi-Fi で）
 async function receiveManualViaGas() {
   if (!gasOn()) return toast("先に「上司とのやりとり」に合言葉を入れてください");
-  if (!confirm("マニュアル（約30MB）を受け取ります。Wi-Fi のある所で行ってください。1〜2分かかります。")) return;
-  await importManualPack(async () => {
+  if (!confirm("マニュアル（約30MB）を受け取ります。Wi-Fi のある所で行ってください。1〜2分かかります。続けて標準施工手引書（約18MB）も受け取ります（まだ配られていない時は飛ばします）。")) return;
+  const ok = await importManualPack(async () => {
     setProcessing(true, "マニュアルを受け取っています...");
     const info = await gasCall({ action: "manualInfo" }, 60000);
     receivedManualUpdated = info.updated || "";
@@ -6478,6 +6497,7 @@ async function receiveManualViaGas() {
     }
     return parts.join("");
   }, "電波の良い所（Wi-Fi）で、もう一度押してください。続く時は、iPhone の空き容量も確かめてください。");
+  if (ok) await receiveTebikiViaGas(true); // マニュアルのあと、続けて手引書（無ければ静かに飛ばす）
 }
 
 let receivedManualUpdated = "";
@@ -6527,6 +6547,7 @@ async function importManualPack(getText, failHint) {
     if (!$("settingsView").hidden) renderSettings();
     else if (currentView === "groupView") openGroup(currentGroupId);
     else goManual();
+    return true;
   } catch (e) {
     console.error(e);
     alert(
@@ -6538,6 +6559,7 @@ async function importManualPack(getText, failHint) {
         ? `マニュアルを受け取れませんでした（${e.message}）。木村に知らせてください。`
         : "マニュアルを取り込めませんでした。" + failHint
     );
+    return false;
   } finally {
     setProcessing(false);
     if (tourShown && tourIdx >= 0) renderTourStep();
@@ -6551,6 +6573,514 @@ async function deleteManual() {
   await loadManualMeta();
   toast("マニュアルを削除しました");
   renderSettings();
+}
+
+/* ---------- 標準施工手引書（2026-11-28 木村さん決定） ----------
+   会社の標準施工手引書（A3の図面37枚）を、工程タブの中で見られるようにする。
+   手引書は社内資料なのでアプリには入れない。現場訪問マニュアルアプリの tools/build_tebiki.py が作る手引書パック
+   （genba-tebiki-pack）を、マニュアルと同じ「合言葉で受け取る」道（GAS の tebikiInfo / tebikiChunk）で受け取り、
+   図は Blob で IndexedDB の tebikiPages に、文字（見出し・行・どの項目に関係するか）は meta の "tebiki" に置く */
+
+let tebikiMeta = null; // { key:"tebiki", version, title, source, builtAt, importedAt, pages:[{no, chapter, title, heads, lines, items}] }
+const TEBIKI_LATEST_KEY = "genba-photo-tebiki-latest";
+const TEBIKI_GOT_KEY = "genba-photo-tebiki-got";
+
+async function loadTebikiMeta() {
+  tebikiMeta = await dbGet("meta", "tebiki");
+}
+
+// マニュアルの項目と手引書のページを結ぶ鍵：項目の番号（no）。番号が空なら項目名
+function tebikiKeyOf(it) {
+  return String(it.no == null ? "" : it.no).trim() || String(it.name || "").trim();
+}
+function tebikiPagesForItem(it) {
+  if (!tebikiMeta) return [];
+  const k = tebikiKeyOf(it);
+  return k ? tebikiMeta.pages.filter((p) => (p.items || []).includes(k)) : [];
+}
+function tebikiPoints(pg) {
+  return (pg.heads || [])
+    .filter((h) => h.lv === 1)
+    .map((h) => h.t.replace(/^[Ａ-Ｚ]：/, ""))
+    .slice(0, 5)
+    .join("・");
+}
+
+/* ----- 受け取り（マニュアルと同じ：GAS からかけらで受け取り、端末に残す） ----- */
+
+let receivedTebikiUpdated = "";
+
+async function checkTebikiVersion() {
+  if (!gasOn() || !manualMeta) return false;
+  const last = Number(localStorage.getItem(TEBIKI_LATEST_KEY + ":at") || 0);
+  if (Date.now() - last < 12 * 3600 * 1000) return false; // 半日に1回
+  try {
+    const info = await gasCall({ action: "tebikiInfo" }, 60000);
+    localStorage.setItem(TEBIKI_LATEST_KEY, info.none ? "" : info.updated || "");
+    localStorage.setItem(TEBIKI_LATEST_KEY + ":at", String(Date.now()));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function tebikiUpdateAvailable() {
+  try {
+    const latest = localStorage.getItem(TEBIKI_LATEST_KEY) || "";
+    if (!latest || !manualMeta) return false;
+    const got = localStorage.getItem(TEBIKI_GOT_KEY) || (tebikiMeta && tebikiMeta.importedAt) || "";
+    return latest > got;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 合言葉で手引書を受け取る。auto：マニュアルを受け取ったあとに続けて呼ぶ時（確認なし。まだ手引書が無い・受け取れない時は静かに飛ばす）
+async function receiveTebikiViaGas(auto = false) {
+  if (!gasOn()) {
+    if (!auto) toast("先に「上司とのやりとり」に合言葉を入れてください");
+    return false;
+  }
+  if (!auto && !confirm("標準施工手引書（約18MB）を受け取ります。Wi-Fi のある所で行ってください。1分ほどかかります。")) return false;
+  const tourShown = !$("tour").hidden;
+  $("tour").hidden = true;
+  setProcessing(true, "標準施工手引書を確かめています...");
+  try {
+    const info = await gasCall({ action: "tebikiInfo" }, 60000);
+    try {
+      localStorage.setItem(TEBIKI_LATEST_KEY, info.none ? "" : info.updated || "");
+      localStorage.setItem(TEBIKI_LATEST_KEY + ":at", String(Date.now()));
+    } catch (e) {
+      /* ignore */
+    }
+    if (info.none) {
+      if (!auto) toast("標準施工手引書は、まだ配られていません");
+      return false;
+    }
+    const parts = [];
+    for (let i = 0; i < info.chunks; i++) {
+      setProcessing(true, `標準施工手引書を受け取っています... ${i + 1} / ${info.chunks}`);
+      for (let t = 0; ; t++) {
+        try {
+          parts.push((await gasCall({ action: "tebikiChunk", i, updated: info.updated }, 90000)).data);
+          break;
+        } catch (e) {
+          const network = e.name === "AbortError" || e instanceof TypeError;
+          if (t >= 2 || !network) throw e;
+        }
+      }
+    }
+    receivedTebikiUpdated = info.updated || "";
+    await importTebikiPack(parts.join(""));
+    return true;
+  } catch (e) {
+    console.warn("標準施工手引書を受け取れませんでした", e);
+    if (!auto) {
+      alert(
+        e.message === "unauthorized"
+          ? "合言葉が違うか、止められています。木村に確認してください。"
+          : e.message === "tebiki changed"
+          ? "受け取っている途中で、手引書が新しい版に変わりました。もう一度押してください。"
+          : /置き場所/.test(e.message)
+          ? `手引書を受け取れませんでした（${e.message}）。木村に知らせてください。`
+          : "手引書を受け取れませんでした。電波の良い所（Wi-Fi）で、もう一度押してください。続く時は、iPhone の空き容量も確かめてください。"
+      );
+    } else {
+      toast("標準施工手引書は受け取れませんでした。設定からもう一度受け取れます");
+    }
+    return false;
+  } finally {
+    setProcessing(false);
+    if (tourShown && tourIdx >= 0) renderTourStep();
+  }
+}
+
+async function importTebikiPack(text) {
+  const pack = JSON.parse(text);
+  if (!pack || pack.kind !== "genba-tebiki-pack" || !Array.isArray(pack.pages)) throw new Error("not a tebiki pack");
+  const recs = [];
+  const pages = [];
+  for (let i = 0; i < pack.pages.length; i++) {
+    const p = pack.pages[i];
+    if (i % 4 === 0) setProcessing(true, `標準施工手引書を取り込み中... ${i} / ${pack.pages.length}枚`);
+    const img = p.img ? await (await fetch(p.img)).blob() : null;
+    const thumb = p.thumb ? await (await fetch(p.thumb)).blob() : img;
+    const { img: _i, thumb: _t, ...meta } = p; // 文字の情報だけを meta に残し、図は Blob にして別に置く
+    meta.no = String(meta.no);
+    pages.push(meta);
+    recs.push({ no: meta.no, img, thumb });
+    p.img = p.thumb = null;
+  }
+  try {
+    await dbClear("tebikiPages");
+    for (let i = 0; i < recs.length; i += 4) await dbPutMany("tebikiPages", recs.slice(i, i + 4));
+    await dbPut("meta", {
+      key: "tebiki",
+      version: pack.version || "",
+      title: pack.title || "標準施工手引書",
+      source: pack.source || "",
+      builtAt: pack.built_at || "",
+      importedAt: new Date().toISOString(),
+      schema: pack.schema || 1,
+      pages,
+    });
+  } catch (e) {
+    await dbDeleteMany("meta", ["tebiki"]).catch(() => {}); // 途中で止まった時に、文字だけ新しい・図は古い、にならないように
+    await loadTebikiMeta();
+    throw e;
+  }
+  await loadTebikiMeta();
+  try {
+    localStorage.setItem(TEBIKI_GOT_KEY, receivedTebikiUpdated || new Date().toISOString());
+  } catch (e) {
+    /* ignore */
+  }
+  receivedTebikiUpdated = "";
+  toast(`標準施工手引書（${tebikiMeta.version}版・${tebikiMeta.pages.length}枚）を取り込みました`);
+  if (!$("settingsView").hidden) renderSettings();
+  else if (currentView === "manualView") renderManual();
+  else if (currentView === "groupView") renderTebikiRow(groupItems[currentItemIdx]);
+}
+
+async function deleteTebiki() {
+  if (!confirm("このiPhoneから標準施工手引書を削除しますか？（マニュアル・写真・報告のデータは消えません）")) return;
+  await dbClear("tebikiPages");
+  await dbDeleteMany("meta", ["tebiki"]);
+  await loadTebikiMeta();
+  try {
+    localStorage.removeItem(TEBIKI_GOT_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+  toast("標準施工手引書を削除しました");
+  renderSettings();
+}
+
+function renderTebikiSettings() {
+  $("tebikiRowSettings").hidden = !manualMeta; // 手引書はマニュアルの項目と結ぶので、マニュアルがある人だけ
+  $("tebikiInfo").textContent = tebikiMeta
+    ? `${tebikiMeta.title}（${tebikiMeta.version}版・${tebikiMeta.pages.length}枚）\n取り込み日：${fmtDate(toDateKey(new Date(tebikiMeta.importedAt)))}`
+    : "まだ受け取っていません";
+  $("receiveTebikiBtn").textContent = tebikiMeta ? "手引書の新しい版を受け取る（約18MB・Wi-Fiで）" : "手引書を受け取る（約18MB・Wi-Fiで）";
+  $("receiveTebikiBtn").className = `btn ${gasOn() ? "btnPrimary" : "btnSecondary"}`;
+  $("deleteTebikiBtn").hidden = !tebikiMeta;
+}
+
+/* ----- 項目の一番下：📘 手引書（N枚） ----- */
+
+async function renderTebikiRow(it) {
+  const box = $("tebikiRow");
+  if (!box || !it) return;
+  const pgs = tebikiPagesForItem(it);
+  box.innerHTML = "";
+  if (!pgs.length) return; // 当たる手引書が無い項目には、欄を出さない
+  releaseUrls("tebikiRow");
+  box.innerHTML =
+    `<div class="tbRow"><h3>📘 手引書（${pgs.length}枚）</h3><div class="tbRowList">` +
+    pgs.map((pg) => `<button class="tbMini" type="button" data-no="${esc(pg.no)}"><img alt=""><span><b>${esc(pg.no)}</b> ${esc(pg.title)}</span></button>`).join("") +
+    `</div></div>`;
+  box.querySelectorAll(".tbMini").forEach((b) => b.addEventListener("click", () => openTebikiViewer(b.dataset.no)));
+  for (const b of box.querySelectorAll(".tbMini")) {
+    const rec = await dbGet("tebikiPages", b.dataset.no);
+    if (!rec || $("tebikiRow") !== box || !b.isConnected) continue;
+    b.querySelector("img").src = blobUrl("tebikiRow", rec.thumb || rec.img);
+  }
+}
+
+/* ----- 工程タブの入口と、章から見る一覧 ----- */
+
+function goTebikiList() {
+  renderTebikiList();
+  showView("tebikiListView");
+}
+
+async function renderTebikiList() {
+  if (!tebikiMeta) return;
+  releaseUrls("tebikiList");
+  const pages = tebikiMeta.pages;
+  $("tebikiListNote").textContent = `製本と同じ並び（章・シート番号の順）です。${pages.length}枚。押すと図面を開きます。`;
+  let ch = null;
+  let html = "";
+  for (const pg of pages) {
+    if (pg.chapter !== ch) {
+      ch = pg.chapter;
+      html += `<div class="tbChap">${esc(ch)}</div>`;
+    }
+    html +=
+      `<button class="tbCard" type="button" data-no="${esc(pg.no)}"><img alt="">` +
+      `<span><span class="tbNo">${esc(pg.no)}</span><br><span class="tbT">${esc(pg.title)}</span>` +
+      (tebikiPoints(pg) ? `<span class="tbPts"><br>${esc(tebikiPoints(pg))}</span>` : "") +
+      `</span></button>`;
+  }
+  const list = $("tebikiChapters");
+  list.innerHTML = html;
+  list.querySelectorAll(".tbCard").forEach((b) => b.addEventListener("click", () => openTebikiViewer(b.dataset.no)));
+  for (const b of list.querySelectorAll(".tbCard")) {
+    const rec = await dbGet("tebikiPages", b.dataset.no);
+    if (!rec || !b.isConnected) continue;
+    b.querySelector("img").src = blobUrl("tebikiList", rec.thumb || rec.img);
+  }
+}
+
+/* ----- 検索（工程タブの検索ボックスで、手引書の見出しと行も探す） ----- */
+
+function searchTebiki(q) {
+  if (!tebikiMeta) return [];
+  const k = normText(q);
+  if (!k) return [];
+  const out = [];
+  for (const pg of tebikiMeta.pages) {
+    const seen = new Set();
+    const hits = [];
+    for (const h of pg.heads || []) {
+      const n = normText(h.t);
+      if (n.includes(k) && !seen.has(n)) {
+        seen.add(n);
+        hits.push({ t: h.t, head: true });
+      }
+    }
+    for (const l of pg.lines || []) {
+      const n = normText(l.t);
+      if (n.includes(k) && !seen.has(n)) {
+        seen.add(n);
+        hits.push({ t: l.t });
+      }
+    }
+    if (hits.length) out.push({ pg, hits });
+  }
+  return out;
+}
+
+const TEBIKI_SEARCH_PAGES = 30; // 1回に出すページ数
+const TEBIKI_SEARCH_LINES = 4; // 1ページに出す行数
+function renderTebikiSearch(box, q, found) {
+  if (!found.length) return;
+  const k = normText(q);
+  const head = document.createElement("div");
+  head.className = "tbSearchHead";
+  head.textContent = `📘 手引書（${found.length}枚・${found.reduce((a, o) => a + o.hits.length, 0)}か所）`;
+  box.appendChild(head);
+  found.slice(0, TEBIKI_SEARCH_PAGES).forEach(({ pg, hits }) => {
+    const card = document.createElement("div");
+    card.className = "tbHit";
+    card.innerHTML =
+      `<button class="tbHd" type="button" data-no="${esc(pg.no)}"><b>${esc(pg.no)}</b>${esc(pg.title)}<span class="mutedText">（${esc(pg.chapter)}）</span></button>` +
+      hits.slice(0, TEBIKI_SEARCH_LINES).map((h) => `<button class="tbLn" type="button" data-no="${esc(pg.no)}">${h.head ? "📌 " : ""}${highlight(h.t, k)}</button>`).join("") +
+      (hits.length > TEBIKI_SEARCH_LINES ? `<button class="tbLn more" type="button" data-no="${esc(pg.no)}">ほか ${hits.length - TEBIKI_SEARCH_LINES} か所 → ページを開く</button>` : "");
+    card.querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", () => {
+        $("searchInput").blur();
+        openTebikiViewer(b.dataset.no, { term: q });
+      })
+    );
+    box.appendChild(card);
+  });
+}
+
+/* ----- 図面を見る画面（全画面） ----- */
+
+let tbCur = null; // 今のページ（meta の pages の1つ）
+let tbScale = 1;
+let tbTerm = ""; // 色を付ける言葉（検索から開いた時。隣のページでも同じ言葉に色を付ける）
+let tbFrom = null; // 戻り先 { view, y }
+let tbUrl = ""; // 今の図の object URL
+let tbSeq = 0;
+
+function openTebikiViewer(no, opts = {}) {
+  if (currentView !== "tebikiView") tbFrom = { view: currentView, y: window.scrollY };
+  tbTerm = opts.term || "";
+  showView("tebikiView"); // 先に出す（図の幅を測るため）
+  tbShowPage(no);
+}
+function closeTebikiViewer() {
+  tbSeq++;
+  const f = tbFrom || { view: "manualView", y: 0 };
+  tbFrom = null;
+  showView(f.view);
+  window.scrollTo(0, f.y || 0);
+  $("tbImg").removeAttribute("src");
+  if (tbUrl) URL.revokeObjectURL(tbUrl); // 見終わったら図のメモリを返す
+  tbUrl = "";
+}
+
+function tbSetScale(s, cx, cy) {
+  const stage = $("tbStage"),
+    paper = $("tbPaper");
+  const old = tbScale;
+  tbScale = Math.min(6, Math.max(1, s));
+  const rect = stage.getBoundingClientRect();
+  cx = cx ?? rect.width / 2;
+  cy = cy ?? rect.height / 2;
+  const px = (stage.scrollLeft + cx) / old,
+    py = (stage.scrollTop + cy) / old;
+  paper.style.width = stage.clientWidth * tbScale + "px";
+  stage.scrollLeft = px * tbScale - cx;
+  stage.scrollTop = py * tbScale - cy;
+}
+// 拡大はせず、全体表示のまま色だけ付ける
+function tbMarkBoxes(list) {
+  const paper = $("tbPaper");
+  paper.querySelectorAll(".tbBox").forEach((x) => x.remove());
+  const pad = 0.004;
+  for (const b of list) {
+    const box = document.createElement("div");
+    box.className = "tbBox";
+    Object.assign(box.style, { left: (b[0] - pad) * 100 + "%", top: (b[1] - pad) * 100 + "%", width: (b[2] - b[0] + pad * 2) * 100 + "%", height: (b[3] - b[1] + pad * 2) * 100 + "%" });
+    paper.appendChild(box);
+  }
+}
+// 言葉：そのページの、その言葉を含む行すべてに色を付ける（行に無く、見出しの枠にだけある時は見出しの枠に）
+function tbMarkTerm(q) {
+  const k = normText(q || "");
+  if (!k || !tbCur) return tbMarkBoxes([]);
+  let boxes = (tbCur.lines || []).filter((l) => l.b && normText(l.t).includes(k)).map((l) => l.b);
+  if (!boxes.length) boxes = (tbCur.heads || []).filter((h) => h.at && normText(h.t).includes(k)).map((h) => h.at);
+  tbMarkBoxes(boxes);
+}
+
+async function tbShowPage(no) {
+  const pages = tebikiMeta.pages;
+  const cur = pages.find((p) => p.no === String(no));
+  if (!cur) return;
+  tbCur = cur;
+  const seq = ++tbSeq;
+  const i = pages.indexOf(cur),
+    pv = pages[i - 1],
+    nx = pages[i + 1];
+  $("tbTtl").innerHTML = `${esc(cur.no)}　${esc(cur.title)}<small>${esc(cur.chapter)}・手引書 ${esc(tebikiMeta.version)}</small>`;
+  $("tbPrev").textContent = pv ? `‹ ${pv.no} ${pv.title}` : "";
+  $("tbNext").textContent = nx ? `${nx.no} ${nx.title} ›` : "";
+  $("tbPrev").disabled = !pv;
+  $("tbNext").disabled = !nx;
+  $("tbPrev").onclick = () => pv && tbShowPage(pv.no);
+  $("tbNext").onclick = () => nx && tbShowPage(nx.no);
+  $("tbPaper").querySelectorAll(".tbBox").forEach((x) => x.remove());
+  const stage = $("tbStage");
+  tbScale = 1;
+  $("tbPaper").style.width = stage.clientWidth + "px";
+  stage.scrollTo(0, 0);
+  tbRenderToc();
+  const rec = await dbGet("tebikiPages", cur.no);
+  if (seq !== tbSeq) return; // 読んでいる間に別のページへ移った
+  const img = $("tbImg");
+  const old = tbUrl;
+  tbUrl = rec && rec.img ? URL.createObjectURL(rec.img) : "";
+  const go = () => {
+    if (seq === tbSeq && tbTerm) tbMarkTerm(tbTerm);
+  };
+  img.onload = go;
+  if (tbUrl) img.src = tbUrl;
+  else img.removeAttribute("src");
+  if (old) setTimeout(() => URL.revokeObjectURL(old), 3000);
+  if (img.complete && tbUrl) go();
+}
+
+// 目次：全ページを章ごとに並べ、今のページだけ要点（見出し）を開く
+function tbRenderToc() {
+  const pages = tebikiMeta.pages;
+  let ch = "";
+  let html = `<div class="grab"><span>目次（押すとそのページ・その場所へ）</span><span>${pages.length}枚</span></div>`;
+  for (const pg of pages) {
+    if (pg.chapter !== ch) {
+      ch = pg.chapter;
+      html += `<div class="ch">${esc(ch)}</div>`;
+    }
+    const on = pg.no === tbCur.no;
+    html += `<div class="pg${on ? " cur" : ""}" data-no="${esc(pg.no)}"><b>${esc(pg.no)}</b><span>${esc(pg.title)}</span></div>`;
+    if (on) {
+      html += `<div class="hs">${(pg.heads || [])
+        .map((h, idx) => ({ h, idx }))
+        .filter(({ h }) => h.lv > 0)
+        .map(({ h, idx }) => `<div class="h lv${h.lv}${h.at ? "" : " no"}" data-i="${idx}">${esc(h.t)}</div>`)
+        .join("")}</div>`;
+    }
+  }
+  const s = $("tbSheet");
+  s.innerHTML = html;
+  s.querySelectorAll(".pg").forEach((e) => (e.onclick = () => tbShowPage(e.dataset.no)));
+  s.querySelectorAll(".h").forEach(
+    (e) =>
+      (e.onclick = () => {
+        const h = tbCur.heads[+e.dataset.i];
+        if (h && h.at) tbMarkBoxes([h.at]); // 見出しの場所に色だけ付ける（拡大しない）
+      })
+  );
+  const c = s.querySelector(".pg.cur");
+  if (c) s.scrollTop = c.offsetTop - 75;
+}
+
+function initTebikiViewer() {
+  $("tebikiListBackBtn").innerHTML = icon(ICONS.back, 26);
+  $("tebikiListBackBtn").addEventListener("click", goManual);
+  $("tbClose").addEventListener("click", closeTebikiViewer);
+  $("receiveTebikiBtn").addEventListener("click", () => receiveTebikiViaGas(false));
+  $("deleteTebikiBtn").addEventListener("click", deleteTebiki);
+  const stage = $("tbStage"),
+    paper = $("tbPaper");
+  $("tbZin").addEventListener("click", () => tbSetScale(tbScale * 1.6));
+  $("tbZout").addEventListener("click", () => tbSetScale(tbScale / 1.6));
+  $("tbZfit").addEventListener("click", () => {
+    tbSetScale(1);
+    stage.scrollTo(0, 0);
+  });
+  paper.addEventListener("dblclick", (e) => {
+    const r = stage.getBoundingClientRect();
+    tbSetScale(tbScale > 1.5 ? 1 : 2.8, e.clientX - r.left, e.clientY - r.top);
+  });
+  // 拡大していない時は、左右に払うと隣のページへ
+  let sw = null;
+  stage.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length === 1 && tbScale <= 1.05) sw = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      else sw = null;
+    },
+    { passive: true }
+  );
+  stage.addEventListener("touchend", (e) => {
+    if (!sw) return;
+    const t = e.changedTouches[0],
+      dx = t.clientX - sw.x,
+      dy = t.clientY - sw.y;
+    sw = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) (dx < 0 ? $("tbNext") : $("tbPrev")).click();
+  });
+  // 2本指で拡大
+  let pinch = null;
+  stage.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length === 2) {
+        const [a, c] = e.touches;
+        pinch = { d: Math.hypot(a.clientX - c.clientX, a.clientY - c.clientY), s: tbScale };
+        sw = null;
+      }
+    },
+    { passive: true }
+  );
+  stage.addEventListener(
+    "touchmove",
+    (e) => {
+      if (pinch && e.touches.length === 2) {
+        e.preventDefault();
+        const [a, c] = e.touches;
+        const r = stage.getBoundingClientRect();
+        tbSetScale((pinch.s * Math.hypot(a.clientX - c.clientX, a.clientY - c.clientY)) / pinch.d, (a.clientX + c.clientX) / 2 - r.left, (a.clientY + c.clientY) / 2 - r.top);
+      }
+    },
+    { passive: false }
+  );
+  stage.addEventListener("touchend", () => (pinch = null));
+  stage.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const r = stage.getBoundingClientRect();
+        tbSetScale(tbScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX - r.left, e.clientY - r.top);
+      }
+    },
+    { passive: false }
+  );
 }
 
 /* ---------- 設定 ---------- */
@@ -6628,6 +7158,7 @@ async function renderSettings() {
   $("importManualBtn").textContent = "ファイルから取り込む";
   $("receiveManualBtn").textContent = manualMeta ? "合言葉で新しい版を受け取る" : "合言葉で受け取る";
   $("receiveManualBtn").className = `btn ${gasOn() ? "btnPrimary" : "btnSecondary"}`;
+  renderTebikiSettings();
   const info = $("storageInfo");
   const photos = await dbGetAll("photos");
   const sites = await getSites();
@@ -6825,6 +7356,8 @@ async function renderDash() {
   const siteNameOf = (id) => (sites.find((x) => x.id === id) || {}).name || "";
   if (manualUpdateAvailable())
     todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `マニュアルの新しい版があります <b class="em">受け取る</b>`, go: () => openSettings() });
+  if (tebikiUpdateAvailable())
+    todo.push({ site: "全体", icon: ICONS.book || ICONS.list, cls: "wood", html: `標準施工手引書の${tebikiMeta ? "新しい版" : "ページ"}があります <b class="em">受け取る</b>`, go: () => openSettings() });
   const offers = await pendingSharedOffers();
   if (gen !== renderGen.dash) return; // 後から始まった描き直しに任せる
   offers.forEach((o) =>
@@ -7842,6 +8375,7 @@ function init() {
   $("manualInput").addEventListener("change", onManualPicked);
   $("importManualBtn").addEventListener("click", () => $("manualInput").click());
   $("receiveManualBtn").addEventListener("click", receiveManualViaGas);
+  initTebikiViewer();
   $("deleteManualBtn").addEventListener("click", deleteManual);
   $("userNameInput").addEventListener("change", (e) => setSetting(USER_NAME_KEY, e.target.value.trim()));
   $("userGivenInput").addEventListener("change", (e) => setSetting(USER_GIVEN_KEY, e.target.value.trim()));
@@ -7914,6 +8448,7 @@ function init() {
     }
   });
   loadManualMeta().then(async () => {
+    await loadTebikiMeta().catch((e) => console.warn("手引書を読めませんでした", e));
     await migrateSendPicks();
     goDash();
     if (await checkPendingShot()) return;

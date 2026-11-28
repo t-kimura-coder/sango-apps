@@ -15,7 +15,7 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <title>現場ナビ</title>
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" type="image/png" sizes="96x96" href="icon-96.png?v=2">
-<link rel="stylesheet" href="style.css?v=89">
+<link rel="stylesheet" href="style.css?v=90">
 </head>
 <body>
 
@@ -279,6 +279,14 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
         <button id="deleteManualBtn" class="btn btnDanger" hidden>削除</button>
       </div>
       <div class="mutedText">マニュアルは社内資料のため、アプリには含まれていません。合言葉を入れていれば「合言葉で受け取る」で取り込めます（約30MB・Wi-Fi で1〜2分）。または、Boxの「マニュアル_○○.json」を「ファイルから取り込む」で選びます。</div>
+      <div id="tebikiRowSettings" class="tebikiSettings">
+        <div class="tebikiSetHead">標準施工手引書</div>
+        <div id="tebikiInfo" class="mutedText preLine"></div>
+        <div class="btnRow settingsBtns">
+          <button id="receiveTebikiBtn" class="btn btnSecondary" type="button">手引書を受け取る（約18MB・Wi-Fiで）</button>
+          <button id="deleteTebikiBtn" class="btn btnDanger" type="button" hidden>削除</button>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="cardTitle">バックアップ</div>
@@ -339,6 +347,35 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
   <div class="viewBody">
     <div id="searchHint" class="hint">工程名・チェック項目・概要の言葉から探せます。ひらがなでも探せます。</div>
     <div id="searchResults" class="searchResults"></div>
+  </div>
+</section>
+
+<!-- 標準施工手引書：章から見る一覧 -->
+<section id="tebikiListView" class="view" hidden>
+  <header class="topbar">
+    <button id="tebikiListBackBtn" class="iconBtn" aria-label="戻る"></button>
+    <h1 class="topbarTitle center">標準施工手引書</h1>
+    <span class="iconBtnSpacer"></span>
+  </header>
+  <div class="viewBody">
+    <div id="tebikiListNote" class="hint"></div>
+    <div id="tebikiChapters" class="tbChapters"></div>
+  </div>
+</section>
+
+<!-- 標準施工手引書：図面を見る画面（全画面） -->
+<section id="tebikiView" class="tbViewer" hidden>
+  <div class="tbHead">
+    <button id="tbClose" class="tbX" type="button">← 戻る</button>
+    <div id="tbTtl" class="tbTtl"></div>
+  </div>
+  <div class="tbBody">
+    <div class="tbWrap">
+      <div id="tbStage" class="tbStage"><div id="tbPaper" class="tbPaper"><img id="tbImg" alt=""></div></div>
+      <div class="tbZoom"><button id="tbZin" type="button" aria-label="拡大">＋</button><button id="tbZout" type="button" aria-label="縮小">－</button><button id="tbZfit" type="button" class="tbFit">全体</button></div>
+      <div class="tbNav"><button id="tbPrev" type="button"></button><button id="tbNext" type="button"></button></div>
+    </div>
+    <div class="tbSheet" id="tbSheet"></div>
   </div>
 </section>
 
@@ -507,6 +544,6 @@ try { var t = localStorage.getItem("genba-photo-theme"); if (t === "light" || t 
 <input type="file" id="replyInput" accept="application/json,.json" multiple hidden>
 <input type="file" id="recordLibraryInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=137"></script>
+<script src="app.js?v=138"></script>
 </body>
 </html>

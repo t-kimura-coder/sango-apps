@@ -9,6 +9,9 @@ async function useFakeGas(page, opts = {}) {
   const manual = JSON.stringify(opts.manual || fakeManualPack());
   const CHUNK = 200000;
   const chunks = Math.ceil(manual.length / CHUNK);
+  // 標準施工手引書（opts.tebiki に fakeTebikiPack() などを渡した時だけ配る。渡さなければ「まだ無い」）
+  const tebiki = opts.tebiki ? JSON.stringify(opts.tebiki) : null;
+  const tebikiChunks = tebiki ? Math.ceil(tebiki.length / CHUNK) : 0;
   const me = opts.me || { name: "テスト監督", role: "監督", team: "テスト班" };
   // Box の受け口のふり（boxBegin → boxPut → boxSend）。送り終えたものは box.sent に残る
   const box = { jobs: {}, sent: [] };
@@ -34,6 +37,10 @@ async function useFakeGas(page, opts = {}) {
         return { name: "マニュアル_test.json", updated: "2026-01-01T00:00:00Z", chunks };
       case "manualChunk":
         return { data: manual.slice(body.i * CHUNK, (body.i + 1) * CHUNK) };
+      case "tebikiInfo":
+        return tebiki ? { name: "手引書_test.json", updated: "2026-01-02T00:00:00Z", chunks: tebikiChunks } : { none: true };
+      case "tebikiChunk":
+        return { data: tebiki.slice(body.i * CHUNK, (body.i + 1) * CHUNK) };
       case "whoami":
       case "me":
         return { me };
